@@ -25,6 +25,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         seam_box.prop(settings, "material_boundary")
         seam_box.prop(settings, "boundary_edges")
         seam_box.prop(settings, "non_manifold_edges")
+        seam_box.prop(settings, "longitudinal_seam_helper")
 
         uv_box = layout.box()
         uv_box.label(text="UV Settings")
@@ -33,7 +34,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         uv_box.prop(settings, "unwrap_method")
         uv_box.prop(settings, "margin")
         uv_box.prop(settings, "average_islands")
+        uv_box.prop(settings, "material_scale_rules")
         uv_box.prop(settings, "pack_islands")
+
+        processing_box = layout.box()
+        processing_box.label(text="Processing")
+        processing_box.prop(settings, "process_shared_mesh_once")
 
         actions_box = layout.box()
         actions_box.label(text="Actions")

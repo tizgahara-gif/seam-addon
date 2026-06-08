@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import bpy
+
+from .island_tools import apply_material_uv_scale_rules, parse_material_scale_rules
+
+WarningCallback = Callable[[str], None]
 
 
 def ensure_uv_layer(obj, uv_map_name: str, create_if_missing: bool) -> bool:
@@ -38,6 +44,25 @@ def _select_only_object(obj) -> None:
     bpy.context.view_layer.objects.active = obj
 
 
+def _report_rule_warnings(rule_warnings: list[str], warning_callback: WarningCallback | None) -> None:
+    if warning_callback is None:
+        return
+
+    for warning in rule_warnings:
+        warning_callback(warning)
+
+
+def _apply_material_scaling_if_needed(obj, material_scale_rules: str, warning_callback: WarningCallback | None) -> int:
+    rules, rule_warnings = parse_material_scale_rules(material_scale_rules)
+    _report_rule_warnings(rule_warnings, warning_callback)
+
+    if not rules:
+        return 0
+
+    _switch_to_object_mode()
+    return apply_material_uv_scale_rules(obj, rules)
+
+
 def unwrap_object(
     obj,
     uv_map_name: str,
@@ -46,6 +71,8 @@ def unwrap_object(
     margin: float,
     average_islands: bool,
     pack_islands: bool,
+    material_scale_rules: str = "",
+    warning_callback: WarningCallback | None = None,
 ) -> bool:
     """Unwrap one mesh object using the currently marked seams."""
     if obj is None or obj.type != "MESH":
@@ -56,7 +83,7 @@ def unwrap_object(
         _select_only_object(obj)
 
         if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
-            return False
+            raise RuntimeError(f"UV map '{uv_map_name}' does not exist and Create UV If Missing is disabled.")
 
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_mode(type="FACE")
@@ -66,12 +93,17 @@ def unwrap_object(
         if average_islands:
             bpy.ops.uv.average_islands_scale()
 
+        _apply_material_scaling_if_needed(obj, material_scale_rules, warning_callback)
+
         if pack_islands:
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_mode(type="FACE")
+            bpy.ops.mesh.select_all(action="SELECT")
             bpy.ops.uv.pack_islands(margin=margin)
 
         bpy.ops.object.mode_set(mode="OBJECT")
         return True
-    except Exception:
+    except Exception as exc:
         if bpy.ops.object.mode_set.poll():
             bpy.ops.object.mode_set(mode="OBJECT")
-        return False
+        raise RuntimeError(f"Failed to unwrap {obj.name}: {exc}") from exc

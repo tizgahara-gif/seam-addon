@@ -10,8 +10,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     """Scene-level settings used by the Auto Seam UV Equalizer operators."""
 
     angle_threshold: FloatProperty(
-        name="Angle Threshold",
-        description="Mark edges as seams when adjacent face normals meet or exceed this angle",
+        name="Angle Threshold (Degrees)",
+        description="Mark edges as seams when adjacent face normals meet or exceed this degree value",
         default=55.0,
         min=1.0,
         max=179.0,
@@ -61,15 +61,33 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=True,
     )
 
+    longitudinal_seam_helper: BoolProperty(
+        name="Mark Longitudinal Seam Helper",
+        description="Add one heuristic lengthwise seam for cylinders, pipes, supports, and cable-like meshes",
+        default=False,
+    )
+
     average_islands: BoolProperty(
         name="Average Island Scale",
         description="Normalize UV island texel density after unwrapping",
         default=True,
     )
 
+    material_scale_rules: StringProperty(
+        name="Material UV Scale Rules",
+        description="Comma-separated MaterialName=Scale rules applied to UV islands before packing",
+        default="MAT_BluePanel=1.5,MAT_Cable=0.6",
+    )
+
     pack_islands: BoolProperty(
         name="Pack Islands",
         description="Pack UV islands into the 0-1 UV space after unwrapping",
+        default=True,
+    )
+
+    process_shared_mesh_once: BoolProperty(
+        name="Process Shared Mesh Data Once",
+        description="Process only the first selected object for each shared mesh datablock",
         default=True,
     )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import bpy
 
-from .seam_detection import clear_seams, mark_auto_seams
+from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
 from .uv_tools import unwrap_object
 
 
@@ -71,7 +71,7 @@ def _warn_non_uniform_scale(operator, objects: list[bpy.types.Object]) -> None:
     names = []
     for obj in objects:
         scale = obj.scale
-        if not (abs(scale.x - scale.y) < 1e-5 and abs(scale.y - scale.z) < 1e-5):
+        if not (abs(scale.x - scale.y) < 1.0e-5 and abs(scale.y - scale.z) < 1.0e-5):
             names.append(obj.name)
     if names:
         operator.report(
@@ -84,6 +84,43 @@ def _get_settings(context):
     return context.scene.autoseamuv_settings
 
 
+def _mesh_datablock_key(obj) -> int:
+    return obj.data.as_pointer()
+
+
+def _objects_for_processing(operator, objects: list[bpy.types.Object], process_shared_mesh_once: bool) -> tuple[list[bpy.types.Object], int]:
+    if not process_shared_mesh_once:
+        _warn_shared_meshes(operator, objects)
+        return objects, 0
+
+    seen_meshes: set[int] = set()
+    process_objects: list[bpy.types.Object] = []
+    skipped_names: list[str] = []
+
+    for obj in objects:
+        mesh_key = _mesh_datablock_key(obj)
+        if mesh_key in seen_meshes:
+            skipped_names.append(obj.name)
+            continue
+        seen_meshes.add(mesh_key)
+        process_objects.append(obj)
+
+    if skipped_names:
+        operator.report(
+            {"WARNING"},
+            f"{REPORT_PREFIX}: shared mesh data skipped for {len(skipped_names)} object(s): {', '.join(skipped_names)}",
+        )
+
+    return process_objects, len(skipped_names)
+
+
+def _warning_reporter(operator):
+    def report_warning(message: str) -> None:
+        operator.report({"WARNING"}, f"{REPORT_PREFIX}: {message}")
+
+    return report_warning
+
+
 class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
     """Automatically mark seams on selected mesh objects."""
 
@@ -92,19 +129,19 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
-        if not objects:
+        selected_objects = _selected_visible_mesh_objects(context)
+        if not selected_objects:
             self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
             return {"CANCELLED"}
 
         settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
         active, selected, mode = _snapshot_context(context)
         processed = 0
         total_marked = 0
+        total_longitudinal = 0
         total_cleared = 0
         failures = 0
-
-        _warn_shared_meshes(self, objects)
 
         try:
             _ensure_object_mode()
@@ -119,6 +156,8 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
                         settings.boundary_edges,
                         settings.non_manifold_edges,
                     )
+                    if settings.longitudinal_seam_helper:
+                        total_longitudinal += mark_longitudinal_seam_helper(obj)
                     processed += 1
                 except Exception as exc:
                     failures += 1
@@ -128,7 +167,7 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: marked {total_marked} seam(s), cleared {total_cleared}, processed {processed}, failed {failures}.",
+            f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, processed {processed}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -141,41 +180,44 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
-        if not objects:
+        selected_objects = _selected_visible_mesh_objects(context)
+        if not selected_objects:
             self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
             return {"CANCELLED"}
 
         settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
         active, selected, mode = _snapshot_context(context)
         processed = 0
         failures = 0
 
-        _warn_shared_meshes(self, objects)
         _warn_non_uniform_scale(self, objects)
 
         try:
             _ensure_object_mode()
             for obj in objects:
-                if unwrap_object(
-                    obj,
-                    settings.uv_map_name,
-                    settings.create_uv_if_missing,
-                    settings.unwrap_method,
-                    settings.margin,
-                    settings.average_islands,
-                    settings.pack_islands,
-                ):
+                try:
+                    unwrap_object(
+                        obj,
+                        settings.uv_map_name,
+                        settings.create_uv_if_missing,
+                        settings.unwrap_method,
+                        settings.margin,
+                        settings.average_islands,
+                        settings.pack_islands,
+                        settings.material_scale_rules,
+                        _warning_reporter(self),
+                    )
                     processed += 1
-                else:
+                except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, f"{REPORT_PREFIX}: failed to unwrap {obj.name}.")
+                    self.report({"ERROR"}, str(exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: unwrapped {processed} object(s), marked 0 seam(s), failed {failures}.",
+            f"{REPORT_PREFIX}: unwrapped {processed} object(s), marked 0 seam(s), skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -188,19 +230,20 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
-        if not objects:
+        selected_objects = _selected_visible_mesh_objects(context)
+        if not selected_objects:
             self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
             return {"CANCELLED"}
 
         settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
         active, selected, mode = _snapshot_context(context)
         processed = 0
         total_marked = 0
+        total_longitudinal = 0
         total_cleared = 0
         failures = 0
 
-        _warn_shared_meshes(self, objects)
         _warn_non_uniform_scale(self, objects)
 
         try:
@@ -216,7 +259,9 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.boundary_edges,
                         settings.non_manifold_edges,
                     )
-                    if unwrap_object(
+                    if settings.longitudinal_seam_helper:
+                        total_longitudinal += mark_longitudinal_seam_helper(obj)
+                    unwrap_object(
                         obj,
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
@@ -224,20 +269,19 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
-                    ):
-                        processed += 1
-                    else:
-                        failures += 1
-                        self.report({"ERROR"}, f"{REPORT_PREFIX}: failed to unwrap {obj.name}.")
+                        settings.material_scale_rules,
+                        _warning_reporter(self),
+                    )
+                    processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, f"{REPORT_PREFIX}: failed to process {obj.name}: {exc}")
+                    self.report({"ERROR"}, str(exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: marked {total_marked} seam(s), cleared {total_cleared}, unwrapped {processed}, failed {failures}.",
+            f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, unwrapped {processed}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -250,17 +294,17 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
-        if not objects:
+        selected_objects = _selected_visible_mesh_objects(context)
+        if not selected_objects:
             self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
             return {"CANCELLED"}
 
+        settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
         active, selected, mode = _snapshot_context(context)
         processed = 0
         total_cleared = 0
         failures = 0
-
-        _warn_shared_meshes(self, objects)
 
         try:
             _ensure_object_mode()
@@ -276,6 +320,6 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: cleared {total_cleared} seam(s), processed {processed}, failed {failures}.",
+            f"{REPORT_PREFIX}: cleared {total_cleared} seam(s), processed {processed}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
