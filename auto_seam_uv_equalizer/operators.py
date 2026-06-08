@@ -114,6 +114,13 @@ def _objects_for_processing(operator, objects: list[bpy.types.Object], process_s
     return process_objects, len(skipped_names)
 
 
+def _warning_reporter(operator):
+    def report_warning(message: str) -> None:
+        operator.report({"WARNING"}, f"{REPORT_PREFIX}: {message}")
+
+    return report_warning
+
+
 class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
     """Automatically mark seams on selected mesh objects."""
 
@@ -198,6 +205,8 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
+                        settings.material_scale_rules,
+                        _warning_reporter(self),
                     )
                     processed += 1
                 except Exception as exc:
@@ -260,6 +269,8 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
+                        settings.material_scale_rules,
+                        _warning_reporter(self),
                     )
                     processed += 1
                 except Exception as exc:

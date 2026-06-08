@@ -34,6 +34,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         uv_box.prop(settings, "unwrap_method")
         uv_box.prop(settings, "margin")
         uv_box.prop(settings, "average_islands")
+        uv_box.prop(settings, "material_scale_rules")
         uv_box.prop(settings, "pack_islands")
 
         processing_box = layout.box()

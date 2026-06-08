@@ -73,6 +73,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=True,
     )
 
+    material_scale_rules: StringProperty(
+        name="Material UV Scale Rules",
+        description="Comma-separated MaterialName=Scale rules applied to UV islands before packing",
+        default="MAT_BluePanel=1.5,MAT_Cable=0.6",
+    )
+
     pack_islands: BoolProperty(
         name="Pack Islands",
         description="Pack UV islands into the 0-1 UV space after unwrapping",

@@ -15,7 +15,7 @@ bl_info = {
 import bpy
 from bpy.props import PointerProperty
 
-from . import operators, properties, seam_detection, ui, uv_tools
+from . import island_tools, operators, properties, seam_detection, ui, uv_tools
 
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
