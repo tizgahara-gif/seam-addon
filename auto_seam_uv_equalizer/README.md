@@ -12,6 +12,7 @@ This add-on is intended to reduce repetitive setup work for VRC accessories, har
 - Better error reporting during unwrap.
 - Shared mesh datablock processing option.
 - Equal Region Pack for assigning seam-delimited UV islands to equal 0-1 regions.
+- Arrange Selected UV Islands to Grid for moving only selected existing UV islands without unwrap or pack operations.
 - Clearer zip installation instructions.
 
 ## Installation
@@ -119,6 +120,7 @@ auto_seam_uv_equalizer/README.md
    - **Auto Unwrap Only**: unwraps using the current seams.
    - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and then either uses Equal Region Pack or Blender Pack Islands.
    - **Clear Seams**: removes seam marks from selected mesh objects.
+   - **Arrange Selected UV Islands to Grid**: in Edit Mode, arranges only the selected UV islands into equal 0-1 grid cells without unwrapping or packing all islands.
 
 ## Settings
 
@@ -143,6 +145,14 @@ auto_seam_uv_equalizer/README.md
 - **Equal Region Layout**: Chooses the equal-cell layout: **Square Grid**, **Horizontal Strip**, or **Vertical Strip**. Four islands in **Square Grid** use a 2x2 layout.
 - **Pack Islands**: Packs islands into the 0-1 UV space after unwrap when **Equal Region Pack** is disabled.
 
+
+### Selected UV Arrange
+
+- **Selected Grid Margin**: Padding applied inside each grid cell when arranging selected UV islands. The default is `0.02`.
+- **Selected Grid Layout**: Chooses the selected-island grid layout: **Square Grid**, **Horizontal Strip**, or **Vertical Strip**. In **Square Grid**, four islands use a 2x2 grid and five islands use a 3x2 grid.
+- **Duplicate UV Before Arrange**: Duplicates the active UV map before moving selected UV islands, preserving the original UV map.
+- **Arrange Selected UV Islands to Grid**: Requires Edit Mode and an active UV map. It detects islands from selected UV loops, moves/scales only those selected islands, preserves island shape/aspect ratio, and never calls `bpy.ops.uv.unwrap()` or `bpy.ops.uv.pack_islands()`. Non-selected UV islands are not modified.
+
 ### Processing
 
 - **Process Shared Mesh Data Once**: When enabled, if multiple selected objects use the same mesh datablock, only the first object is processed and later shared users are skipped. The add-on reports skipped objects. When disabled, every selected object is processed, but shared mesh datablocks still produce a warning.
@@ -156,6 +166,7 @@ auto_seam_uv_equalizer/README.md
 - **Cylinders / Pipes / Cables**: Enable **Mark Longitudinal Seam Helper** when the side surface needs a lengthwise seam.
 - **Shared mesh users**: Keep **Process Shared Mesh Data Once** enabled unless you intentionally want to run operators once per object selection.
 - **Region-based layouts**: Enable **Equal Region Pack** when each seam-delimited UV island should occupy its own equal region of the 0-1 UV space.
+- **Existing UV cleanup**: Use **Arrange Selected UV Islands to Grid** in Edit Mode when you want to reorganize selected existing UV islands without changing non-selected UVs or re-unwrapping the mesh.
 
 ## Planned v0.3 Feature
 
@@ -165,6 +176,7 @@ auto_seam_uv_equalizer/README.md
 
 - Longitudinal seam helper is heuristic, not a perfect cylinder detector.
 - Equal Region Pack uses seam-delimited face islands, so incorrect or missing seams can produce unexpected regions.
+- Arrange Selected UV Islands to Grid depends on UV loop selection and UV island connectivity; partially selected islands are treated as selected islands.
 - Important faces may still require manual UV editing.
 - This add-on reduces UV setup labor but does not guarantee final production-ready UVs.
 - It does not choose aesthetically hidden seam locations for faces, characters, or hero surfaces.
@@ -192,6 +204,7 @@ Manual cleanup is expected when the model has:
 - **Material Split Cube**: Enable and disable **Mark Material Boundaries** and confirm material boundary seams change.
 - **Shared Mesh Data**: Select multiple objects that share one mesh datablock. With **Process Shared Mesh Data Once** on, only the first is processed and later users are reported as skipped.
 - **Equal Region Pack**: Create or mark several seam-delimited islands, enable **Equal Region Pack**, and verify that four islands use a 2x2 grid while each island is scaled into one equal cell with aspect ratio preserved.
+- **Arrange Selected UV Islands to Grid**: In Edit Mode with an active UV map, select several UV islands in the UV Editor, run the action, and verify only selected islands move into equal grid cells while non-selected islands remain unchanged.
 
 ## Example Workflow
 
@@ -201,5 +214,6 @@ Manual cleanup is expected when the model has:
 4. Optionally enable **Equal Region Pack** if each UV island should be assigned to an equal 0-1 region instead of using Blender's normal packer.
 5. Run **Auto Seam + Unwrap**.
 6. Open the UV Editor and manually adjust important islands.
-7. Repack or fine-tune islands as needed.
-8. Export to your target pipeline.
+7. If needed, select existing UV islands in Edit Mode and run **Arrange Selected UV Islands to Grid** to redistribute only those islands without unwrap or pack operations.
+8. Repack or fine-tune islands as needed.
+9. Export to your target pipeline.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import bpy
 
 from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
-from .uv_tools import unwrap_object
+from .uv_tools import arrange_selected_uv_islands_to_grid, unwrap_object
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -318,3 +318,49 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
             f"{REPORT_PREFIX}: cleared {total_cleared} seam(s), processed {processed}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+class AUTOSEAMUV_OT_arrange_selected_uv_islands_to_grid(bpy.types.Operator):
+    """Arrange selected UV islands into equal grid cells without unwrapping."""
+
+    bl_idname = "autoseamuv.arrange_selected_uv_islands_to_grid"
+    bl_label = "Arrange Selected UV Islands to Grid"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.view_layer.objects.active
+        return obj is not None and obj.type == "MESH" and obj.mode == "EDIT"
+
+    def execute(self, context):
+        obj = context.view_layer.objects.active
+        if obj is None or obj.type != "MESH":
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: active object must be a mesh.")
+            return {"CANCELLED"}
+
+        if obj.mode != "EDIT":
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: Arrange Selected UV Islands to Grid requires Edit Mode.")
+            return {"CANCELLED"}
+
+        if obj.data.uv_layers.active is None:
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: {obj.name} has no active UV map.")
+            return {"CANCELLED"}
+
+        settings = _get_settings(context)
+
+        try:
+            arranged_count = arrange_selected_uv_islands_to_grid(
+                obj,
+                settings.arrange_selected_grid_margin,
+                settings.arrange_selected_grid_layout,
+                settings.duplicate_uv_before_arrange,
+            )
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+        self.report(
+            {"INFO"},
+            f"{REPORT_PREFIX}: arranged {arranged_count} selected UV island(s) on {obj.name}.",
+        )
+        return {"FINISHED"}
