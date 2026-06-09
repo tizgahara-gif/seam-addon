@@ -16,6 +16,8 @@ Get-ChildItem -Recurse -File -Filter "*.pyc" | Remove-Item -Force
 
 Compress-Archive -Path ".\$AddonDir" -DestinationPath ".\$ZipName" -Force
 
+python .\scripts\verify_package.py ".\$ZipName"
+
 Write-Host "Created $ZipName"
 Write-Host "Expected structure:"
 Write-Host "$ZipName/$AddonDir/__init__.py"

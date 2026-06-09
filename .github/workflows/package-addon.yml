@@ -29,12 +29,13 @@ jobs:
 
       - name: Create add-on zip
         run: |
+          rm -f auto_seam_uv_equalizer.zip
           zip -r auto_seam_uv_equalizer.zip auto_seam_uv_equalizer -x "*/__pycache__/*" "*.pyc"
 
-      - name: Verify zip structure
+      - name: Verify zip contents
         run: |
           unzip -l auto_seam_uv_equalizer.zip
-          unzip -l auto_seam_uv_equalizer.zip | grep "auto_seam_uv_equalizer/__init__.py"
+          python scripts/verify_package.py auto_seam_uv_equalizer.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

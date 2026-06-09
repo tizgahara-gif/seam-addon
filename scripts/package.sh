@@ -15,6 +15,8 @@ find . -name "*.pyc" -delete
 rm -f "$ZIP_NAME"
 zip -r "$ZIP_NAME" "$ADDON_DIR" -x "*/__pycache__/*" "*.pyc"
 
+python scripts/verify_package.py "$ZIP_NAME"
+
 echo "Created $ZIP_NAME"
 echo "Check structure with:"
 echo "unzip -l $ZIP_NAME"
