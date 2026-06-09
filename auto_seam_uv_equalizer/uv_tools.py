@@ -234,3 +234,54 @@ def unwrap_object(
         if bpy.ops.object.mode_set.poll():
             bpy.ops.object.mode_set(mode="OBJECT")
         raise RuntimeError(f"Failed to unwrap {obj.name}: {exc}") from exc
+
+
+
+def unwrap_object_pack(
+    obj,
+    uv_map_name: str,
+    create_if_missing: bool,
+    method: str,
+    margin: float,
+    average_islands: bool,
+    straighten_circular_strip_islands: bool,
+    circular_strip_min_faces: int,
+    circular_strip_margin: float,
+) -> int:
+    """Unwrap one mesh object and always pack islands with Blender Pack Islands."""
+    if obj is None or obj.type != "MESH":
+        return 0
+
+    try:
+        _switch_to_object_mode()
+        _select_only_object(obj)
+
+        if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
+            raise RuntimeError(f"UV map '{uv_map_name}' does not exist and Create UV If Missing is disabled.")
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="FACE")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.uv.unwrap(method=method, margin=margin)
+
+        straightened_count = 0
+        if straighten_circular_strip_islands:
+            bpy.ops.object.mode_set(mode="OBJECT")
+            straightened_count = straighten_circular_strip_islands_on_object(
+                obj,
+                circular_strip_min_faces,
+                circular_strip_margin,
+            )
+            bpy.ops.object.mode_set(mode="EDIT")
+
+        if average_islands:
+            bpy.ops.uv.average_islands_scale()
+
+        bpy.ops.uv.pack_islands(margin=margin)
+
+        bpy.ops.object.mode_set(mode="OBJECT")
+        return straightened_count
+    except Exception as exc:
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode="OBJECT")
+        raise RuntimeError(f"Failed to pack unwrap {obj.name}: {exc}") from exc

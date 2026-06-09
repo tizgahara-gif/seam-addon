@@ -5,7 +5,7 @@ from __future__ import annotations
 import bpy
 
 from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
-from .uv_tools import unwrap_object
+from .uv_tools import unwrap_object, unwrap_object_pack
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -169,7 +169,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
     """Unwrap selected mesh objects using existing seams."""
 
     bl_idname = "autoseamuv.unwrap_only"
-    bl_label = "Auto Unwrap Only"
+    bl_label = "Auto Unwrap Grid"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -191,6 +191,9 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
             _ensure_object_mode()
             for obj in objects:
                 try:
+                    if len(obj.data.polygons) == 0:
+                        self.report({"WARNING"}, f"{REPORT_PREFIX}: skipped {obj.name}; mesh has no faces.")
+                        continue
                     total_straightened += unwrap_object(
                         obj,
                         settings.uv_map_name,
@@ -198,11 +201,11 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.unwrap_method,
                         settings.margin,
                         settings.average_islands,
-                        settings.pack_islands,
+                        False,
                         settings.straighten_circular_strip_islands,
                         settings.circular_strip_min_faces,
                         settings.circular_strip_margin,
-                        settings.equal_region_pack,
+                        True,
                         settings.equal_region_margin,
                         settings.equal_region_layout,
                     )
@@ -215,7 +218,64 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: unwrapped {processed} object(s), marked 0 seam(s), straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
+            f"{REPORT_PREFIX}: grid unwrapped {processed} object(s), marked 0 seam(s), straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
+        )
+        return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
+    """Unwrap selected mesh objects and pack UV islands efficiently."""
+
+    bl_idname = "autoseamuv.auto_unwrap_pack"
+    bl_label = "Auto Unwrap Pack"
+    bl_description = "Unwrap selected mesh objects using existing settings, then pack UV islands efficiently into the 0-1 UV space"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected_objects = _selected_visible_mesh_objects(context)
+        if not selected_objects:
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            return {"CANCELLED"}
+
+        settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
+        active, selected, mode = _snapshot_context(context)
+        processed = 0
+        skipped_empty = 0
+        failures = 0
+        total_straightened = 0
+
+        _warn_non_uniform_scale(self, objects)
+
+        try:
+            _ensure_object_mode()
+            for obj in objects:
+                try:
+                    if len(obj.data.polygons) == 0:
+                        skipped_empty += 1
+                        self.report({"WARNING"}, f"Auto Unwrap Pack: skipped {obj.name}; mesh has no faces.")
+                        continue
+                    total_straightened += unwrap_object_pack(
+                        obj,
+                        settings.uv_map_name,
+                        settings.create_uv_if_missing,
+                        settings.unwrap_method,
+                        settings.margin,
+                        settings.average_islands,
+                        settings.straighten_circular_strip_islands,
+                        settings.circular_strip_min_faces,
+                        settings.circular_strip_margin,
+                    )
+                    processed += 1
+                except Exception as exc:
+                    failures += 1
+                    self.report({"ERROR"}, str(exc))
+        finally:
+            _restore_context(context, active, selected, mode)
+
+        self.report(
+            {"INFO"},
+            f"Auto Unwrap Pack: packed {processed} object(s), straightened {total_straightened} circular strip island(s), skipped empty {skipped_empty}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 

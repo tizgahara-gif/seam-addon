@@ -11,7 +11,8 @@ This add-on is intended to reduce repetitive setup work for VRC accessories, har
 - Longitudinal seam helper for cylinders, pipes, supports, and cable-like meshes.
 - Better error reporting during unwrap.
 - Shared mesh datablock processing option.
-- Equal Region Pack for assigning seam-delimited UV islands to equal 0-1 regions.
+- Auto Unwrap Grid for assigning seam-delimited UV islands to equal 0-1 regions.
+- Auto Unwrap Pack for efficient Blender Pack Islands output in the 0-1 UV space.
 - Straighten Circular Strip Islands for converting C-shaped, ring-like, or arc-like UV islands into horizontal strips before packing.
 - Clearer zip installation instructions.
 
@@ -128,7 +129,8 @@ auto_seam_uv_equalizer/README.md
 4. Adjust **Angle Threshold (Degrees)**, **UV Margin**, seam detection options, and processing options.
 5. Click one of the action buttons:
    - **Auto Mark Seams Only**: only marks automatic seams.
-   - **Auto Unwrap Only**: unwraps using the current seams.
+   - **Auto Unwrap Grid**: unwraps using current seams and places UV islands into equal grid regions for readable organization.
+   - **Auto Unwrap Pack**: unwraps using current seams and runs Blender Pack Islands for efficient 0-1 texture usage.
    - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and then either uses Equal Region Pack or Blender Pack Islands.
    - **Clear Seams**: removes seam marks from selected mesh objects.
 
@@ -148,7 +150,7 @@ auto_seam_uv_equalizer/README.md
 - **UV Map Name**: Name of the UV map to use or create. The default is `UV_Auto`.
 - **Create UV If Missing**: Creates the named UV map when it does not exist.
 - **Unwrap Method**: Chooses Blender's `ANGLE_BASED` or `CONFORMAL` unwrap method.
-- **UV Margin**: Margin used by unwrap and pack operations.
+- **UV Margin**: Margin used by unwrap and pack operations. **Auto Unwrap Pack** uses this value for `bpy.ops.uv.pack_islands()`.
 - **Average Island Scale**: Runs Blender's average island scale operation after unwrap.
 - **Straighten Circular Strip Islands**: Converts C-shaped, ring-like, or arc-like UV strip islands into horizontal rectangular strips after unwrap and before Average Island Scale / Pack Islands. This is off by default.
 - **Circular Strip Min Faces**: Minimum island face count needed before the circular strip detector will consider an island. The default is `6`.
@@ -172,9 +174,22 @@ auto_seam_uv_equalizer/README.md
 - **Cylinders / Pipes / Cables**: Enable **Mark Longitudinal Seam Helper** when the side surface needs a lengthwise seam.
 - **Shared mesh users**: Keep **Process Shared Mesh Data Once** enabled unless you intentionally want to run operators once per object selection.
 - **Circular / arc strips**: Enable **Straighten Circular Strip Islands** only when C-shaped, ring-shaped, or arc-shaped UV islands should be normalized into horizontal strips before packing.
-- **Region-based layouts**: Enable **Equal Region Pack** when each seam-delimited UV island should occupy its own equal region of the 0-1 UV space.
+- **Region-based layouts**: Use **Auto Unwrap Grid** or enable **Equal Region Pack** for **Auto Seam + Unwrap** when each seam-delimited UV island should occupy its own equal region of the 0-1 UV space.
+- **Efficient texture output**: Use **Auto Unwrap Pack** when UV space usage matters more than equal-region organization.
 
 
+
+## Auto Unwrap Grid
+
+Unwraps selected mesh objects and places UV islands into equal grid regions. Use this when you want predictable, readable UV placement by island or part.
+
+Auto Unwrap Grid is for organization. It does not use Blender's efficient Pack Islands placement; it assigns seam-delimited islands to equal regions using the Equal Region margin/layout settings.
+
+## Auto Unwrap Pack
+
+Unwraps selected mesh objects and packs UV islands efficiently into the 0-1 UV space with `bpy.ops.uv.pack_islands()`. Use this when you want better texture space usage for Substance Painter, Unity, or VRChat assets.
+
+Auto Unwrap Pack is for texture space efficiency. It uses **UV Margin**, respects **Process Shared Mesh Data Once**, can run **Straighten Circular Strip Islands** before packing, and does not call Equal Region Pack or any UV Editor selection-based arrangement tool.
 
 ## Straighten Circular Strip Islands
 
@@ -225,7 +240,8 @@ Manual cleanup is expected when the model has:
 - **Cable-like converted mesh**: Enable the longitudinal helper and confirm it adds a limited lengthwise seam strip instead of cutting all edges.
 - **Material Split Cube**: Enable and disable **Mark Material Boundaries** and confirm material boundary seams change.
 - **Shared Mesh Data**: Select multiple objects that share one mesh datablock. With **Process Shared Mesh Data Once** on, only the first is processed and later users are reported as skipped.
-- **Equal Region Pack**: Create or mark several seam-delimited islands, enable **Equal Region Pack**, and verify that four islands use a 2x2 grid while each island is scaled into one equal cell with aspect ratio preserved.
+- **Auto Unwrap Grid**: Create or mark several seam-delimited islands, run **Auto Unwrap Grid**, and verify that four islands use a 2x2 grid while each island is scaled into one equal cell with aspect ratio preserved.
+- **Auto Unwrap Pack**: Run **Auto Unwrap Pack** and verify the islands are packed into the 0-1 UV space with Blender Pack Islands rather than equal grid cells.
 - **Straighten Circular Strip Islands**: Use a C-shaped or ring-like UV strip with at least the configured minimum face count, enable the option, and verify it becomes a horizontal strip before final packing.
 
 ## Example Workflow
@@ -234,8 +250,8 @@ Manual cleanup is expected when the model has:
 2. Assign color/material IDs if needed for a Substance Painter mask workflow.
 3. Enable **Mark Longitudinal Seam Helper** for pipes, supports, or cable-heavy meshes if needed.
 4. Optionally enable **Straighten Circular Strip Islands** for C-shaped, ring-like, or arc-like UV strips that should become horizontal strips before packing.
-5. Optionally enable **Equal Region Pack** if each UV island should be assigned to an equal 0-1 region instead of using Blender's normal packer.
-6. Run **Auto Seam + Unwrap**.
+5. Use **Auto Unwrap Grid** for readable equal-region organization, or **Auto Unwrap Pack** for efficient texture-space usage when seams already exist.
+6. Use **Auto Seam + Unwrap** when you want seam detection and the currently configured unwrap/pack settings in one step.
 7. Open the UV Editor and manually adjust important islands.
 8. Repack or fine-tune islands as needed.
 9. Export to your target pipeline.
