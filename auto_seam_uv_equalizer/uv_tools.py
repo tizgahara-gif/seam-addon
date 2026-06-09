@@ -8,11 +8,13 @@ from typing import DefaultDict
 
 import bpy
 
+from .island_tools import straighten_circular_strip_islands_on_object
+
 
 def ensure_uv_layer(obj, uv_map_name: str, create_if_missing: bool) -> bool:
     """Activate the named UV map, optionally creating it when missing."""
     if obj is None or obj.type != "MESH":
-        return False
+        return 0
 
     mesh = obj.data
     uv_layers = mesh.uv_layers
@@ -184,13 +186,16 @@ def unwrap_object(
     margin: float,
     average_islands: bool,
     pack_islands: bool,
+    straighten_circular_strip_islands: bool,
+    circular_strip_min_faces: int,
+    circular_strip_margin: float,
     equal_region_pack: bool,
     equal_region_margin: float,
     equal_region_layout: str,
-) -> bool:
+) -> int:
     """Unwrap one mesh object using the currently marked seams."""
     if obj is None or obj.type != "MESH":
-        return False
+        return 0
 
     try:
         _switch_to_object_mode()
@@ -204,6 +209,16 @@ def unwrap_object(
         bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.uv.unwrap(method=method, margin=margin)
 
+        straightened_count = 0
+        if straighten_circular_strip_islands:
+            bpy.ops.object.mode_set(mode="OBJECT")
+            straightened_count = straighten_circular_strip_islands_on_object(
+                obj,
+                circular_strip_min_faces,
+                circular_strip_margin,
+            )
+            bpy.ops.object.mode_set(mode="EDIT")
+
         if average_islands:
             bpy.ops.uv.average_islands_scale()
 
@@ -214,7 +229,7 @@ def unwrap_object(
             bpy.ops.uv.pack_islands(margin=margin)
 
         bpy.ops.object.mode_set(mode="OBJECT")
-        return True
+        return straightened_count
     except Exception as exc:
         if bpy.ops.object.mode_set.poll():
             bpy.ops.object.mode_set(mode="OBJECT")

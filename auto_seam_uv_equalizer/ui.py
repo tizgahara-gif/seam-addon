@@ -41,6 +41,13 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         else:
             uv_box.prop(settings, "pack_islands")
 
+        post_box = layout.box()
+        post_box.label(text="Post Process")
+        post_box.prop(settings, "straighten_circular_strip_islands")
+        if settings.straighten_circular_strip_islands:
+            post_box.prop(settings, "circular_strip_min_faces")
+            post_box.prop(settings, "circular_strip_margin")
+
         processing_box = layout.box()
         processing_box.label(text="Processing")
         processing_box.prop(settings, "process_shared_mesh_once")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
 
 class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
@@ -71,6 +71,28 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Average Island Scale",
         description="Normalize UV island texel density after unwrapping",
         default=True,
+    )
+
+    straighten_circular_strip_islands: BoolProperty(
+        name="Straighten Circular Strip Islands",
+        description="Straighten circular or arc-shaped UV strip islands after unwrap",
+        default=False,
+    )
+
+    circular_strip_min_faces: IntProperty(
+        name="Circular Strip Min Faces",
+        description="Minimum face count required to treat an island as a circular strip candidate",
+        default=6,
+        min=3,
+        max=256,
+    )
+
+    circular_strip_margin: FloatProperty(
+        name="Circular Strip Margin",
+        description="Optional margin applied inside the normalized strip",
+        default=0.0,
+        min=0.0,
+        max=0.2,
     )
 
     pack_islands: BoolProperty(

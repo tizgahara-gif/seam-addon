@@ -184,6 +184,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
         active, selected, mode = _snapshot_context(context)
         processed = 0
         failures = 0
+        total_straightened = 0
 
         _warn_non_uniform_scale(self, objects)
 
@@ -191,7 +192,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
             _ensure_object_mode()
             for obj in objects:
                 try:
-                    unwrap_object(
+                    total_straightened += unwrap_object(
                         obj,
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
@@ -199,6 +200,9 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
+                        settings.straighten_circular_strip_islands,
+                        settings.circular_strip_min_faces,
+                        settings.circular_strip_margin,
                         settings.equal_region_pack,
                         settings.equal_region_margin,
                         settings.equal_region_layout,
@@ -212,7 +216,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: unwrapped {processed} object(s), marked 0 seam(s), skipped shared {skipped_shared}, failed {failures}.",
+            f"{REPORT_PREFIX}: unwrapped {processed} object(s), marked 0 seam(s), straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -238,6 +242,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
         total_longitudinal = 0
         total_cleared = 0
         failures = 0
+        total_straightened = 0
 
         _warn_non_uniform_scale(self, objects)
 
@@ -256,7 +261,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                     )
                     if settings.longitudinal_seam_helper:
                         total_longitudinal += mark_longitudinal_seam_helper(obj)
-                    unwrap_object(
+                    total_straightened += unwrap_object(
                         obj,
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
@@ -264,6 +269,9 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
+                        settings.straighten_circular_strip_islands,
+                        settings.circular_strip_min_faces,
+                        settings.circular_strip_margin,
                         settings.equal_region_pack,
                         settings.equal_region_margin,
                         settings.equal_region_layout,
@@ -277,7 +285,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, unwrapped {processed}, skipped shared {skipped_shared}, failed {failures}.",
+            f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, unwrapped {processed}, straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
