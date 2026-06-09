@@ -399,6 +399,7 @@ def _circular_strip_parameters(mesh, uv_layer, loop_indices: Iterable[int], min_
         "start_angle": start_angle,
         "angle_range": angle_range,
         "min_radius": min_radius,
+        "mean_radius": mean_radius,
         "radius_range": radius_range,
         "bbox": (min_u, max_u, min_v, max_v),
     }
@@ -414,10 +415,29 @@ def straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin: float
     bbox_width = max_u - min_u
     bbox_height = max_v - min_v
     safe_margin = min(max(margin, 0.0), bbox_width * 0.45, bbox_height * 0.45)
-    target_width = bbox_width - (safe_margin * 2.0)
-    target_height = bbox_height - (safe_margin * 2.0)
+    available_width = bbox_width - (safe_margin * 2.0)
+    available_height = bbox_height - (safe_margin * 2.0)
+    if available_width <= EPSILON or available_height <= EPSILON:
+        return False
+
+    arc_length = parameters["mean_radius"] * parameters["angle_range"]
+    strip_thickness = parameters["radius_range"]
+    target_aspect = arc_length / strip_thickness
+    if target_aspect <= EPSILON:
+        return False
+
+    target_width = available_width
+    target_height = target_width / target_aspect
+    if target_height > available_height:
+        target_height = available_height
+        target_width = target_height * target_aspect
     if target_width <= EPSILON or target_height <= EPSILON:
         return False
+
+    bbox_center_u = (min_u + max_u) * 0.5
+    bbox_center_v = (min_v + max_v) * 0.5
+    target_min_u = bbox_center_u - (target_width * 0.5)
+    target_min_v = bbox_center_v - (target_height * 0.5)
 
     from math import atan2, tau
 
@@ -432,8 +452,8 @@ def straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin: float
             angle += tau
         strip_u = _normalized_angle_from_start(angle, parameters["start_angle"]) / parameters["angle_range"]
         strip_v = (radius - parameters["min_radius"]) / parameters["radius_range"]
-        uv.x = min_u + safe_margin + (max(0.0, min(1.0, strip_u)) * target_width)
-        uv.y = min_v + safe_margin + (max(0.0, min(1.0, strip_v)) * target_height)
+        uv.x = target_min_u + (max(0.0, min(1.0, strip_u)) * target_width)
+        uv.y = target_min_v + (max(0.0, min(1.0, strip_v)) * target_height)
 
     return True
 
