@@ -1,0 +1,43 @@
+name: Package Blender Add-on
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "auto_seam_uv_equalizer/**"
+      - "scripts/**"
+      - ".github/workflows/package-addon.yml"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile Python files
+        run: |
+          python -m compileall auto_seam_uv_equalizer
+
+      - name: Remove generated cache files
+        run: |
+          find . -name "__pycache__" -type d -prune -exec rm -rf {} +
+          find . -name "*.pyc" -delete
+
+      - name: Create add-on zip
+        run: |
+          zip -r auto_seam_uv_equalizer.zip auto_seam_uv_equalizer -x "*/__pycache__/*" "*.pyc"
+
+      - name: Verify zip structure
+        run: |
+          unzip -l auto_seam_uv_equalizer.zip
+          unzip -l auto_seam_uv_equalizer.zip | grep "auto_seam_uv_equalizer/__init__.py"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto_seam_uv_equalizer
+          path: auto_seam_uv_equalizer.zip
