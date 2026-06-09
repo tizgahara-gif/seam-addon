@@ -126,31 +126,6 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default="SQUARE_GRID",
     )
 
-    arrange_selected_grid_margin: FloatProperty(
-        name="Selected Grid Margin",
-        description="Margin inside each grid cell when arranging selected UV islands",
-        default=0.02,
-        min=0.0,
-        max=0.2,
-    )
-
-    arrange_selected_grid_layout: EnumProperty(
-        name="Selected Grid Layout",
-        description="Grid layout for arranging selected UV islands without unwrapping",
-        items=(
-            ("SQUARE_GRID", "Square Grid", "Use a near-square grid layout"),
-            ("HORIZONTAL_STRIP", "Horizontal Strip", "Divide UV space horizontally"),
-            ("VERTICAL_STRIP", "Vertical Strip", "Divide UV space vertically"),
-        ),
-        default="SQUARE_GRID",
-    )
-
-    duplicate_uv_before_arrange: BoolProperty(
-        name="Duplicate UV Before Arrange",
-        description="Duplicate the active UV map before arranging selected UV islands",
-        default=False,
-    )
-
     process_shared_mesh_once: BoolProperty(
         name="Process Shared Mesh Data Once",
         description="Process only the first selected object for each shared mesh datablock",

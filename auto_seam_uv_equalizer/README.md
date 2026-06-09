@@ -13,7 +13,6 @@ This add-on is intended to reduce repetitive setup work for VRC accessories, har
 - Shared mesh datablock processing option.
 - Equal Region Pack for assigning seam-delimited UV islands to equal 0-1 regions.
 - Straighten Circular Strip Islands for converting C-shaped, ring-like, or arc-like UV islands into horizontal strips before packing.
-- Arrange Selected UV Islands to Grid for moving only selected existing UV islands without unwrap or pack operations.
 - Clearer zip installation instructions.
 
 ## Installation
@@ -119,7 +118,7 @@ auto_seam_uv_equalizer/README.md
 4. The zip must not contain an extra parent folder such as `seam-addon-main/`.
 5. This README documents that GitHub's `Code > Download ZIP` source archive should not be used as the add-on distribution.
 6. This README documents how to download the GitHub Actions artifact and how to run the Windows and macOS/Linux package scripts.
-7. `scripts/verify_package.py` must pass against the generated zip, confirming the zip itself contains key implementation tokens such as **Arrange Selected UV Islands to Grid**.
+7. `scripts/verify_package.py` must pass against the generated zip, confirming the zip itself contains required implementation tokens and no removed selected-UV grid arrangement tokens.
 
 ## Usage
 
@@ -132,7 +131,6 @@ auto_seam_uv_equalizer/README.md
    - **Auto Unwrap Only**: unwraps using the current seams.
    - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and then either uses Equal Region Pack or Blender Pack Islands.
    - **Clear Seams**: removes seam marks from selected mesh objects.
-   - **Arrange Selected UV Islands to Grid**: in Edit Mode, arranges only the selected UV islands into equal 0-1 grid cells without unwrapping or packing all islands.
 
 ## Settings
 
@@ -161,13 +159,6 @@ auto_seam_uv_equalizer/README.md
 - **Pack Islands**: Packs islands into the 0-1 UV space after unwrap when **Equal Region Pack** is disabled.
 
 
-### Selected UV Arrange
-
-- **Selected Grid Margin**: Padding applied inside each grid cell when arranging selected UV islands. The default is `0.02`.
-- **Selected Grid Layout**: Chooses the selected-island grid layout: **Square Grid**, **Horizontal Strip**, or **Vertical Strip**.
-- **Duplicate UV Before Arrange**: Duplicates the active UV map before moving selected UV islands, preserving the original UV map. The duplicate name is based on the active UV map name plus `_Grid`.
-- **Arrange Selected UV Islands to Grid**: Requires Edit Mode and an active UV map. It detects islands from selected UV loops, moves/scales only those selected islands, preserves island shape/aspect ratio, and never calls `bpy.ops.uv.unwrap()` or `bpy.ops.uv.pack_islands()`. Non-selected UV islands are not modified.
-
 ### Processing
 
 - **Process Shared Mesh Data Once**: When enabled, if multiple selected objects use the same mesh datablock, only the first object is processed and later shared users are skipped. The add-on reports skipped objects. When disabled, every selected object is processed, but shared mesh datablocks still produce a warning.
@@ -182,7 +173,6 @@ auto_seam_uv_equalizer/README.md
 - **Shared mesh users**: Keep **Process Shared Mesh Data Once** enabled unless you intentionally want to run operators once per object selection.
 - **Circular / arc strips**: Enable **Straighten Circular Strip Islands** only when C-shaped, ring-shaped, or arc-shaped UV islands should be normalized into horizontal strips before packing.
 - **Region-based layouts**: Enable **Equal Region Pack** when each seam-delimited UV island should occupy its own equal region of the 0-1 UV space.
-- **Existing UV cleanup**: Use **Arrange Selected UV Islands to Grid** in Edit Mode when you want to reorganize selected existing UV islands without changing non-selected UVs or re-unwrapping the mesh.
 
 
 
@@ -196,33 +186,9 @@ Use it only when needed for circular trim, rings, pipes, cables, or arc-shaped U
 
 The detector skips islands below **Circular Strip Min Faces**, islands without enough UV points, islands with too little radius variation, and islands that do not look sufficiently arc-like. If one island fails during this post-process, other islands continue processing.
 
-## Arrange Selected UV Islands to Grid
+## Removed Features
 
-This tool arranges only the selected UV islands into equal grid cells in the 0-1 UV space.
-
-It does not unwrap the mesh.
-It does not call Pack Islands.
-It does not modify unselected UV islands.
-
-### Usage
-
-1. Open the UV Editor.
-2. Enter Edit Mode.
-3. Select multiple UV islands.
-4. Open `View3D > Sidebar > Auto UV`.
-5. Set `Selected Grid Layout` and `Selected Grid Margin`.
-6. Click `Arrange Selected UV Islands to Grid`.
-
-### Layouts
-
-- `Square Grid`: uses a near-square layout such as 2x2 for 4 islands.
-- `Horizontal Strip`: divides the UV space horizontally.
-- `Vertical Strip`: divides the UV space vertically.
-
-### Notes
-
-If `Duplicate UV Before Arrange` is enabled, the active UV map is duplicated before arranging.
-Unselected UV islands are not modified.
+The previous selected-UV grid arrangement tool was removed because it depended on UV Editor selection state, was sensitive to UV Sync Selection behavior, and did not match the object-based UV arrangement workflow expected by users. No replacement arrangement tool is included in this version.
 
 ## Planned v0.3 Feature
 
@@ -233,7 +199,6 @@ Unselected UV islands are not modified.
 - Longitudinal seam helper is heuristic, not a perfect cylinder detector.
 - Equal Region Pack uses seam-delimited face islands, so incorrect or missing seams can produce unexpected regions.
 - Straighten Circular Strip Islands is a heuristic for circular or arc-like strips and can distort complex or hand-edited UVs.
-- Arrange Selected UV Islands to Grid depends on UV loop selection and UV island connectivity; partially selected islands are treated as selected islands.
 - Important faces may still require manual UV editing.
 - This add-on reduces UV setup labor but does not guarantee final production-ready UVs.
 - It does not choose aesthetically hidden seam locations for faces, characters, or hero surfaces.
@@ -262,7 +227,6 @@ Manual cleanup is expected when the model has:
 - **Shared Mesh Data**: Select multiple objects that share one mesh datablock. With **Process Shared Mesh Data Once** on, only the first is processed and later users are reported as skipped.
 - **Equal Region Pack**: Create or mark several seam-delimited islands, enable **Equal Region Pack**, and verify that four islands use a 2x2 grid while each island is scaled into one equal cell with aspect ratio preserved.
 - **Straighten Circular Strip Islands**: Use a C-shaped or ring-like UV strip with at least the configured minimum face count, enable the option, and verify it becomes a horizontal strip before final packing.
-- **Arrange Selected UV Islands to Grid**: In Edit Mode with an active UV map, select several UV islands in the UV Editor, run the action, and verify only selected islands move into equal grid cells while non-selected islands remain unchanged.
 
 ## Example Workflow
 
@@ -273,6 +237,5 @@ Manual cleanup is expected when the model has:
 5. Optionally enable **Equal Region Pack** if each UV island should be assigned to an equal 0-1 region instead of using Blender's normal packer.
 6. Run **Auto Seam + Unwrap**.
 7. Open the UV Editor and manually adjust important islands.
-8. If needed, select existing UV islands in Edit Mode and run **Arrange Selected UV Islands to Grid** to redistribute only those islands without unwrap or pack operations.
-9. Repack or fine-tune islands as needed.
-10. Export to your target pipeline.
+8. Repack or fine-tune islands as needed.
+9. Export to your target pipeline.

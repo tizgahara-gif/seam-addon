@@ -9,30 +9,67 @@ from pathlib import Path
 
 REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
     "auto_seam_uv_equalizer/properties.py": (
-        "arrange_selected_grid_margin",
-        "arrange_selected_grid_layout",
-        "duplicate_uv_before_arrange",
+        "longitudinal_seam_helper",
+        "straighten_circular_strip_islands",
+        "circular_strip_min_faces",
+        "circular_strip_margin",
+        "process_shared_mesh_once",
+    ),
+    "auto_seam_uv_equalizer/seam_detection.py": (
+        "def mark_auto_seams",
+        "def mark_longitudinal_seam_helper",
     ),
     "auto_seam_uv_equalizer/island_tools.py": (
-        "def find_selected_uv_islands",
-        "def compute_grid_cells",
-        "def fit_uv_island_to_cell",
-        "def arrange_selected_uv_islands_to_grid",
+        "def find_uv_islands",
+        "def straighten_circular_strip_island",
+        "def straighten_circular_strip_islands_on_object",
+    ),
+    "auto_seam_uv_equalizer/uv_tools.py": (
+        "def unwrap_object",
+        "straighten_circular_strip_islands_on_object",
+        "def equal_region_pack_object",
     ),
     "auto_seam_uv_equalizer/operators.py": (
-        "class AUTOSEAMUV_OT_arrange_selected_uv_islands_to_grid",
-        'bl_idname = "autoseamuv.arrange_selected_uv_islands_to_grid"',
-    ),
-    "auto_seam_uv_equalizer/__init__.py": (
-        "operators.AUTOSEAMUV_OT_arrange_selected_uv_islands_to_grid",
+        'bl_label = "Auto Unwrap Only"',
+        'bl_label = "Auto Seam + Unwrap"',
+        "mark_longitudinal_seam_helper",
     ),
     "auto_seam_uv_equalizer/ui.py": (
-        "autoseamuv.arrange_selected_uv_islands_to_grid",
+        "straighten_circular_strip_islands",
+        "longitudinal_seam_helper",
+        'actions_box.operator("autoseamuv.unwrap_only"',
+        'actions_box.operator("autoseamuv.mark_and_unwrap"',
     ),
     "auto_seam_uv_equalizer/README.md": (
-        "Arrange Selected UV Islands to Grid",
+        "Auto Seam + Unwrap",
+        "Auto Unwrap Only",
+        "Mark Longitudinal Seam Helper",
+        "Straighten Circular Strip Islands",
+        "Material UV Scale Rules",
     ),
 }
+
+REMOVED_FEATURE_LABEL = "Arrange " + "Selected UV Islands to Grid"
+REMOVED_OPERATOR_CLASS = "AUTOSEAMUV_OT_" + "arrange" + "_selected_uv_islands_to_grid"
+REMOVED_OPERATOR_ID = "autoseamuv." + "arrange" + "_selected_uv_islands_to_grid"
+REMOVED_MARGIN_PROP = "arrange" + "_selected_grid_margin"
+REMOVED_LAYOUT_PROP = "arrange" + "_selected_grid_layout"
+REMOVED_DUPLICATE_PROP = "duplicate_uv_before_" + "arrange"
+
+FORBIDDEN_TOKENS = (
+    REMOVED_FEATURE_LABEL,
+    REMOVED_OPERATOR_CLASS,
+    REMOVED_OPERATOR_ID,
+    REMOVED_MARGIN_PROP,
+    REMOVED_LAYOUT_PROP,
+    REMOVED_DUPLICATE_PROP,
+    "def find" + "_selected_uv_islands",
+    "def compute" + "_grid_cells",
+    "def fit_uv" + "_island_to_cell",
+    "def " + "arrange" + "_selected_uv_islands_to_grid",
+)
+
+TEXT_EXTENSIONS = (".py", ".md", ".yml", ".yaml", ".ps1", ".sh")
 
 
 def _read_zip_text(archive: zipfile.ZipFile, member_name: str) -> str:
@@ -66,6 +103,17 @@ def verify_package(zip_path: Path) -> None:
                 if token not in text:
                     raise RuntimeError(f"Missing token in {member_name}: {token}")
                 print(f"OK: {member_name} contains {token}")
+
+        text_member_names = [name for name in names if name.endswith(TEXT_EXTENSIONS)]
+        for token in FORBIDDEN_TOKENS:
+            hits = []
+            for member_name in text_member_names:
+                text = _read_zip_text(archive, member_name)
+                if token in text:
+                    hits.append(member_name)
+            if hits:
+                raise RuntimeError(f"Forbidden removed-feature token still exists: {token} -> {hits}")
+            print(f"OK: removed token absent from package: {token}")
 
     print(f"Package verification passed: {zip_path}")
 

@@ -52,20 +52,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         processing_box.label(text="Processing")
         processing_box.prop(settings, "process_shared_mesh_once")
 
-        arrange_box = layout.box()
-        arrange_box.label(text="Selected UV Arrange")
-        arrange_box.prop(settings, "arrange_selected_grid_margin")
-        arrange_box.prop(settings, "arrange_selected_grid_layout")
-        arrange_box.prop(settings, "duplicate_uv_before_arrange")
-
         actions_box = layout.box()
         actions_box.label(text="Actions")
         actions_box.operator("autoseamuv.mark_only", text="Auto Mark Seams Only", icon="MOD_UVPROJECT")
         actions_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap Only", icon="UV")
         actions_box.operator("autoseamuv.mark_and_unwrap", text="Auto Seam + Unwrap", icon="PLAY")
-        actions_box.operator(
-            "autoseamuv.arrange_selected_uv_islands_to_grid",
-            text="Arrange Selected UV Islands to Grid",
-            icon="UV",
-        )
         actions_box.operator("autoseamuv.clear_seams", text="Clear Seams", icon="X")

@@ -23,7 +23,6 @@ CLASSES = (
     operators.AUTOSEAMUV_OT_unwrap_only,
     operators.AUTOSEAMUV_OT_mark_and_unwrap,
     operators.AUTOSEAMUV_OT_clear_seams,
-    operators.AUTOSEAMUV_OT_arrange_selected_uv_islands_to_grid,
     ui.AUTOSEAMUV_PT_panel,
 )
 
