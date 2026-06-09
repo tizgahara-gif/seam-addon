@@ -15,7 +15,7 @@ bl_info = {
 import bpy
 from bpy.props import PointerProperty
 
-from . import island_tools, operators, properties, seam_detection, ui, uv_tools
+from . import operators, properties, seam_detection, ui, uv_tools
 
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
@@ -23,6 +23,7 @@ CLASSES = (
     operators.AUTOSEAMUV_OT_unwrap_only,
     operators.AUTOSEAMUV_OT_mark_and_unwrap,
     operators.AUTOSEAMUV_OT_clear_seams,
+    operators.AUTOSEAMUV_OT_arrange_selected_uv_islands_to_grid,
     ui.AUTOSEAMUV_PT_panel,
 )
 

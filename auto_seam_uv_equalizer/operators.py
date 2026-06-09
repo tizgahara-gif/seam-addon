@@ -5,6 +5,7 @@ from __future__ import annotations
 import bpy
 
 from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
+from .island_tools import arrange_selected_uv_islands_to_grid
 from .uv_tools import unwrap_object
 
 
@@ -114,13 +115,6 @@ def _objects_for_processing(operator, objects: list[bpy.types.Object], process_s
     return process_objects, len(skipped_names)
 
 
-def _warning_reporter(operator):
-    def report_warning(message: str) -> None:
-        operator.report({"WARNING"}, f"{REPORT_PREFIX}: {message}")
-
-    return report_warning
-
-
 class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
     """Automatically mark seams on selected mesh objects."""
 
@@ -205,8 +199,9 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
-                        settings.material_scale_rules,
-                        _warning_reporter(self),
+                        settings.equal_region_pack,
+                        settings.equal_region_margin,
+                        settings.equal_region_layout,
                     )
                     processed += 1
                 except Exception as exc:
@@ -269,8 +264,9 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.margin,
                         settings.average_islands,
                         settings.pack_islands,
-                        settings.material_scale_rules,
-                        _warning_reporter(self),
+                        settings.equal_region_pack,
+                        settings.equal_region_margin,
+                        settings.equal_region_layout,
                     )
                     processed += 1
                 except Exception as exc:
@@ -323,3 +319,45 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
             f"{REPORT_PREFIX}: cleared {total_cleared} seam(s), processed {processed}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+class AUTOSEAMUV_OT_arrange_selected_uv_islands_to_grid(bpy.types.Operator):
+    """Arrange selected UV islands into equal grid cells without unwrapping."""
+
+    bl_idname = "autoseamuv.arrange_selected_uv_islands_to_grid"
+    bl_label = "Arrange Selected UV Islands to Grid"
+    bl_description = "Arrange selected UV islands into equal grid cells without unwrapping"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        obj = context.view_layer.objects.active
+        if obj is None or obj.type != "MESH":
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: active object must be a mesh.")
+            return {"CANCELLED"}
+
+        if context.mode != "EDIT_MESH" or obj.mode != "EDIT":
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: Arrange Selected UV Islands to Grid requires Edit Mode.")
+            return {"CANCELLED"}
+
+        if obj.data.uv_layers.active is None:
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: {obj.name} has no active UV map.")
+            return {"CANCELLED"}
+
+        settings = _get_settings(context)
+
+        try:
+            arranged_count = arrange_selected_uv_islands_to_grid(
+                obj,
+                settings.arrange_selected_grid_margin,
+                settings.arrange_selected_grid_layout,
+                settings.duplicate_uv_before_arrange,
+            )
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+        self.report(
+            {"INFO"},
+            f"{REPORT_PREFIX}: arranged {arranged_count} selected UV island(s) on {obj.name}.",
+        )
+        return {"FINISHED"}
