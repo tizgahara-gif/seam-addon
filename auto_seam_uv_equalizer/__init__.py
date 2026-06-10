@@ -23,6 +23,7 @@ CLASSES = (
     operators.AUTOSEAMUV_OT_unwrap_only,
     operators.AUTOSEAMUV_OT_auto_unwrap_pack,
     operators.AUTOSEAMUV_OT_mark_and_unwrap,
+    operators.AUTOSEAMUV_OT_atlas_pack_selected_objects,
     operators.AUTOSEAMUV_OT_clear_seams,
     ui.AUTOSEAMUV_PT_panel,
 )

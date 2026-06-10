@@ -52,10 +52,18 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         processing_box.label(text="Processing")
         processing_box.prop(settings, "process_shared_mesh_once")
 
+        atlas_box = layout.box()
+        atlas_box.label(text="Atlas Pack")
+        atlas_box.prop(settings, "atlas_texture_size")
+        atlas_box.prop(settings, "atlas_pixel_margin")
+        atlas_box.prop(settings, "atlas_average_island_scale")
+        atlas_box.prop(settings, "atlas_pack_rotate")
+
         actions_box = layout.box()
         actions_box.label(text="Actions")
         actions_box.operator("autoseamuv.mark_only", text="Auto Mark Seams Only", icon="MOD_UVPROJECT")
         actions_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap Grid", icon="UV")
         actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap Pack", icon="UV")
         actions_box.operator("autoseamuv.mark_and_unwrap", text="Auto Seam + Unwrap", icon="PLAY")
+        actions_box.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects", icon="UV")
         actions_box.operator("autoseamuv.clear_seams", text="Clear Seams", icon="X")

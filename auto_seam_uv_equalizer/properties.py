@@ -126,6 +126,35 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default="SQUARE_GRID",
     )
 
+
+    atlas_texture_size: IntProperty(
+        name="Atlas Texture Size",
+        description="Texture size used to convert atlas pixel margin into UV margin",
+        default=2048,
+        min=16,
+        max=16384,
+    )
+
+    atlas_pixel_margin: IntProperty(
+        name="Atlas Pixel Margin",
+        description="Pixel margin used when atlas packing selected objects",
+        default=1,
+        min=0,
+        max=64,
+    )
+
+    atlas_average_island_scale: BoolProperty(
+        name="Average Island Scale Before Atlas Pack",
+        description="Average island scale before packing selected objects into one atlas",
+        default=True,
+    )
+
+    atlas_pack_rotate: BoolProperty(
+        name="Allow Rotation",
+        description="Allow UV island rotation during atlas packing",
+        default=True,
+    )
+
     process_shared_mesh_once: BoolProperty(
         name="Process Shared Mesh Data Once",
         description="Process only the first selected object for each shared mesh datablock",

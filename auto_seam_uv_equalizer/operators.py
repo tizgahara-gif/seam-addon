@@ -5,7 +5,7 @@ from __future__ import annotations
 import bpy
 
 from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
-from .uv_tools import unwrap_object, unwrap_object_pack
+from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -345,6 +345,88 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
         self.report(
             {"INFO"},
             f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, unwrapped {processed}, straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
+        )
+        return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
+    """Pack active UV maps from selected mesh objects into one shared 0-1 atlas."""
+
+    bl_idname = "autoseamuv.atlas_pack_selected_objects"
+    bl_label = "Atlas Pack Selected Objects"
+    bl_description = "Pack all UV islands from selected mesh objects into one 0-1 UV atlas without joining objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected_objects = _selected_visible_mesh_objects(context)
+        if not selected_objects:
+            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            return {"CANCELLED"}
+
+        settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
+        active, selected, mode = _snapshot_context(context)
+        processed = 0
+        skipped_empty = 0
+        failures = 0
+        valid_objects: list[bpy.types.Object] = []
+
+        try:
+            _ensure_object_mode()
+            for obj in objects:
+                try:
+                    if len(obj.data.polygons) == 0:
+                        skipped_empty += 1
+                        self.report({"WARNING"}, f"Atlas Pack Selected Objects: skipped {obj.name}; mesh has no faces.")
+                        continue
+                    if not ensure_uv_layer(obj, settings.uv_map_name, settings.create_uv_if_missing):
+                        failures += 1
+                        self.report(
+                            {"ERROR"},
+                            f"Atlas Pack Selected Objects: {obj.name} has no UV map '{settings.uv_map_name}' and Create UV If Missing is disabled.",
+                        )
+                        continue
+                    valid_objects.append(obj)
+                except Exception as exc:
+                    failures += 1
+                    self.report({"ERROR"}, f"Atlas Pack Selected Objects: failed to prepare {obj.name}: {exc}")
+
+            if not valid_objects:
+                self.report(
+                    {"WARNING"},
+                    f"Atlas Pack Selected Objects: no valid mesh objects to pack, skipped empty {skipped_empty}, skipped shared {skipped_shared}, failed {failures}.",
+                )
+                return {"CANCELLED"}
+
+            for obj in context.view_layer.objects:
+                obj.select_set(False)
+            for obj in valid_objects:
+                obj.select_set(True)
+            context.view_layer.objects.active = valid_objects[0]
+
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_mode(type="FACE")
+            bpy.ops.mesh.select_all(action="SELECT")
+
+            if settings.atlas_average_island_scale:
+                bpy.ops.uv.average_islands_scale()
+
+            atlas_margin = settings.atlas_pixel_margin / settings.atlas_texture_size
+            try:
+                bpy.ops.uv.pack_islands(margin=atlas_margin, rotate=settings.atlas_pack_rotate)
+            except TypeError:
+                bpy.ops.uv.pack_islands(margin=atlas_margin)
+
+            processed = len(valid_objects)
+        except Exception as exc:
+            failures += len(valid_objects) if valid_objects else 1
+            self.report({"ERROR"}, f"Atlas Pack Selected Objects: failed to atlas pack selected objects: {exc}")
+        finally:
+            _restore_context(context, active, selected, mode)
+
+        self.report(
+            {"INFO"},
+            f"Atlas Pack Selected Objects: packed {processed} object(s), skipped empty {skipped_empty}, skipped shared {skipped_shared}, failed {failures}.",
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
