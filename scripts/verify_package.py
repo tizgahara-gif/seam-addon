@@ -18,6 +18,9 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "atlas_pixel_margin",
         "atlas_average_island_scale",
         "atlas_pack_rotate",
+        "grid_fit_to_cell",
+        "grid_cell_margin",
+        "grid_cell_fill_ratio",
     ),
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",
@@ -53,6 +56,9 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         'actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap Pack"',
         'actions_box.operator("autoseamuv.mark_and_unwrap"',
         'actions_box.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects"',
+        "grid_fit_to_cell",
+        "grid_cell_margin",
+        "grid_cell_fill_ratio",
     ),
     "auto_seam_uv_equalizer/README.md": (
         "Auto Seam + Unwrap",
@@ -62,6 +68,8 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "Mark Longitudinal Seam Helper",
         "Straighten Circular Strip Islands",
         "Material UV Scale Rules",
+        "Fit Islands to Grid Cells",
+        "Grid Cell Margin",
     ),
 }
 

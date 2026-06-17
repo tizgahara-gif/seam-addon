@@ -162,6 +162,11 @@ auto_seam_uv_equalizer/README.md
 - **Equal Region Layout**: Chooses the equal-cell layout: **Square Grid**, **Horizontal Strip**, or **Vertical Strip**. Four islands in **Square Grid** use a 2x2 layout.
 - **Pack Islands**: Packs islands into the 0-1 UV space after unwrap when **Equal Region Pack** is disabled.
 
+### Grid Settings
+
+- **Fit Islands to Grid Cells**: Scales each **Auto Unwrap Grid** island to fill its assigned grid cell while preserving aspect ratio. The default is enabled.
+- **Grid Cell Margin**: Padding inside each **Auto Unwrap Grid** cell. The default is `0.02`.
+- **Grid Cell Fill Ratio**: Optional multiplier for fitted island scale inside the cell. The default is `1.0`.
 
 ### Atlas Pack
 
@@ -193,7 +198,9 @@ auto_seam_uv_equalizer/README.md
 
 Unwraps selected mesh objects and places UV islands into equal grid regions. Use this when you want predictable, readable UV placement by island or part.
 
-Auto Unwrap Grid is for organization. It does not use Blender's efficient Pack Islands placement; it assigns seam-delimited islands to equal regions using the Equal Region margin/layout settings.
+Auto Unwrap Grid is for organization. It does not use Blender's efficient Pack Islands placement; it assigns seam-delimited islands to equal regions using the Equal Region layout and Grid Cell settings.
+
+Auto Unwrap Grid places each UV island into a grid cell and can scale each island to fill its cell while preserving aspect ratio. This may change texel density between islands. Use Auto Unwrap Pack when texture-space efficiency is preferred.
 
 ## Auto Unwrap Pack
 

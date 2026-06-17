@@ -206,8 +206,10 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.circular_strip_min_faces,
                         settings.circular_strip_margin,
                         True,
-                        settings.equal_region_margin,
+                        settings.grid_cell_margin,
                         settings.equal_region_layout,
+                        settings.grid_fit_to_cell,
+                        settings.grid_cell_fill_ratio,
                     )
                     processed += 1
                 except Exception as exc:

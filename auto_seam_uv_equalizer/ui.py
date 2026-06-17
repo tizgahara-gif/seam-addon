@@ -41,6 +41,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         else:
             uv_box.prop(settings, "pack_islands")
 
+        grid_box = layout.box()
+        grid_box.label(text="Grid Settings")
+        grid_box.prop(settings, "grid_fit_to_cell")
+        grid_box.prop(settings, "grid_cell_margin")
+        grid_box.prop(settings, "grid_cell_fill_ratio")
+
         post_box = layout.box()
         post_box.label(text="Post Process")
         post_box.prop(settings, "straighten_circular_strip_islands")

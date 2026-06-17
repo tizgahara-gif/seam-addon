@@ -119,7 +119,13 @@ def _uv_bbox(uv_layer, loop_indices: list[int]) -> tuple[float, float, float, fl
     return min_u, max_u, min_v, max_v
 
 
-def equal_region_pack_object(obj, margin: float, layout: str) -> int:
+def equal_region_pack_object(
+    obj,
+    margin: float,
+    layout: str,
+    fit_to_cell: bool = True,
+    fill_ratio: float = 1.0,
+) -> int:
     """Place each seam-delimited UV island into an equal 0-1 UV cell."""
     if obj is None or obj.type != "MESH":
         return 0
@@ -142,8 +148,9 @@ def equal_region_pack_object(obj, margin: float, layout: str) -> int:
     safe_margin = min(max(margin, 0.0), cell_width * 0.45, cell_height * 0.45)
     target_width = cell_width - (safe_margin * 2.0)
     target_height = cell_height - (safe_margin * 2.0)
+    safe_fill_ratio = min(max(fill_ratio, 0.1), 1.0)
 
-    if target_width <= 0.0 or target_height <= 0.0:
+    if target_width <= 1.0e-8 or target_height <= 1.0e-8:
         raise RuntimeError("Equal Region Margin is too large for the selected layout.")
 
     for island_index, face_indices in enumerate(islands):
@@ -156,9 +163,13 @@ def equal_region_pack_object(obj, margin: float, layout: str) -> int:
         source_height = max_v - min_v
 
         if source_width <= 1.0e-8 or source_height <= 1.0e-8:
-            raise RuntimeError(f"Equal Region Pack found a zero-size UV island at index {island_index}.")
+            continue
 
-        scale = min(target_width / source_width, target_height / source_height)
+        scale = 1.0
+        if fit_to_cell or source_width > target_width or source_height > target_height:
+            scale = min(target_width / source_width, target_height / source_height)
+        if fit_to_cell:
+            scale *= safe_fill_ratio
         source_center_u = (min_u + max_u) * 0.5
         source_center_v = (min_v + max_v) * 0.5
 
@@ -192,6 +203,8 @@ def unwrap_object(
     equal_region_pack: bool,
     equal_region_margin: float,
     equal_region_layout: str,
+    grid_fit_to_cell: bool = True,
+    grid_cell_fill_ratio: float = 1.0,
 ) -> int:
     """Unwrap one mesh object using the currently marked seams."""
     if obj is None or obj.type != "MESH":
@@ -224,7 +237,13 @@ def unwrap_object(
 
         if equal_region_pack:
             bpy.ops.object.mode_set(mode="OBJECT")
-            equal_region_pack_object(obj, equal_region_margin, equal_region_layout)
+            equal_region_pack_object(
+                obj,
+                equal_region_margin,
+                equal_region_layout,
+                grid_fit_to_cell,
+                grid_cell_fill_ratio,
+            )
         elif pack_islands:
             bpy.ops.uv.pack_islands(margin=margin)
 

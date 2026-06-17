@@ -127,6 +127,29 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
 
+    grid_fit_to_cell: BoolProperty(
+        name="Fit Islands to Grid Cells",
+        description="Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio",
+        default=True,
+    )
+
+    grid_cell_margin: FloatProperty(
+        name="Grid Cell Margin",
+        description="Margin inside each Auto Unwrap Grid cell",
+        default=0.02,
+        min=0.0,
+        max=0.2,
+    )
+
+    grid_cell_fill_ratio: FloatProperty(
+        name="Grid Cell Fill Ratio",
+        description="Additional scale multiplier for fitted islands inside Auto Unwrap Grid cells",
+        default=1.0,
+        min=0.1,
+        max=1.0,
+    )
+
+
     atlas_texture_size: IntProperty(
         name="Atlas Texture Size",
         description="Texture size used to convert atlas pixel margin into UV margin",
