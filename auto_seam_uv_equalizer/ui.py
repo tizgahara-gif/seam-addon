@@ -59,11 +59,17 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         processing_box.prop(settings, "process_shared_mesh_once")
 
         atlas_box = layout.box()
-        atlas_box.label(text="Atlas Pack")
+        atlas_box.label(text="Pack")
         atlas_box.prop(settings, "atlas_texture_size")
         atlas_box.prop(settings, "atlas_pixel_margin")
         atlas_box.prop(settings, "atlas_average_island_scale")
         atlas_box.prop(settings, "atlas_pack_rotate")
+
+        validation_box = layout.box()
+        validation_box.label(text="Validation")
+        validation_box.prop(settings, "overlap_epsilon")
+        validation_box.prop(settings, "check_overlap_across_objects")
+        validation_box.prop(settings, "assign_overlap_debug_material")
 
         actions_box = layout.box()
         actions_box.label(text="Actions")
@@ -72,4 +78,6 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap Pack", icon="UV")
         actions_box.operator("autoseamuv.mark_and_unwrap", text="Auto Seam + Unwrap", icon="PLAY")
         actions_box.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects", icon="UV")
+        actions_box.operator("autoseamuv.check_uv_overlap", text="Check UV Overlap", icon="VIEWZOOM")
+        actions_box.operator("autoseamuv.clear_uv_overlap_highlight", text="Clear UV Overlap Highlight", icon="BRUSH_DATA")
         actions_box.operator("autoseamuv.clear_seams", text="Clear Seams", icon="X")

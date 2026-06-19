@@ -173,9 +173,29 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
     atlas_pack_rotate: BoolProperty(
-        name="Allow Rotation",
+        name="Allow Atlas Rotation",
         description="Allow UV island rotation during atlas packing",
         default=True,
+    )
+
+    overlap_epsilon: FloatProperty(
+        name="Overlap Epsilon",
+        description="Minimum positive UV area required to treat triangle intersections as overlap",
+        default=1.0e-6,
+        min=0.0,
+        max=0.01,
+    )
+
+    check_overlap_across_objects: BoolProperty(
+        name="Check Across Objects",
+        description="Detect overlaps between different selected objects as well as within each object",
+        default=True,
+    )
+
+    assign_overlap_debug_material: BoolProperty(
+        name="Assign Overlap Debug Material",
+        description="Assign MAT_UV_OVERLAP_DEBUG to detected overlapping faces as a destructive visual aid",
+        default=False,
     )
 
     process_shared_mesh_once: BoolProperty(
