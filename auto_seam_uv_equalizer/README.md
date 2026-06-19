@@ -198,7 +198,7 @@ auto_seam_uv_equalizer/README.md
 
 Unwraps selected mesh objects and places UV islands into equal grid regions. Use this when you want predictable, readable UV placement by island or part.
 
-Auto Unwrap Grid is for organization. It does not use Blender's efficient Pack Islands placement; it assigns seam-delimited islands to equal regions using the Equal Region layout and Grid Cell settings.
+Auto Unwrap Grid is for readable organization. It does not use Blender's efficient Pack Islands placement; it assigns seam-delimited islands to equal regions using the Equal Region layout and Grid Cell settings.
 
 Auto Unwrap Grid places each UV island into a grid cell and can scale each island to fill its cell while preserving aspect ratio. This may change texel density between islands. Use Auto Unwrap Pack when texture-space efficiency is preferred.
 
@@ -230,10 +230,6 @@ The detector skips islands below **Circular Strip Min Faces**, islands without e
 
 The previous selected-UV grid arrangement tool was removed because it depended on UV Editor selection state, was sensitive to UV Sync Selection behavior, and did not match the object-based UV arrangement workflow expected by users. No replacement arrangement tool is included in this version.
 
-## Planned v0.3 Feature
-
-- **Material UV Scale Rules** are intentionally not implemented in v0.2. A future v0.3 may add a text input such as `MAT_BluePanel=1.5,MAT_Cable=0.6` to scale UV islands by representative material after unwrap.
-
 ## Known Limitations
 
 - Longitudinal seam helper is heuristic, not a perfect cylinder detector.
@@ -243,7 +239,7 @@ The previous selected-UV grid arrangement tool was removed because it depended o
 - This add-on reduces UV setup labor but does not guarantee final production-ready UVs.
 - It does not choose aesthetically hidden seam locations for faces, characters, or hero surfaces.
 - It does not automatically detect every important panel or every cable; use manual cleanup where needed.
-- It does not rectangle-align islands, straighten strips, support UDIMs, export to Substance Painter, or perform advanced overlap detection.
+- It does not rectangle-align islands, straighten strips, support UDIMs, export to Substance Painter, or perform texture-image baking.
 - Cylinders usually get seams around cap boundaries from angle detection, but a vertical side seam may not be created by angle alone. Enable **Mark Longitudinal Seam Helper** or add a side seam manually when the cylinder needs to unfold as a rectangular strip.
 - The add-on does not apply object scale. Non-uniform scale can affect perceived texel density, so review UVs manually when objects are scaled unevenly.
 - If multiple selected objects share the same mesh datablock, seam and UV changes affect all users of that mesh. The add-on can skip duplicate shared users, but it does not make single-user copies automatically.
@@ -282,3 +278,15 @@ Manual cleanup is expected when the model has:
 8. Open the UV Editor and manually adjust important islands.
 9. Repack or fine-tune islands as needed.
 10. Export to your target pipeline.
+
+## Check UV Overlap
+
+Detects UV faces that overlap in UV space.
+
+Detected faces can be selected and optionally assigned a debug material.
+
+When **Assign Overlap Debug Material** is enabled, detected faces receive `MAT_UV_OVERLAP_DEBUG` in red. Debug material assignment is a destructive visual aid. Restore original materials manually if needed.
+
+Auto Unwrap Grid is for readable organization.
+Auto Unwrap Pack is for texture-space efficiency.
+Atlas Pack Selected Objects is for multi-object UV atlas layout.
