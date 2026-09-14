@@ -15,7 +15,7 @@ bl_info = {
 import bpy  # noqa: E402
 from bpy.props import PointerProperty  # noqa: E402
 
-from . import operators, operators_seam, operators_validation, properties, ui
+from . import operators, operators_seam, operators_validation, properties, translations, ui
 
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
@@ -40,10 +40,12 @@ def register() -> None:
         bpy.utils.register_class(cls)
 
     bpy.types.Scene.autoseamuv_settings = PointerProperty(type=properties.AUTOSEAMUV_PG_settings)
+    translations.register()
 
 
 def unregister() -> None:
     """Unregister add-on classes and scene properties."""
+    translations.unregister()
     if hasattr(bpy.types.Scene, "autoseamuv_settings"):
         del bpy.types.Scene.autoseamuv_settings
 

@@ -1,0 +1,221 @@
+"""Blender-native translations for Auto Seam UV Equalizer."""
+
+from __future__ import annotations
+
+import bpy
+from bpy.app.translations import pgettext_iface
+
+
+# This identifier deliberately does not depend on import aliases or Blender's
+# reload order.  register() and unregister() must always use the same value.
+TRANSLATION_DOMAIN = "auto_seam_uv_equalizer.translations"
+
+
+_JA_JP = {
+    # Panels and sections.
+    "Auto Seam UV": "自動シーム UV",
+    "Seam Detection": "シーム検出",
+    "UV Settings": "UV設定",
+    "Grid Settings": "グリッド設定",
+    "Post Process": "後処理",
+    "Ring / Strip Unwrap": "リング / ストリップ展開",
+    "Topology:": "トポロジー:",
+    "Options:": "オプション:",
+    "Processing": "処理",
+    "Atlas Pack": "アトラスパック",
+    "Validation": "検証",
+    "Actions": "操作",
+
+    # Operators and operator descriptions.
+    "Detect Ring / Strip": "リング / ストリップを検出",
+    "Unwrap Ring / Strip": "リング / ストリップを展開",
+    "Auto Mark Seams Only": "シームのみ自動設定",
+    "Auto Unwrap Grid": "自動グリッド展開",
+    "Auto Unwrap Pack": "自動展開・パック",
+    "Auto Seam + Unwrap": "自動シーム + UV展開",
+    "Atlas Pack Selected Objects": "選択オブジェクトをアトラスパック",
+    "Check UV Overlap": "UVオーバーラップを確認",
+    "Clear UV Overlap Highlight": "UVオーバーラップ表示をクリア",
+    "Clear Seams": "シームをクリア",
+    "Get Texel Density": "テクセル密度を取得",
+    "Set Texel Density": "テクセル密度を設定",
+    "Run Quality Analysis": "品質解析を実行",
+    "Force Auto Seam": "自動シームを強制",
+    "Protect From Auto Seam": "自動シームから保護",
+    "Clear Auto Seam Tags": "自動シームタグをクリア",
+    "Mirror Seams": "シームを対称化",
+    "Mark Seams From Sharp": "シャープからシームを設定",
+    "Mark Sharp From Seams": "シームからシャープを設定",
+    "Select Seams": "シームを選択",
+    "Select Open Edges": "開いた辺を選択",
+    "Create Seam Group": "シームグループを作成",
+    "Update Seam Group": "シームグループを更新",
+    "Apply Seam Group": "シームグループを適用",
+    "Delete Seam Group": "シームグループを削除",
+    "Unwrap selected mesh objects using existing settings, then pack UV islands efficiently into the 0-1 UV space": "現在の設定で選択メッシュをUV展開し、UVアイランドを0-1 UV空間へ効率的にパックします",
+    "Pack all UV islands from selected mesh objects into one 0-1 UV atlas without joining objects": "オブジェクトを結合せず、選択メッシュの全UVアイランドを1つの0-1 UVアトラスへパックします",
+    "Detect and highlight overlapping UV faces": "オーバーラップするUV面を検出して表示します",
+    "Clear overlap face selection without changing materials": "マテリアルを変更せずオーバーラップ面の選択を解除します",
+    "Validate selected topology without changing seams or UV data.": "シームやUVデータを変更せず、選択したトポロジーを検証します。",
+    "Generate loop UVs from a fully validated 3D quad grid.": "検証済みの3D四角面グリッドからループUVを生成します。",
+    "Automatically mark seams on selected mesh objects.": "選択メッシュオブジェクトへシームを自動設定します。",
+    "Unwrap selected mesh objects using existing seams.": "既存シームを使って選択メッシュオブジェクトをUV展開します。",
+    "Unwrap selected mesh objects and pack UV islands efficiently.": "選択メッシュオブジェクトをUV展開し、UVアイランドを効率的にパックします。",
+    "Automatically mark seams and unwrap selected mesh objects.": "選択メッシュオブジェクトへシームを自動設定してUV展開します。",
+    "Pack active UV maps from selected mesh objects into one shared 0-1 atlas.": "選択メッシュオブジェクトのアクティブUVマップを共有0-1アトラスへパックします。",
+    "Detect and highlight overlapping UV faces.": "オーバーラップするUV面を検出して表示します。",
+    "Clear the non-destructive UV overlap face selection.": "非破壊のUVオーバーラップ面選択を解除します。",
+    "Clear seams from selected mesh objects.": "選択メッシュオブジェクトからシームをクリアします。",
+
+    # Properties.
+    "Angle Threshold (Degrees)": "角度しきい値（度）",
+    "Mark edges as seams when adjacent face normals meet or exceed this degree value": "隣接面の法線角度がこの値以上の辺をシームにします",
+    "Detection Mode": "検出モード", "Seam Strategy": "シーム方針",
+    "Curvature Weight": "曲率ウェイト", "Material Weight": "マテリアルウェイト",
+    "Sharp Weight": "シャープウェイト", "Boundary Weight": "境界ウェイト",
+    "Existing Seam Weight": "既存シームウェイト", "Edge Length Weight": "辺長ウェイト",
+    "Seam Search Radius": "シーム検索半径", "Seam Minimum Spacing": "シーム最小間隔",
+    "Straightness Bias": "直線性バイアス", "Curvature Bias": "曲率バイアス",
+    "Existing Seam Attraction": "既存シームへの引力", "Boundary Attraction": "境界への引力",
+    "Maintain Symmetry": "対称を維持", "Mirror Axis": "対称軸", "Mirror Tolerance": "対称許容値",
+    "Direction": "方向", "UV Margin": "UVマージン",
+    "Island margin used for unwrap and pack operations": "UV展開とパックに使用するアイランド間の余白",
+    "UV Map Name": "UVマップ名", "UV map to create or use for automatic unwrap operations": "自動UV展開で作成または使用するUVマップ",
+    "Clear Existing Seams": "既存シームをクリア", "Remove existing seam marks before automatic seam detection": "自動シーム検出の前に既存のシームを削除します",
+    "Create UV If Missing": "ない場合はUVを作成", "Create the named UV map when it does not already exist": "指定したUVマップが存在しない場合に作成します",
+    "Mark Material Boundaries": "マテリアル境界をシームにする", "Mark edges between faces with different material slots as seams": "異なるマテリアルスロットの面の間をシームにします",
+    "Mark Boundary Edges": "境界辺をシームにする", "Mark open mesh boundary edges as seams": "開いたメッシュ境界辺をシームにします",
+    "Mark Non-Manifold Edges": "非多様体辺をシームにする", "Mark edges connected to three or more faces as seams": "3面以上に接続する辺をシームにします",
+    "Mark Longitudinal Seam Helper": "縦方向シーム補助を設定", "Add one heuristic lengthwise seam for cylinders, pipes, supports, and cable-like meshes": "円柱、パイプ、支柱、ケーブル状メッシュに推定した縦方向シームを1本追加します",
+    "Average Island Scale": "アイランドスケールを平均化", "Normalize UV island texel density after unwrapping": "UV展開後にUVアイランドのテクセル密度を正規化します",
+    "Straighten Circular Strip Islands": "円形ストリップアイランドを直線化", "Straighten circular or arc-shaped UV strip islands after unwrap": "UV展開後に円形または弧状のUVストリップアイランドを直線化します",
+    "Auto Detect": "自動検出", "Recover the ring or strip grid from selected quad faces": "選択した四角面からリングまたはストリップグリッドを復元します",
+    "Layout": "レイアウト", "Spacing": "間隔", "Seam": "シーム", "Orientation": "向き",
+    "Normalize Result": "結果を正規化", "Scale the generated island to fit one 0-1 square without changing its aspect ratio": "縦横比を維持して生成アイランドを0-1正方形内に収めます",
+    "Circular Strip Min Faces": "円形ストリップの最小面数", "Minimum face count required to treat an island as a circular strip candidate": "アイランドを円形ストリップ候補とするための最小面数",
+    "Circular Strip Margin": "円形ストリップのマージン", "Optional margin applied inside the normalized strip": "正規化したストリップ内に適用する任意の余白",
+    "Pack Islands": "アイランドをパック", "Pack UV islands into the 0-1 UV space after unwrapping": "UV展開後にUVアイランドを0-1 UV空間へパックします",
+    "Equal Region Pack": "等分領域パック", "Place each seam-delimited UV island into its own equal 0-1 UV region instead of using Blender Pack Islands": "Blenderのアイランドをパックの代わりに、各UVアイランドを均等な専用0-1 UV領域へ配置します",
+    "Equal Region Margin": "等分領域マージン", "Padding inside each equal UV region": "各等分UV領域内の余白",
+    "Equal Region Layout": "等分領域レイアウト", "Layout used when Equal Region Pack is enabled": "等分領域パック有効時のレイアウト",
+    "Fit Islands to Grid Cells": "アイランドをグリッドセルに合わせる", "Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio": "縦横比を維持し、各自動展開アイランドをグリッドセルに収まるよう拡縮します",
+    "Grid Cell Margin": "グリッドセルのマージン", "Margin inside each Auto Unwrap Grid cell": "各自動展開グリッドセル内の余白",
+    "Grid Cell Fill Ratio": "グリッドセル充填率", "Additional scale multiplier for fitted islands inside Auto Unwrap Grid cells": "自動展開グリッドセル内のアイランドに追加するスケール倍率",
+    "Atlas Texture Size": "アトラステクスチャサイズ", "Texture size used to convert atlas pixel margin into UV margin": "アトラスのピクセル余白をUVマージンへ変換するためのテクスチャサイズ",
+    "Atlas UV Source": "アトラスUVソース", "Choose each object's active UV map or the UV Map Name setting": "各オブジェクトのアクティブUVマップまたはUVマップ名設定を選択します",
+    "Atlas Pixel Margin": "アトラスのピクセルマージン", "Pixel margin used when atlas packing selected objects": "選択オブジェクトのアトラスパックに使うピクセル余白",
+    "Average Island Scale Before Atlas Pack": "アトラスパック前にアイランドスケールを平均化", "Average island scale before packing selected objects into one atlas": "選択オブジェクトを1つのアトラスへパックする前にアイランドスケールを平均化します",
+    "Allow Atlas Rotation": "アトラスの回転を許可", "Allow UV island rotation during atlas packing": "アトラスパック中のUVアイランド回転を許可します",
+    "Legacy Overlap Epsilon": "旧オーバーラップ許容値", "Compatibility setting from versions before area and coordinate tolerances were separated": "面積と座標の許容値が分離される前のバージョンとの互換設定",
+    "Overlap Area Epsilon": "オーバーラップ面積許容値", "Minimum UV intersection area required to report an overlap": "オーバーラップとして報告する最小UV交差面積",
+    "Overlap Coordinate Epsilon": "オーバーラップ座標許容値", "UV-coordinate tolerance used for bounds and clipping side tests": "境界とクリッピング側判定に使うUV座標許容値",
+    "Check Across Objects": "オブジェクト間も確認", "Detect overlaps between different selected objects as well as within each object": "各オブジェクト内に加え、異なる選択オブジェクト間のオーバーラップも検出します",
+    "Assign Overlap Debug Material": "オーバーラップ確認用マテリアルを割り当て", "Legacy compatibility option; overlap highlighting is now non-destructive face selection": "旧版との互換オプションです。現在は非破壊の面選択でオーバーラップを表示します",
+    "Texture Width": "テクスチャ幅", "Texture Height": "テクスチャ高さ", "Unit": "単位",
+    "Target Density": "目標密度", "Measured Density": "測定密度", "Zero Area Tolerance": "ゼロ面積許容値",
+    "Stretch Warning Threshold": "歪み警告しきい値", "Last Quality Report": "前回の品質レポート",
+    "Relax After Unwrap": "UV展開後にリラックス", "Relax Iterations": "リラックス反復回数",
+    "Preserve Boundary": "境界を維持", "Respect Pins": "ピンを尊重", "Shape Method": "形状方式",
+    "Rotation": "回転", "Margin Method": "マージン方式", "Lock Pinned Islands": "ピン留めアイランドを固定",
+    "Pin Method": "ピン方式", "Merge Overlapping": "オーバーラップを統合", "Pack Target": "パック対象",
+    "Grid Mode": "グリッドモード", "Seam Group": "シームグループ", "Apply Mode": "適用モード",
+    "Process Shared Mesh Data Once": "共有メッシュデータを1回だけ処理", "Process only the first selected object for each shared mesh datablock": "共有メッシュデータブロックごとに最初の選択オブジェクトだけを処理します",
+    "Unwrap Method": "展開方式", "Blender UV unwrap method": "BlenderのUV展開方式",
+
+    # Enum labels and descriptions (identifiers intentionally remain English).
+    "Classic": "クラシック", "Independent edge rules": "独立した辺ルール",
+    "Advanced Paths": "高度なパス", "Score candidates and build continuous paths": "候補を評価して連続パスを構築",
+    "Hard Surface": "ハードサーフェス", "Angle, sharp and material boundaries": "角度、シャープ、マテリアル境界",
+    "Organic / Cloth": "有機形状 / 布", "Long continuous low-noise cuts": "長く連続したノイズの少ない切れ目",
+    "Cylinder / Cable": "円柱 / ケーブル", "End-to-end longitudinal path": "端から端までの縦方向パス",
+    "Manual Assisted": "手動補助", "Force, protect and existing seams first": "強制、保護、既存シームを優先",
+    "Positive to Negative": "正から負", "Negative to Positive": "負から正", "Selected Side to Opposite": "選択側から反対側",
+    "Rectangular": "長方形", "Align all rows to one width": "全行を同じ幅に揃える",
+    "Preserve Circumference": "周長を維持", "Retain each ring's measured 3D circumference": "各リングの測定3D周長を維持",
+    "Even": "均等", "Use logical grid indices": "論理グリッドインデックスを使用",
+    "Edge Length": "辺の長さ", "Use individual 3D edge lengths": "個々の3D辺長を使用",
+    "Average Edge Length": "平均辺長", "Average corresponding edge intervals": "対応する辺間隔を平均化",
+    "Existing": "既存", "Require one complete existing seam path": "完全な既存シームパスが1本必要",
+    "Selected": "選択", "Require one complete selected edge path": "完全な選択辺パスが1本必要",
+    "Auto Best Seam": "最適シームを自動選択", "Score all valid longitudinal paths": "有効な全縦方向パスを評価",
+    "Auto": "自動", "Place the longitudinal direction on V": "縦方向をVに配置",
+    "Horizontal": "水平", "Place circumference on U": "周方向をUに配置",
+    "Vertical": "垂直", "Place circumference on V": "周方向をVに配置",
+    "Square Grid": "正方グリッド", "Use a near-square grid such as 2x2 for four islands": "4アイランドなら2x2など正方形に近いグリッドを使用",
+    "Horizontal Strip": "水平ストリップ", "Place all islands in one horizontal row": "全アイランドを横1列に配置",
+    "Vertical Strip": "垂直ストリップ", "Place all islands in one vertical column": "全アイランドを縦1列に配置",
+    "Active": "アクティブ", "Pack each object's current active UV map; skip objects without one": "各オブジェクトの現在のアクティブUVマップをパックし、ないものはスキップ",
+    "Named": "名前指定", "Pack UV Map Name and optionally create it when missing": "UVマップ名をパックし、必要なら未作成時に作成",
+    "Pixels per metre": "1メートルあたりのピクセル", "Pixels per centimetre": "1センチメートルあたりのピクセル",
+    "Exact": "正確", "Convex": "凸包", "Bounding Box": "バウンディングボックス",
+    "Off": "オフ", "Any": "任意", "Cardinal": "直交", "Axis Aligned": "軸に整列",
+    "Scaled": "スケール", "Add": "加算", "Fraction": "比率",
+    "Lock All": "すべて固定", "Lock Rotation": "回転を固定", "Lock Rotation & Scale": "回転とスケールを固定",
+    "Closest UDIM": "最寄りのUDIM", "Active UDIM": "アクティブUDIM", "Original Bounding Box": "元のバウンディングボックス", "Custom Region": "カスタム領域",
+    "Preserve Scale": "スケールを維持", "Move only": "移動のみ", "Fit Oversized Only": "大きすぎるものだけ合わせる",
+    "Shrink only islands exceeding cells": "セルを超えるアイランドだけ縮小", "Fit Each Cell": "各セルに合わせる", "Changes relative texel density": "相対テクセル密度を変更",
+    "Replace": "置換", "Merge": "統合", "Angle Based": "アングルベース", "Use Blender's angle based unwrap method": "Blenderのアングルベース展開を使用",
+    "Conformal": "コンフォーマル", "Use Blender's conformal unwrap method": "Blenderのコンフォーマル展開を使用",
+    "No report yet": "レポートはまだありません",
+
+    # Runtime report templates. Translate the template before interpolation.
+    "Tagged %d edge(s)": "%d本の辺をタグ付けしました",
+    "Mirrored %d; skipped %d ambiguous/unmatched edge(s)": "%d本を対称化し、曖昧または不一致の辺%d本をスキップしました",
+    "Seam group not found": "シームグループが見つかりません",
+    "Texel density: %.3f %s": "テクセル密度: %.3f %s",
+    "No UV meshes selected": "UVを持つメッシュが選択されていません",
+    "%s: seams %d, flipped %d, zero %d, stretch %.2f/%.2f, coverage %.3f": "%s: シーム %d、反転 %d、ゼロ面積 %d、歪み %.2f/%.2f、範囲 %.3f",
+    "Operation failed: %s": "処理に失敗しました: %s",
+    "Auto Seam UV: shared mesh datablock(s) detected; seam and UV edits are shared: %s": "自動シーム UV: 共有メッシュデータブロックを検出しました。シームとUVの編集は共有されます: %s",
+    "Auto Seam UV: non-uniform object scale detected; UV density may need manual review: %s": "自動シーム UV: 不均一なオブジェクトスケールを検出しました。UV密度の手動確認が必要な場合があります: %s",
+    "Ring / Strip: select exactly one visible mesh object.": "リング / ストリップ: 表示中のメッシュオブジェクトを1つだけ選択してください。",
+    "Ring / Strip: Invalid - %s": "リング / ストリップ: 無効 - %s",
+    "Ring / Strip: Valid; Rings %d, Columns %d, Boundaries %d, Seam candidate %s": "リング / ストリップ: 有効、リング %d、列 %d、境界 %d、シーム候補 %s",
+    "Ring / Strip: no visible mesh object selected.": "リング / ストリップ: 表示中のメッシュオブジェクトが選択されていません。",
+    "%s: Rings %d, Columns %d, Boundaries %d, Seam %s": "%s: リング %d、列 %d、境界 %d、シーム %s",
+    "%s: Invalid - %s": "%s: 無効 - %s",
+    "Ring / Strip: unwrapped %d, skipped shared %d.": "リング / ストリップ: %d個を展開し、共有データ%d個をスキップしました。",
+    "Auto Seam UV: shared mesh data skipped for %d object(s): %s": "自動シーム UV: %d個のオブジェクトで共有メッシュデータをスキップしました: %s",
+    "Auto Seam UV: no visible mesh objects selected.": "自動シーム UV: 表示中のメッシュオブジェクトが選択されていません。",
+    "Auto Seam UV: failed to mark seams on %s: %s": "自動シーム UV: %sへのシーム設定に失敗しました: %s",
+    "Auto Seam UV: marked %d seam(s), longitudinal %d, cleared %d, processed %d, skipped shared %d, failed %d.": "自動シーム UV: シーム%d本を設定（縦方向%d本）、%d本をクリア、%d個を処理、共有%d個をスキップ、%d個失敗しました。",
+    "Auto Seam UV: skipped %s; mesh has no faces.": "自動シーム UV: %sをスキップしました。メッシュに面がありません。",
+    "Auto Seam UV: grid unwrapped %d object(s), marked 0 seam(s), straightened %d circular strip island(s), skipped shared %d, failed %d.": "自動シーム UV: %d個をグリッド展開、シーム設定0本、円形ストリップアイランド%d個を直線化、共有%d個をスキップ、%d個失敗しました。",
+    "Auto Unwrap Pack: skipped %s; mesh has no faces.": "自動展開・パック: %sをスキップしました。メッシュに面がありません。",
+    "Auto Unwrap Pack: packed %d object(s), straightened %d circular strip island(s), skipped empty %d, skipped shared %d, failed %d.": "自動展開・パック: %d個をパック、円形ストリップアイランド%d個を直線化、空%d個と共有%d個をスキップ、%d個失敗しました。",
+    "Auto Seam UV: marked %d seam(s), longitudinal %d, cleared %d, unwrapped %d, straightened %d circular strip island(s), skipped shared %d, failed %d.": "自動シーム UV: シーム%d本を設定（縦方向%d本）、%d本をクリア、%d個を展開、円形ストリップアイランド%d個を直線化、共有%d個をスキップ、%d個失敗しました。",
+    "Atlas Pack Selected Objects: skipped %s; mesh has no faces.": "選択オブジェクトをアトラスパック: %sをスキップしました。メッシュに面がありません。",
+    "Atlas Pack Selected Objects: skipped %s; no %s.": "選択オブジェクトをアトラスパック: %sをスキップしました。%sがありません。",
+    "Atlas Pack Selected Objects: failed to prepare %s: %s": "選択オブジェクトをアトラスパック: %sの準備に失敗しました: %s",
+    "Atlas Pack Selected Objects: no valid mesh objects to pack, skipped empty %d, skipped shared %d, failed %d.": "選択オブジェクトをアトラスパック: パック可能なメッシュがありません。空%d個と共有%d個をスキップ、%d個失敗しました。",
+    "Atlas Pack Selected Objects: failed to atlas pack selected objects: %s": "選択オブジェクトをアトラスパック: 選択オブジェクトのアトラスパックに失敗しました: %s",
+    "Atlas Pack Selected Objects: packed %d object(s), skipped empty %d, skipped shared %d, failed %d.": "選択オブジェクトをアトラスパック: %d個をパック、空%d個と共有%d個をスキップ、%d個失敗しました。",
+    "Check UV Overlap: failed to inspect %s: %s": "UVオーバーラップを確認: %sの検査に失敗しました: %s",
+    "Check UV Overlap: found %d overlapping face(s) in %d pair(s), skipped %d, failed %d.": "UVオーバーラップを確認: %d個のオーバーラップ面（%d組）を検出、%d個をスキップ、%d個失敗しました。",
+    "Clear UV Overlap Highlight: cleared %d selected face(s).": "UVオーバーラップ表示をクリア: 選択面%d個を解除しました。",
+    "Auto Seam UV: failed to clear seams on %s: %s": "自動シーム UV: %sのシームクリアに失敗しました: %s",
+    "Auto Seam UV: cleared %d seam(s), processed %d, skipped shared %d, failed %d.": "自動シーム UV: シーム%d本をクリア、%d個を処理、共有%d個をスキップ、%d個失敗しました。",
+}
+
+
+TRANSLATIONS = {"ja_JP": {("*", source): target for source, target in _JA_JP.items()}}
+
+
+def iface_(message: str, *values):
+    """Translate a complete runtime template, then interpolate its values."""
+    translated = pgettext_iface(message)
+    return translated % values if values else translated
+
+
+def register() -> None:
+    """Register translations, first removing a stale reload registration."""
+    unregister()
+    bpy.app.translations.register(TRANSLATION_DOMAIN, TRANSLATIONS)
+
+
+def unregister() -> None:
+    """Remove translations; repeated add-on disable calls are harmless."""
+    try:
+        bpy.app.translations.unregister(TRANSLATION_DOMAIN)
+    except RuntimeError:
+        pass
