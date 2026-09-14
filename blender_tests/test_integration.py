@@ -67,6 +67,38 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_layout = "SEPARATE_MIRRORED"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
+    def test_selected_symmetric_transfer_preserves_unselected_region_uvs(self):
+        obj = mesh_object(
+            "SymmetricWithThirdRegion",
+            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+             (1,0,0),(1,0,1),(1,1,1),(1,1,0),
+             (3,2,0),(4,2,0),(4,3,0),(3,3,0)],
+            [(0,1,2,3),(4,5,6,7),(8,9,10,11)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        initial_uvs = (
+            (0.1,0.2),(0.3,0.2),(0.3,0.4),(0.1,0.4),
+            (0.6,0.6),(0.7,0.6),(0.7,0.7),(0.6,0.7),
+            (0.11,0.81),(0.29,0.83),(0.31,0.97),(0.13,0.99),
+        )
+        for index, uv in enumerate(initial_uvs):
+            layer.uv[index].vector = uv
+
+        for polygon in obj.data.polygons:
+            polygon.select = False
+        obj.data.polygons[0].select = True
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.symmetry_scope = "SELECTED"
+        settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
+        settings.symmetry_layout = "OVERLAP"
+        third_region_loops = tuple(obj.data.polygons[2].loop_indices)
+        before = tuple(tuple(layer.uv[index].vector) for index in third_region_loops)
+
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+
+        after = tuple(tuple(layer.uv[index].vector) for index in third_region_loops)
+        self.assertEqual(after, before)
+
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
 result = unittest.TextTestRunner(verbosity=2).run(suite)
