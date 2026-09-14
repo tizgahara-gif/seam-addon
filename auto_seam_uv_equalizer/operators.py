@@ -13,7 +13,7 @@ from .seam_detection import (
     mark_longitudinal_seam_helper,
     mark_selected_region_boundary_seams,
 )
-from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
+from .uv_tools import ensure_uv_layer, grid_layout_object, pack_object, unwrap_object
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
@@ -337,7 +337,8 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
     """Unwrap selected mesh objects using existing seams."""
 
     bl_idname = "autoseamuv.unwrap_only"
-    bl_label = "Auto Unwrap Grid"
+    bl_label = "Auto Unwrap"
+    bl_description = "Unwrap using current seams without applying Grid Layout or Pack Islands"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -369,15 +370,9 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.unwrap_method,
                         settings.margin,
                         settings.average_islands,
-                        False,
                         settings.straighten_circular_strip_islands,
                         settings.circular_strip_min_faces,
                         settings.circular_strip_margin,
-                        True,
-                        settings.grid_cell_margin,
-                        settings.equal_region_layout,
-                        settings.grid_fit_to_cell,
-                        settings.grid_cell_fill_ratio,
                     )
                     processed += 1
                 except Exception as exc:
@@ -388,16 +383,82 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            iface_("Auto Seam UV: grid unwrapped %d object(s), marked 0 seam(s), straightened %d circular strip island(s), skipped shared %d, failed %d.", processed, total_straightened, skipped_shared, failures),
+            iface_("Auto Seam UV: unwrapped %d object(s), marked 0 seam(s), straightened %d circular strip island(s), skipped shared %d, failed %d.", processed, total_straightened, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+def _run_existing_uv_operation(operator, context, operation, action_label):
+    """Run a UV-only backend for selected objects and restore all selection state."""
+    selected_objects = _selected_visible_mesh_objects(context)
+    if not selected_objects:
+        operator.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
+        return {"CANCELLED"}
+    settings = _get_settings(context)
+    objects, skipped_shared = _objects_for_processing(
+        operator, selected_objects, settings.process_shared_mesh_once
+    )
+    active, selected, mode = _snapshot_context(context)
+    processed = failures = 0
+    try:
+        _ensure_object_mode()
+        for obj in objects:
+            try:
+                if not obj.data.polygons:
+                    continue
+                if obj.data.uv_layers.active is None:
+                    raise RuntimeError("an active UV map is required")
+                operation(obj, settings)
+                processed += 1
+            except Exception as exc:
+                failures += 1
+                operator.report({"ERROR"}, iface_("%s: failed on %s: %s", action_label, obj.name, exc))
+    finally:
+        _restore_context(context, active, selected, mode)
+    operator.report(
+        {"INFO"},
+        iface_("%s: processed %d object(s), skipped shared %d, failed %d.",
+               action_label, processed, skipped_shared, failures),
+    )
+    return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+class AUTOSEAMUV_OT_grid_layout(bpy.types.Operator):
+    """Arrange existing UV islands without unwrapping or packing."""
+
+    bl_idname = "autoseamuv.grid_layout"
+    bl_label = "Grid Layout"
+    bl_description = "Arrange existing active-map UV islands in equal grid regions"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        return _run_existing_uv_operation(
+            self, context,
+            lambda obj, settings: grid_layout_object(
+                obj, settings.grid_cell_margin, settings.equal_region_layout,
+                settings.grid_scale_mode, settings.grid_cell_fill_ratio,
+            ),
+            "Grid Layout",
+        )
+
+
+class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):
+    """Pack existing UV islands without changing seams or re-unwrapping."""
+
+    bl_idname = "autoseamuv.pack_islands"
+    bl_label = "Pack Islands"
+    bl_description = "Pack existing active-map UV islands with Blender Pack Islands"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        return _run_existing_uv_operation(self, context, pack_object, "Pack Islands")
 
 
 class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
     """Unwrap selected mesh objects and pack UV islands efficiently."""
 
     bl_idname = "autoseamuv.auto_unwrap_pack"
-    bl_label = "Auto Unwrap Pack"
+    bl_label = "Auto Unwrap + Pack"
     bl_description = "Unwrap selected mesh objects using existing settings, then pack UV islands efficiently into the 0-1 UV space"
     bl_options = {"REGISTER", "UNDO"}
 
@@ -423,9 +484,9 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                 try:
                     if len(obj.data.polygons) == 0:
                         skipped_empty += 1
-                        self.report({"WARNING"}, iface_("Auto Unwrap Pack: skipped %s; mesh has no faces.", obj.name))
+                        self.report({"WARNING"}, iface_("Auto Unwrap + Pack: skipped %s; mesh has no faces.", obj.name))
                         continue
-                    total_straightened += unwrap_object_pack(
+                    total_straightened += unwrap_object(
                         obj,
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
@@ -436,6 +497,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                         settings.circular_strip_min_faces,
                         settings.circular_strip_margin,
                     )
+                    pack_object(obj, settings)
                     processed += 1
                 except Exception as exc:
                     failures += 1
@@ -445,7 +507,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            iface_("Auto Unwrap Pack: packed %d object(s), straightened %d circular strip island(s), skipped empty %d, skipped shared %d, failed %d.", processed, total_straightened, skipped_empty, skipped_shared, failures),
+            iface_("Auto Unwrap + Pack: packed %d object(s), straightened %d circular strip island(s), skipped empty %d, skipped shared %d, failed %d.", processed, total_straightened, skipped_empty, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -491,14 +553,17 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.unwrap_method,
                         settings.margin,
                         settings.average_islands,
-                        settings.pack_islands,
                         settings.straighten_circular_strip_islands,
                         settings.circular_strip_min_faces,
                         settings.circular_strip_margin,
-                        settings.equal_region_pack,
-                        settings.equal_region_margin,
-                        settings.equal_region_layout,
                     )
+                    if settings.equal_region_pack:
+                        grid_layout_object(
+                            obj, settings.equal_region_margin, settings.equal_region_layout,
+                            settings.grid_scale_mode, settings.grid_cell_fill_ratio,
+                        )
+                    elif settings.pack_islands:
+                        pack_object(obj, settings)
                     processed += 1
                 except Exception as exc:
                     failures += 1
