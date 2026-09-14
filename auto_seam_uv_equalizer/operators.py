@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import bpy
+import bmesh
+from bpy.props import BoolProperty
 
-from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
+from .seam_detection import (
+    clear_seams,
+    mark_auto_seams,
+    mark_longitudinal_seam_helper,
+    mark_selected_region_boundary_seams,
+)
 from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
 from .uv_validation import find_overlaps, triangles_from_object
 
@@ -87,6 +94,48 @@ def _get_settings(context):
 
 def _mesh_datablock_key(obj) -> int:
     return obj.data.as_pointer()
+
+
+class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
+    """Mark only the boundary of the current Edit Mode face selection as seams."""
+
+    bl_idname = "autoseamuv.mark_selected_region_boundary"
+    bl_label = "Mark Selected Region Boundary as Seam"
+    bl_description = "Add UV seams along the boundary of the currently selected faces"
+    bl_options = {"REGISTER", "UNDO"}
+
+    include_open_boundaries: BoolProperty(
+        name="Include Open Boundaries",
+        description="Include selected faces' edges on the open boundary of the mesh",
+        default=True,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        return active is not None and active.type == "MESH" and context.mode == "EDIT_MESH"
+
+    def execute(self, context):
+        # objects_in_mode_unique_data avoids processing a shared edit BMesh twice.
+        objects = getattr(context, "objects_in_mode_unique_data", ())
+        if not objects:
+            objects = (context.active_object,)
+
+        totals = [0, 0, 0, 0, 0]
+        for obj in objects:
+            if obj is None or obj.type != "MESH":
+                continue
+            edit_bmesh = bmesh.from_edit_mesh(obj.data)
+            counts = mark_selected_region_boundary_seams(edit_bmesh, self.include_open_boundaries)
+            totals = [total + count for total, count in zip(totals, counts)]
+            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+
+        self.report(
+            {"INFO"},
+            "Selected Face Count: {}; Boundary Edge Count: {}; Newly Marked Seam Count: {}; "
+            "Open Boundary Count: {}; Skipped Non-Manifold Edge Count: {}.".format(*totals),
+        )
+        return {"FINISHED"}
 
 
 def _objects_for_processing(operator, objects: list[bpy.types.Object], process_shared_mesh_once: bool) -> tuple[list[bpy.types.Object], int]:

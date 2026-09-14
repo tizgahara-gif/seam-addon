@@ -55,6 +55,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=True,
     )
 
+    include_open_boundaries: BoolProperty(
+        name="Include Open Boundaries",
+        description="Include selected faces' edges on the open boundary of the mesh",
+        default=True,
+    )
+
     non_manifold_edges: BoolProperty(
         name="Mark Non-Manifold Edges",
         description="Mark edges connected to three or more faces as seams",

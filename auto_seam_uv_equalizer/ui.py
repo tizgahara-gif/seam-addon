@@ -77,6 +77,13 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         actions_box = layout.box()
         actions_box.label(text="Actions")
+        actions_box.prop(settings, "include_open_boundaries")
+        boundary_operator = actions_box.operator(
+            "autoseamuv.mark_selected_region_boundary",
+            text="Mark Selected Region Boundary as Seam",
+            icon="EDGESEL",
+        )
+        boundary_operator.include_open_boundaries = settings.include_open_boundaries
         actions_box.operator("autoseamuv.mark_only", text="Auto Mark Seams Only", icon="MOD_UVPROJECT")
         actions_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap Grid", icon="UV")
         actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap Pack", icon="UV")
