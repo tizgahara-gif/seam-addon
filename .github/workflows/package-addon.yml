@@ -69,3 +69,5 @@ jobs:
         run: blender --background --factory-startup --python blender_tests/test_integration.py
       - name: Ring and strip tests
         run: blender --background --factory-startup --python scripts/test_ring_strip_headless.py
+      - name: Multi-object Edit selection test
+        run: blender --background --factory-startup --python scripts/test_multi_object_edit_selection_headless.py
