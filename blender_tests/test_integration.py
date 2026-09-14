@@ -4,6 +4,7 @@ import pathlib
 import sys
 import unittest
 
+import bmesh
 import bpy
 import bmesh
 
@@ -139,26 +140,37 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
-    def test_ring_unwrap_restores_partial_face_selection_and_select_mode(self):
-        obj = ring_object()
-        selected_faces = set(range(8))
+    def test_symmetric_uv_transfer_restores_edit_mode_face_selection(self):
+        obj = mesh_object("SymmetricSelection", [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+                                                  (1,0,0),(1,0,1),(1,1,1),(1,1,0)],
+                          [(0,1,2,3),(4,5,6,7)])
+        layer = obj.data.uv_layers.new(name="UVMap")
+        for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))):
+            layer.uv[index].vector = uv
+
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.symmetry_axis = "X"
+        settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
+        settings.symmetry_scope = "SELECTED"
+        settings.symmetry_layout = "OVERLAP"
 
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.context.tool_settings.mesh_select_mode = (False, False, True)
         bpy.ops.mesh.select_all(action="DESELECT")
-        bpy.ops.object.mode_set(mode="OBJECT")
-        for polygon in obj.data.polygons:
-            polygon.select = polygon.index in selected_faces
-        bpy.ops.object.mode_set(mode="EDIT")
-
-        original_select_mode = tuple(bpy.context.tool_settings.mesh_select_mode)
-        self.assertEqual(bpy.ops.autoseamuv.unwrap_ring_strip(), {"FINISHED"})
-
         edit_mesh = bmesh.from_edit_mesh(obj.data)
         edit_mesh.faces.ensure_lookup_table()
-        restored_faces = {face.index for face in edit_mesh.faces if face.select}
-        self.assertEqual(restored_faces, selected_faces)
-        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), original_select_mode)
+        edit_mesh.faces[0].select_set(True)
+        bmesh.update_edit_mesh(obj.data)
+        original_selection = {face.index for face in edit_mesh.faces if face.select}
+        self.assertEqual(original_selection, {0})
+
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+
+        self.assertEqual(obj.mode, "EDIT")
+        edit_mesh = bmesh.from_edit_mesh(obj.data)
+        edit_mesh.faces.ensure_lookup_table()
+        restored_selection = {face.index for face in edit_mesh.faces if face.select}
+        self.assertEqual(restored_selection, original_selection)
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
