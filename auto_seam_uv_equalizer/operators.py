@@ -7,6 +7,7 @@ import bpy
 from .seam_detection import clear_seams, mark_auto_seams, mark_advanced_seams, mark_longitudinal_seam_helper
 from .symmetry import mirror_edge_map
 from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
+from .uv_validation import find_overlaps, triangles_from_object
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -389,12 +390,14 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
                         skipped_empty += 1
                         self.report({"WARNING"}, f"Atlas Pack Selected Objects: skipped {obj.name}; mesh has no faces.")
                         continue
-                    if not ensure_uv_layer(obj, settings.uv_map_name, settings.create_uv_if_missing):
+                    if settings.atlas_uv_source == "ACTIVE":
+                        has_uv = obj.data.uv_layers.active is not None
+                    else:
+                        has_uv = ensure_uv_layer(obj, settings.uv_map_name, settings.create_uv_if_missing)
+                    if not has_uv:
                         failures += 1
-                        self.report(
-                            {"ERROR"},
-                            f"Atlas Pack Selected Objects: {obj.name} has no UV map '{settings.uv_map_name}' and Create UV If Missing is disabled.",
-                        )
+                        detail = "active UV map" if settings.atlas_uv_source == "ACTIVE" else f"UV map '{settings.uv_map_name}'"
+                        self.report({"WARNING"}, f"Atlas Pack Selected Objects: skipped {obj.name}; no {detail}.")
                         continue
                     valid_objects.append(obj)
                 except Exception as exc:
@@ -423,8 +426,13 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
 
             atlas_margin = settings.atlas_pixel_margin / settings.atlas_texture_size
             try:
-                bpy.ops.uv.pack_islands(margin=atlas_margin, rotate=settings.atlas_pack_rotate)
+                bpy.ops.uv.pack_islands(
+                    margin=atlas_margin,
+                    margin_method="FRACTION",
+                    rotate=settings.atlas_pack_rotate,
+                )
             except TypeError:
+                # Blender versions predating margin_method retain approximate behavior.
                 bpy.ops.uv.pack_islands(margin=atlas_margin)
 
             processed = len(valid_objects)
@@ -440,120 +448,13 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
-DEBUG_MATERIAL_NAME = "MAT_UV_OVERLAP_DEBUG"
-
-
-def _polygon_area_2d(points):
-    if len(points) < 3:
-        return 0.0
-    area = 0.0
-    for index, point in enumerate(points):
-        nxt = points[(index + 1) % len(points)]
-        area += point[0] * nxt[1] - nxt[0] * point[1]
-    return area * 0.5
-
-
-def _inside_clip(point, edge_start, edge_end, orientation, epsilon):
-    cross = (edge_end[0] - edge_start[0]) * (point[1] - edge_start[1]) - (edge_end[1] - edge_start[1]) * (point[0] - edge_start[0])
-    return cross * orientation >= -epsilon
-
-
-def _line_intersection_2d(a, b, c, d):
-    abx = b[0] - a[0]
-    aby = b[1] - a[1]
-    cdx = d[0] - c[0]
-    cdy = d[1] - c[1]
-    denom = abx * cdy - aby * cdx
-    if abs(denom) < 1.0e-12:
-        return b
-    t = ((c[0] - a[0]) * cdy - (c[1] - a[1]) * cdx) / denom
-    return (a[0] + t * abx, a[1] + t * aby)
-
-
-def _clipped_polygon(subject, clip, epsilon):
-    output = list(subject)
-    orientation = 1.0 if _polygon_area_2d(clip) >= 0.0 else -1.0
-    for index, edge_start in enumerate(clip):
-        edge_end = clip[(index + 1) % len(clip)]
-        input_points = output
-        output = []
-        if not input_points:
-            break
-        previous = input_points[-1]
-        previous_inside = _inside_clip(previous, edge_start, edge_end, orientation, epsilon)
-        for current in input_points:
-            current_inside = _inside_clip(current, edge_start, edge_end, orientation, epsilon)
-            if current_inside:
-                if not previous_inside:
-                    output.append(_line_intersection_2d(previous, current, edge_start, edge_end))
-                output.append(current)
-            elif previous_inside:
-                output.append(_line_intersection_2d(previous, current, edge_start, edge_end))
-            previous = current
-            previous_inside = current_inside
-    return output
-
-
-def _triangles_overlap_with_area(tri_a, tri_b, epsilon):
-    clipped = _clipped_polygon(tri_a, tri_b, epsilon)
-    return abs(_polygon_area_2d(clipped)) > epsilon
-
-
-def _bbox_from_tri(tri):
-    xs = [p[0] for p in tri]
-    ys = [p[1] for p in tri]
-    return (min(xs), min(ys), max(xs), max(ys))
-
-
-def _bbox_overlaps(a, b, epsilon):
-    return not (a[2] <= b[0] + epsilon or b[2] <= a[0] + epsilon or a[3] <= b[1] + epsilon or b[3] <= a[1] + epsilon)
-
-
-def _uv_face_triangles(obj, epsilon):
-    mesh = obj.data
-    uv_layer = mesh.uv_layers.active
-    records = []
-    for poly in mesh.polygons:
-        if len(poly.loop_indices) < 3:
-            continue
-        uvs = [uv_layer.data[loop_index].uv.copy() for loop_index in poly.loop_indices]
-        for idx in range(1, len(uvs) - 1):
-            tri = ((uvs[0].x, uvs[0].y), (uvs[idx].x, uvs[idx].y), (uvs[idx + 1].x, uvs[idx + 1].y))
-            if abs(_polygon_area_2d(tri)) > epsilon:
-                records.append({"obj": obj, "face": poly.index, "tri": tri, "bbox": _bbox_from_tri(tri)})
-    return records
-
-
-def _ensure_overlap_debug_material():
-    mat = bpy.data.materials.get(DEBUG_MATERIAL_NAME)
-    if mat is None:
-        mat = bpy.data.materials.new(DEBUG_MATERIAL_NAME)
-    mat.diffuse_color = (1.0, 0.05, 0.02, 1.0)
-    return mat
-
-
-def _assign_debug_material(objects, face_keys):
-    mat = _ensure_overlap_debug_material()
-    for obj in objects:
-        slot_index = obj.data.materials.find(DEBUG_MATERIAL_NAME)
-        if slot_index < 0:
-            obj.data.materials.append(mat)
-            slot_index = len(obj.data.materials) - 1
-        for poly in obj.data.polygons:
-            if (obj.name, poly.index) in face_keys:
-                poly.material_index = slot_index
-
-
 def _select_overlap_faces(objects, face_keys):
     for obj in objects:
         mesh = obj.data
-        uv_layer = mesh.uv_layers.active
         for poly in mesh.polygons:
             selected = (obj.name, poly.index) in face_keys
             poly.select = selected
-            if uv_layer is not None:
-                for loop_index in poly.loop_indices:
-                    uv_layer.data[loop_index].select = selected
+        mesh.update()
 
 
 class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
@@ -576,6 +477,10 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
         skipped = 0
         failed = 0
         triangles = []
+        # Old .blend files may only contain overlap_epsilon.  Prefer the new
+        # area property once it has been stored, otherwise migrate behavior in
+        # memory without renaming/removing the legacy setting.
+        area_epsilon = settings.get("overlap_area_epsilon", settings.overlap_epsilon)
 
         try:
             _ensure_object_mode()
@@ -585,7 +490,7 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
                         skipped += 1
                         continue
                     valid_objects.append(obj)
-                    triangles.extend(_uv_face_triangles(obj, settings.overlap_epsilon))
+                    triangles.extend(triangles_from_object(obj, area_epsilon))
                 except Exception as exc:
                     failed += 1
                     self.report({"ERROR"}, f"Check UV Overlap: failed to inspect {obj.name}: {exc}")
@@ -630,11 +535,11 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
 
 
 class AUTOSEAMUV_OT_clear_uv_overlap_highlight(bpy.types.Operator):
-    """Clear UV overlap debug face and UV selection."""
+    """Clear the non-destructive UV overlap face selection."""
 
     bl_idname = "autoseamuv.clear_uv_overlap_highlight"
     bl_label = "Clear UV Overlap Highlight"
-    bl_description = "Clear overlap debug material selection"
+    bl_description = "Clear overlap face selection without changing materials"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -647,17 +552,11 @@ class AUTOSEAMUV_OT_clear_uv_overlap_highlight(bpy.types.Operator):
         try:
             _ensure_object_mode()
             for obj in selected_objects:
-                uv_layer = obj.data.uv_layers.active
-                debug_index = obj.data.materials.find(DEBUG_MATERIAL_NAME)
                 for poly in obj.data.polygons:
                     if poly.select:
                         cleared += 1
                     poly.select = False
-                    if debug_index >= 0 and poly.material_index == debug_index:
-                        poly.material_index = 0
-                    if uv_layer is not None:
-                        for loop_index in poly.loop_indices:
-                            uv_layer.data[loop_index].select = False
+                obj.data.update()
         finally:
             _restore_context(context, active, selected, mode)
         self.report({"INFO"}, f"Clear UV Overlap Highlight: cleared {cleared} selected face(s).")

@@ -177,6 +177,16 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         max=16384,
     )
 
+    atlas_uv_source: EnumProperty(
+        name="Atlas UV Source",
+        description="Choose each object's active UV map or the UV Map Name setting",
+        items=(
+            ("ACTIVE", "Active", "Pack each object's current active UV map; skip objects without one"),
+            ("NAMED", "Named", "Pack UV Map Name and optionally create it when missing"),
+        ),
+        default="ACTIVE",
+    )
+
     atlas_pixel_margin: IntProperty(
         name="Atlas Pixel Margin",
         description="Pixel margin used when atlas packing selected objects",
@@ -198,11 +208,28 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
     overlap_epsilon: FloatProperty(
-        name="Overlap Epsilon",
-        description="Minimum positive UV area required to treat triangle intersections as overlap",
+        name="Legacy Overlap Epsilon",
+        description="Compatibility setting from versions before area and coordinate tolerances were separated",
         default=1.0e-6,
         min=0.0,
         max=0.01,
+    )
+
+    overlap_area_epsilon: FloatProperty(
+        name="Overlap Area Epsilon",
+        description="Minimum UV intersection area required to report an overlap",
+        default=1.0e-6,
+        min=0.0,
+        max=0.01,
+    )
+
+    overlap_coord_epsilon: FloatProperty(
+        name="Overlap Coordinate Epsilon",
+        description="UV-coordinate tolerance used for bounds and clipping side tests",
+        default=1.0e-9,
+        min=0.0,
+        max=0.01,
+        precision=8,
     )
 
     check_overlap_across_objects: BoolProperty(
@@ -213,7 +240,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     assign_overlap_debug_material: BoolProperty(
         name="Assign Overlap Debug Material",
-        description="Assign MAT_UV_OVERLAP_DEBUG to detected overlapping faces as a destructive visual aid",
+        description="Legacy compatibility option; overlap highlighting is now non-destructive face selection",
         default=False,
     )
 

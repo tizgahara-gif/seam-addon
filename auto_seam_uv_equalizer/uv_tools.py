@@ -9,6 +9,7 @@ from typing import DefaultDict
 import bpy
 
 from .island_tools import straighten_circular_strip_islands_on_object
+from .mesh_utils import build_edge_to_faces
 
 
 def ensure_uv_layer(obj, uv_map_name: str, create_if_missing: bool) -> bool:
@@ -44,18 +45,9 @@ def _select_only_object(obj) -> None:
     bpy.context.view_layer.objects.active = obj
 
 
-def _build_edge_to_faces(mesh) -> dict[int, list[int]]:
-    edge_to_faces: DefaultDict[int, list[int]] = defaultdict(list)
-    for polygon in mesh.polygons:
-        for loop_index in polygon.loop_indices:
-            edge_index = mesh.loops[loop_index].edge_index
-            edge_to_faces[edge_index].append(polygon.index)
-    return dict(edge_to_faces)
-
-
 def _find_seam_delimited_face_islands(mesh) -> list[list[int]]:
     """Find face islands separated by mesh seam edges."""
-    edge_to_faces = _build_edge_to_faces(mesh)
+    edge_to_faces = build_edge_to_faces(mesh)
     face_neighbors: DefaultDict[int, set[int]] = defaultdict(set)
 
     for edge_index, face_indices in edge_to_faces.items():
@@ -112,10 +104,10 @@ def _island_loop_indices(mesh, face_indices: list[int]) -> list[int]:
 
 
 def _uv_bbox(uv_layer, loop_indices: list[int]) -> tuple[float, float, float, float]:
-    min_u = min(uv_layer.data[loop_index].uv.x for loop_index in loop_indices)
-    max_u = max(uv_layer.data[loop_index].uv.x for loop_index in loop_indices)
-    min_v = min(uv_layer.data[loop_index].uv.y for loop_index in loop_indices)
-    max_v = max(uv_layer.data[loop_index].uv.y for loop_index in loop_indices)
+    min_u = min(uv_layer.uv[loop_index].vector.x for loop_index in loop_indices)
+    max_u = max(uv_layer.uv[loop_index].vector.x for loop_index in loop_indices)
+    min_v = min(uv_layer.uv[loop_index].vector.y for loop_index in loop_indices)
+    max_v = max(uv_layer.uv[loop_index].vector.y for loop_index in loop_indices)
     return min_u, max_u, min_v, max_v
 
 
@@ -181,7 +173,7 @@ def equal_region_pack_object(
         target_center_v = cell_min_v + (cell_height * 0.5)
 
         for loop_index in loop_indices:
-            uv = uv_layer.data[loop_index].uv
+            uv = uv_layer.uv[loop_index].vector
             uv.x = target_center_u + ((uv.x - source_center_u) * scale)
             uv.y = target_center_v + ((uv.y - source_center_v) * scale)
 

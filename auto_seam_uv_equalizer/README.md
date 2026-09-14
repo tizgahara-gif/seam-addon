@@ -170,8 +170,9 @@ auto_seam_uv_equalizer/README.md
 
 ### Atlas Pack
 
+- **Atlas UV Source**: **Active** (default) packs each object's currently active UV map and skips/reports objects without one; it never creates a UV map. **Named** uses **UV Map Name** and follows **Create UV If Missing**.
 - **Atlas Texture Size**: Texture size used to convert the pixel margin into a UV margin. The default is `2048`.
-- **Atlas Pixel Margin**: Pixel padding converted to UV space as `Atlas Pixel Margin / Atlas Texture Size`. The default is `1`.
+- **Atlas Pixel Margin**: Exact final-output padding fraction, calculated as `Atlas Pixel Margin / Atlas Texture Size` and passed to Pack Islands with `margin_method='FRACTION'`. The default is `1`.
 - **Average Island Scale Before Atlas Pack**: Runs Blender's average island scale operation before atlas packing.
 - **Allow Rotation**: Allows Blender Pack Islands to rotate UV islands during atlas packing.
 
@@ -212,9 +213,11 @@ Auto Unwrap Pack is for texture space efficiency. It uses **UV Margin**, respect
 
 Packs all UV islands from the active UV maps of selected mesh objects into one shared 0-1 UV space. It can be run from Object Mode or Edit Mode, ignores non-mesh objects, skips meshes without faces, and does not join the objects.
 
+By default, **Atlas UV Source: Active** uses each object's active UV map, reports and skips objects without one, and never creates a UV map. Choose **Named** to use **UV Map Name**; in that mode **Create UV If Missing** retains its existing behavior.
+
 This is UV atlas packing only. It does not merge materials, does not combine texture image files, and does not bake textures. If you need a single Substance Painter Texture Set, you must also consolidate materials separately before export.
 
-Atlas Pack Selected Objects does not call `bpy.ops.uv.unwrap()`, does not auto-mark seams, does not run Straighten Circular Strip Islands, does not run Material UV Scale Rules, and does not depend on UV Editor selection state. It selects all faces of each valid selected mesh object, optionally averages island scale, then runs `bpy.ops.uv.pack_islands()` using `Atlas Pixel Margin / Atlas Texture Size` as the UV margin.
+Atlas Pack Selected Objects does not call `bpy.ops.uv.unwrap()`, does not auto-mark seams, does not run Straighten Circular Strip Islands, does not run Material UV Scale Rules, and does not depend on UV Editor selection state. It selects all faces of each valid selected mesh object, optionally averages island scale, then runs `bpy.ops.uv.pack_islands()` with `margin_method='FRACTION'`, using `Atlas Pixel Margin / Atlas Texture Size` as the final UV margin fraction.
 
 ## Straighten Circular Strip Islands
 

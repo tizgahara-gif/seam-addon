@@ -12,8 +12,8 @@ bl_info = {
     "category": "UV",
 }
 
-import bpy
-from bpy.props import PointerProperty
+import bpy  # noqa: E402
+from bpy.props import PointerProperty  # noqa: E402
 
 from . import operators, operators_seam, operators_validation, properties, ui
 
