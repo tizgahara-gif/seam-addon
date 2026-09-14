@@ -168,7 +168,7 @@ auto_seam_uv_equalizer/README.md
 
 ### Grid Settings
 
-- **Fit Islands to Grid Cells**: Scales each **Auto Unwrap Grid** island to fill its assigned grid cell while preserving aspect ratio. The default is enabled.
+- **Fit Islands to Grid Cells**: Scales each **Auto Unwrap Grid** island to fill its assigned grid cell while preserving aspect ratio. Enabling it changes relative texel density. The default is disabled.
 - **Grid Cell Margin**: Padding inside each **Auto Unwrap Grid** cell. The default is `0.02`.
 - **Grid Cell Fill Ratio**: Optional multiplier for fitted island scale inside the cell. The default is `1.0`.
 

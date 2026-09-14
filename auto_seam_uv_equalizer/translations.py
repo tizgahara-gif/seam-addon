@@ -112,7 +112,7 @@ _JA_JP = {
     "Equal Region Pack": "等分領域パック", "Place each seam-delimited UV island into its own equal 0-1 UV region instead of using Blender Pack Islands": "Blenderのアイランドをパックの代わりに、各UVアイランドを均等な専用0-1 UV領域へ配置します",
     "Equal Region Margin": "等分領域マージン", "Padding inside each equal UV region": "各等分UV領域内の余白",
     "Equal Region Layout": "等分領域レイアウト", "Layout used when Equal Region Pack is enabled": "等分領域パック有効時のレイアウト",
-    "Fit Islands to Grid Cells": "アイランドをグリッドセルに合わせる", "Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio": "縦横比を維持し、各自動展開アイランドをグリッドセルに収まるよう拡縮します",
+    "Fit Islands to Grid Cells": "アイランドをグリッドセルに合わせる", "Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio; enabling this changes relative texel density": "縦横比を維持し、各自動展開アイランドをグリッドセルに収まるよう拡縮します。有効にすると相対テクセル密度が変化します",
     "Grid Cell Margin": "グリッドセルのマージン", "Margin inside each Auto Unwrap Grid cell": "各自動展開グリッドセル内の余白",
     "Grid Cell Fill Ratio": "グリッドセル充填率", "Additional scale multiplier for fitted islands inside Auto Unwrap Grid cells": "自動展開グリッドセル内のアイランドに追加するスケール倍率",
     "Atlas Texture Size": "アトラステクスチャサイズ", "Texture size used to convert atlas pixel margin into UV margin": "アトラスのピクセル余白をUVマージンへ変換するためのテクスチャサイズ",
