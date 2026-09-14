@@ -158,7 +158,13 @@ class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         counts = mark_selected_region_boundary_seams(bm, self.include_open_boundaries)
         bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
-        self.report({"INFO"}, "Selected Face Count: {}; Boundary Edge Count: {}; Newly Marked Seam Count: {}; Open Boundary Count: {}; Skipped Non-Manifold Edge Count: {}.".format(*counts))
+        self.report(
+            {"INFO"},
+            iface_(
+                "Selected Face Count: %d; Boundary Edge Count: %d; Newly Marked Seam Count: %d; Open Boundary Count: %d; Skipped Non-Manifold Edge Count: %d.",
+                *counts,
+            ),
+        )
         return {"FINISHED"}
 
 
