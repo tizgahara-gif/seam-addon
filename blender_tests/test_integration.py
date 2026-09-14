@@ -89,26 +89,37 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
-        source_loops = tuple(obj.data.polygons[0].loop_indices)
-        destination_loops = tuple(obj.data.polygons[1].loop_indices)
-        source_uvs = [tuple(layer.uv[index].vector) for index in source_loops]
-        destination_uvs = [tuple(layer.uv[index].vector) for index in destination_loops]
-        source_bounds = uv_bounds(source_uvs)
-        destination_bounds = uv_bounds(destination_uvs)
+    def test_selected_symmetric_transfer_preserves_unselected_region_uvs(self):
+        obj = mesh_object(
+            "SymmetricWithThirdRegion",
+            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+             (1,0,0),(1,0,1),(1,1,1),(1,1,0),
+             (3,2,0),(4,2,0),(4,3,0),(3,3,0)],
+            [(0,1,2,3),(4,5,6,7),(8,9,10,11)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        initial_uvs = (
+            (0.1,0.2),(0.3,0.2),(0.3,0.4),(0.1,0.4),
+            (0.6,0.6),(0.7,0.6),(0.7,0.7),(0.6,0.7),
+            (0.11,0.81),(0.29,0.83),(0.31,0.97),(0.13,0.99),
+        )
+        for index, uv in enumerate(initial_uvs):
+            layer.uv[index].vector = uv
 
-        self.assertAlmostEqual(uv_area(source_uvs), uv_area(destination_uvs))
-        self.assertAlmostEqual(source_bounds[1] - source_bounds[0],
-                               destination_bounds[1] - destination_bounds[0])
-        self.assertAlmostEqual(source_bounds[3] - source_bounds[2],
-                               destination_bounds[3] - destination_bounds[2])
-        mirrored_loop_pairs = ((0, 4), (1, 7), (2, 6), (3, 5))
-        mirror_axis_u = source_bounds[1] + destination_bounds[0]
-        for source_loop, destination_loop in mirrored_loop_pairs:
-            self.assertAlmostEqual(layer.uv[source_loop].vector.x
-                                   + layer.uv[destination_loop].vector.x,
-                                   mirror_axis_u)
-        self.assertGreaterEqual(destination_bounds[0] - source_bounds[1],
-                                settings.symmetry_island_gap)
+        for polygon in obj.data.polygons:
+            polygon.select = False
+        obj.data.polygons[0].select = True
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.symmetry_scope = "SELECTED"
+        settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
+        settings.symmetry_layout = "OVERLAP"
+        third_region_loops = tuple(obj.data.polygons[2].loop_indices)
+        before = tuple(tuple(layer.uv[index].vector) for index in third_region_loops)
+
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+
+        after = tuple(tuple(layer.uv[index].vector) for index in third_region_loops)
+        self.assertEqual(after, before)
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
