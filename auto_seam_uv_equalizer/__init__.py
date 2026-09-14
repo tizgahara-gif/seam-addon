@@ -20,6 +20,8 @@ from . import operators, operators_seam, operators_validation, properties, trans
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
     operators.AUTOSEAMUV_OT_mark_selected_region_boundary,
+    operators.AUTOSEAMUV_OT_detect_ring_strip,
+    operators.AUTOSEAMUV_OT_unwrap_ring_strip,
     operators.AUTOSEAMUV_OT_mark_only,
     operators.AUTOSEAMUV_OT_unwrap_only,
     operators.AUTOSEAMUV_OT_auto_unwrap_pack,

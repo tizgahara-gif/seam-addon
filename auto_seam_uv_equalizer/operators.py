@@ -119,12 +119,42 @@ class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
         return active is not None and active.type == "MESH" and context.mode == "EDIT_MESH"
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
-        if len(objects) != 1:
-            self.report({"ERROR"}, iface_("Ring / Strip: select exactly one visible mesh object."))
-            return {"CANCELLED"}
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        counts = mark_selected_region_boundary_seams(bm, self.include_open_boundaries)
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        self.report({"INFO"}, "Selected Face Count: {}; Boundary Edge Count: {}; Newly Marked Seam Count: {}; Open Boundary Count: {}; Skipped Non-Manifold Edge Count: {}.".format(*counts))
+        return {"FINISHED"}
+
+
+def _selected_edit_face_indices(obj):
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
+    return [face.index for face in bm.faces if face.select]
+
+
+def _analyze_object_ring(obj, settings, face_indices=None):
+    grid = analyze_ring_topology(obj.data, face_indices)
+    return grid, choose_seam(obj.data, grid, settings.ring_seam_mode)
+
+
+class AUTOSEAMUV_OT_detect_ring_strip(bpy.types.Operator):
+    """Validate the currently selected Edit Mode face component."""
+    bl_idname = "autoseamuv.detect_ring_strip"
+    bl_label = "Detect Ring / Strip"
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH" and context.mode == "EDIT_MESH"
+
+    def execute(self, context):
+        obj = context.active_object
+        face_indices = _selected_edit_face_indices(obj)
         try:
-            grid, seam = _analyze_object_ring(objects[0], _get_settings(context))
+            grid, seam = _analyze_object_ring(obj, _get_settings(context), face_indices)
         except TopologyError as exc:
             self.report({"ERROR"}, iface_("Ring / Strip: Invalid - %s", exc))
             return {"CANCELLED"}
@@ -139,13 +169,17 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected = _selected_visible_mesh_objects(context)
+        # In Edit Mode this operation is intentionally scoped to the active
+        # object's selected face component.  Object Mode retains batch support.
+        selected = ([context.active_object] if context.mode == "EDIT_MESH"
+                    and context.active_object is not None else _selected_visible_mesh_objects(context))
         if not selected:
             self.report({"ERROR"}, iface_("Ring / Strip: no visible mesh object selected."))
             return {"CANCELLED"}
         settings = _get_settings(context)
         objects, skipped = _objects_for_processing(self, selected, settings.process_shared_mesh_once)
         active, original_selection, mode = _snapshot_context(context)
+        edit_face_indices = _selected_edit_face_indices(active) if mode == "EDIT" else None
         completed = 0
         try:
             _ensure_object_mode()
@@ -153,7 +187,8 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                 try:
                     # Analysis, seam choice, and coordinate generation are pure;
                     # the UV layer is not even created until all validation ends.
-                    grid, seam = _analyze_object_ring(obj, settings)
+                    face_indices = edit_face_indices if obj == active and mode == "EDIT" else None
+                    grid, seam = _analyze_object_ring(obj, settings, face_indices)
                     coordinates = build_uv_coordinates(obj.data, grid, seam, settings.ring_layout,
                                                        settings.ring_spacing, settings.ring_orientation,
                                                        settings.ring_normalize)
@@ -559,31 +594,10 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
                     failed += 1
                     self.report({"ERROR"}, iface_("Check UV Overlap: failed to inspect %s: %s", obj.name, exc))
 
-            overlap_faces = set()
-            pair_count = 0
-            seen_pairs = set()
-            # Sweep on bbox min-X. This avoids the former unconditional T x T scan;
-            # only triangles whose X ranges overlap become exact-test candidates.
-            triangles.sort(key=lambda item: item["bbox"][0])
-            for i, tri_a in enumerate(triangles):
-                for tri_b in triangles[i + 1:]:
-                    if tri_b["bbox"][0] >= tri_a["bbox"][2] - settings.overlap_epsilon:
-                        break
-                    if tri_a["obj"] == tri_b["obj"] and tri_a["face"] == tri_b["face"]:
-                        continue
-                    if not settings.check_overlap_across_objects and tri_a["obj"] != tri_b["obj"]:
-                        continue
-                    if not _bbox_overlaps(tri_a["bbox"], tri_b["bbox"], settings.overlap_epsilon):
-                        continue
-                    if _triangles_overlap_with_area(tri_a["tri"], tri_b["tri"], settings.overlap_epsilon):
-                        key_a = (tri_a["obj"].name, tri_a["face"])
-                        key_b = (tri_b["obj"].name, tri_b["face"])
-                        pair_key = tuple(sorted((key_a, key_b)))
-                        if pair_key not in seen_pairs:
-                            seen_pairs.add(pair_key)
-                            pair_count += 1
-                        overlap_faces.add(key_a)
-                        overlap_faces.add(key_b)
+            overlap_faces, pair_count = find_overlaps(
+                triangles, area_epsilon, settings.overlap_coord_epsilon,
+                settings.check_overlap_across_objects,
+            )
 
             _select_overlap_faces(valid_objects, overlap_faces)
             # Selection is deliberately the only visualization: material slots and
