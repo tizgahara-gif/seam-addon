@@ -136,11 +136,39 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
         corresponding_loops = ((0,4),(1,7),(2,6),(3,5))
         for source_loop, destination_loop in corresponding_loops:
-            self.assertEqual(tuple(layer.uv[destination_loop].vector),
-                             source_uvs[source_loop])
+            self.assertAlmostEqual(layer.uv[source_loop].vector.x,
+                                   layer.uv[destination_loop].vector.x)
+            self.assertAlmostEqual(layer.uv[source_loop].vector.y,
+                                   layer.uv[destination_loop].vector.y)
         settings.symmetry_layout = "SEPARATE_MIRRORED"
         settings.symmetry_island_gap = 0.25
+        source_before_separate = tuple(
+            tuple(layer.uv[loop_index].vector) for loop_index in range(4)
+        )
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        source_after_separate = tuple(
+            tuple(layer.uv[loop_index].vector) for loop_index in range(4)
+        )
+        destination_uvs = tuple(
+            tuple(layer.uv[loop_index].vector) for loop_index in range(4, 8)
+        )
+        self.assertEqual(source_after_separate, source_before_separate)
+        self.assertAlmostEqual(uv_area(source_after_separate), uv_area(destination_uvs))
+        source_min_u, source_max_u, source_min_v, source_max_v = uv_bounds(source_after_separate)
+        destination_min_u, destination_max_u, destination_min_v, destination_max_v = uv_bounds(destination_uvs)
+        self.assertAlmostEqual(source_max_u - source_min_u,
+                               destination_max_u - destination_min_u)
+        self.assertAlmostEqual(source_max_v - source_min_v,
+                               destination_max_v - destination_min_v)
+        self.assertGreaterEqual(destination_min_u - source_max_u,
+                                settings.symmetry_island_gap - 1.0e-6)
+        mirror_sum = source_min_u + source_max_u + (
+            source_max_u - source_min_u + settings.symmetry_island_gap
+        )
+        for source_loop, destination_loop in corresponding_loops:
+            self.assertAlmostEqual(layer.uv[source_loop].vector.x
+                                   + layer.uv[destination_loop].vector.x,
+                                   mirror_sum)
 
     def test_symmetric_uv_transfer_restores_edit_mode_face_selection(self):
         obj = mesh_object("SymmetricSelection", [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
@@ -157,7 +185,8 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_layout = "OVERLAP"
 
         bpy.ops.object.mode_set(mode="EDIT")
-        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+        original_select_mode = (False, False, True)
+        bpy.context.tool_settings.mesh_select_mode = original_select_mode
         bpy.ops.mesh.select_all(action="DESELECT")
         edit_mesh = bmesh.from_edit_mesh(obj.data)
         edit_mesh.faces.ensure_lookup_table()
@@ -167,9 +196,88 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(original_selection, {0})
 
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode),
+                         original_select_mode)
+        restored_mesh = bmesh.from_edit_mesh(obj.data)
+        restored_mesh.faces.ensure_lookup_table()
+        restored_selection = {
+            face.index for face in restored_mesh.faces if face.select
+        }
+        self.assertEqual(restored_selection, original_selection)
 
-    def test_goz_symmetric_clothing_workflow_regression(self):
-        """Ticket 17: exercise the complete GoZ-equivalent workflow in order."""
+    def test_symmetric_uv_selected_scope_preserves_unrelated_active_map_region(self):
+        obj = mesh_object(
+            "SymmetricWithUnrelatedRegion",
+            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+             (1,0,0),(1,0,1),(1,1,1),(1,1,0),
+             (3,0,0),(4,0,0),(4,1,0),(3,1,0)],
+            [(0,1,2,3),(4,5,6,7),(8,9,10,11)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        initial_uvs = tuple(
+            (0.07 * loop_index, 0.11 * loop_index + 0.03)
+            for loop_index in range(len(obj.data.loops))
+        )
+        for loop_index, uv in enumerate(initial_uvs):
+            layer.uv[loop_index].vector = uv
+
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.symmetry_axis = "X"
+        settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
+        settings.symmetry_scope = "SELECTED"
+        settings.symmetry_layout = "OVERLAP"
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        edit_mesh = bmesh.from_edit_mesh(obj.data)
+        edit_mesh.faces.ensure_lookup_table()
+        edit_mesh.faces[0].select_set(True)
+        bmesh.update_edit_mesh(obj.data)
+        unrelated_before = tuple(
+            tuple(layer.uv[loop_index].vector)
+            for loop_index in obj.data.polygons[2].loop_indices
+        )
+
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+
+        unrelated_after = tuple(
+            tuple(layer.uv[loop_index].vector)
+            for loop_index in obj.data.polygons[2].loop_indices
+        )
+        self.assertEqual(unrelated_after, unrelated_before)
+
+    def test_ring_unwrap_restores_edit_mode_face_selection_and_select_mode(self):
+        obj = symmetric_clothing_strip(name="RingSelection")
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.uv_map_name = "RingUV"
+        settings.create_uv_if_missing = True
+        settings.ring_seam_mode = "AUTO"
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        original_select_mode = (False, False, True)
+        bpy.context.tool_settings.mesh_select_mode = original_select_mode
+        bpy.ops.mesh.select_all(action="SELECT")
+        edit_mesh = bmesh.from_edit_mesh(obj.data)
+        edit_mesh.faces.ensure_lookup_table()
+        original_selection = {
+            face.index for face in edit_mesh.faces if face.select
+        }
+
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_ring_strip(), {"FINISHED"})
+
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode),
+                         original_select_mode)
+        restored_mesh = bmesh.from_edit_mesh(obj.data)
+        restored_mesh.faces.ensure_lookup_table()
+        restored_selection = {
+            face.index for face in restored_mesh.faces if face.select
+        }
+        self.assertEqual(restored_selection, original_selection)
+
+    def _run_goz_symmetric_clothing_workflow(self, unwrap_stage, unwrap_operation):
+        """Exercise one GoZ-equivalent workflow without overwriting its unwrap."""
         obj = symmetric_clothing_strip()
         mesh = obj.data
         material_a = bpy.data.materials.new("GoZ Cloth")
@@ -200,6 +308,7 @@ class IntegrationTests(unittest.TestCase):
         bpy.ops.mesh.select_mode(type="FACE")
         bpy.ops.mesh.select_all(action="SELECT")
         selected_faces = set(range(len(mesh.polygons)))
+        selected_mode = tuple(bpy.context.tool_settings.mesh_select_mode)
 
         settings = bpy.context.scene.autoseamuv_settings
         settings.uv_map_name = target.name
@@ -210,6 +319,10 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_layout = "OVERLAP"
 
         def assert_invariants(stage):
+            self.assertEqual(bpy.context.mode, "EDIT_MESH",
+                             f"{stage}: edit mode changed")
+            self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode),
+                             selected_mode, f"{stage}: select mode changed")
             bm = bmesh.from_edit_mesh(mesh)
             bm.faces.ensure_lookup_table()
             self.assertEqual(
@@ -245,7 +358,7 @@ class IntegrationTests(unittest.TestCase):
 
         run_stage("Selected Region Boundary -> Seam",
                   bpy.ops.autoseamuv.mark_selected_region_boundary)
-        run_stage("Ring / Strip Unwrap", bpy.ops.autoseamuv.unwrap_ring_strip)
+        run_stage(unwrap_stage, unwrap_operation)
         run_stage("Validate Symmetry", bpy.ops.autoseamuv.validate_symmetry)
         run_stage("Transfer Symmetric UV", bpy.ops.autoseamuv.transfer_symmetric_uv)
 
@@ -268,12 +381,21 @@ class IntegrationTests(unittest.TestCase):
             self.assertAlmostEqual(target.uv[source_loop].vector.y,
                                    target.uv[destination_loop].vector.y, places=6)
 
-        run_stage("Auto Unwrap / Pack", bpy.ops.autoseamuv.auto_unwrap_pack)
         self.assertTrue(all(
             math.isfinite(component)
             for datum in target.uv
             for component in datum.vector
-        ), "Auto Unwrap / Pack: target UV contains a non-finite coordinate")
+        ), f"{unwrap_stage}: target UV contains a non-finite coordinate")
+
+    def test_general_goz_symmetric_clothing_workflow_regression(self):
+        self._run_goz_symmetric_clothing_workflow(
+            "Auto Unwrap / Pack", bpy.ops.autoseamuv.auto_unwrap_pack
+        )
+
+    def test_ring_goz_symmetric_clothing_workflow_regression(self):
+        self._run_goz_symmetric_clothing_workflow(
+            "Ring / Strip Unwrap", bpy.ops.autoseamuv.unwrap_ring_strip
+        )
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)

@@ -16,6 +16,6 @@ def measure_object(obj, width, height, unit="PX_M"):
     for tri in mesh.loop_triangles:
         a,b,c=(obj.matrix_world @ mesh.vertices[i].co for i in tri.vertices)
         world_area += (b-a).cross(c-a).length * .5
-        p=[uv.data[i].uv for i in tri.loops]
+        p=[uv.uv[i].vector for i in tri.loops]
         uv_area += abs((p[1].x-p[0].x)*(p[2].y-p[0].y)-(p[1].y-p[0].y)*(p[2].x-p[0].x))*.5*width*height
     return density_from_areas(world_area, uv_area, unit)
