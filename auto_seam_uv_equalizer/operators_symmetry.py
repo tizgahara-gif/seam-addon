@@ -59,7 +59,7 @@ class AUTOSEAMUV_OT_validate_symmetry(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            obj, _layer, plan = _plan(context, True)
+            obj, _layer, plan = _plan(context, False)
         except (SymmetryError, ValueError) as exc:
             self.report({"ERROR"}, iface_("Symmetry validation failed: %s", exc))
             return {"CANCELLED"}

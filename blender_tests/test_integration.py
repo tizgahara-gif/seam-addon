@@ -9,6 +9,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
 
 
+def uv_bounds(uvs):
+    us, vs = zip(*uvs)
+    return min(us), max(us), min(vs), max(vs)
+
+
+def uv_area(uvs):
+    return abs(sum(
+        uvs[index][0] * uvs[(index + 1) % len(uvs)][1]
+        - uvs[(index + 1) % len(uvs)][0] * uvs[index][1]
+        for index in range(len(uvs))
+    )) * 0.5
+
+
 def mesh_object(name, vertices, faces):
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(vertices, [], faces); mesh.update()
@@ -58,13 +71,22 @@ class IntegrationTests(unittest.TestCase):
                           [(0,1,2,3),(4,5,6,7)])
         settings = bpy.context.scene.autoseamuv_settings
         settings.symmetry_scope = "WHOLE"
-        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"CANCELLED"})
         layer = obj.data.uv_layers.new(name="UVMap")
-        for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))): layer.uv[index].vector = uv
+        source_coordinates = ((0.125, 0.25), (1.375, 0.25),
+                              (1.375, 1.0), (0.125, 1.0))
+        for index, uv in enumerate(source_coordinates):
+            layer.uv[index].vector = uv
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         settings.symmetry_layout = "OVERLAP"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        corresponding_loops = ((0,4),(1,7),(2,6),(3,5))
+        for source_loop, destination_loop in corresponding_loops:
+            self.assertEqual(tuple(layer.uv[destination_loop].vector),
+                             source_uvs[source_loop])
         settings.symmetry_layout = "SEPARATE_MIRRORED"
+        settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
     def test_selected_symmetric_transfer_preserves_unselected_region_uvs(self):
