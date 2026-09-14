@@ -98,6 +98,44 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=False,
     )
 
+    ring_auto_detect: BoolProperty(
+        name="Auto Detect",
+        description="Recover the ring or strip grid from selected quad faces",
+        default=True,
+    )
+    ring_layout: EnumProperty(
+        name="Layout",
+        items=(("RECTANGULAR", "Rectangular", "Align all rows to one width"),
+               ("PRESERVE_CIRCUMFERENCE", "Preserve Circumference", "Retain each ring's measured 3D circumference")),
+        default="PRESERVE_CIRCUMFERENCE",
+    )
+    ring_spacing: EnumProperty(
+        name="Spacing",
+        items=(("EVEN", "Even", "Use logical grid indices"),
+               ("EDGE_LENGTH", "Edge Length", "Use individual 3D edge lengths"),
+               ("AVERAGE_EDGE_LENGTH", "Average Edge Length", "Average corresponding edge intervals")),
+        default="AVERAGE_EDGE_LENGTH",
+    )
+    ring_seam_mode: EnumProperty(
+        name="Seam",
+        items=(("EXISTING", "Existing", "Require one complete existing seam path"),
+               ("SELECTED", "Selected", "Require one complete selected edge path"),
+               ("AUTO", "Auto Best Seam", "Score all valid longitudinal paths")),
+        default="AUTO",
+    )
+    ring_orientation: EnumProperty(
+        name="Orientation",
+        items=(("AUTO", "Auto", "Place the longitudinal direction on V"),
+               ("HORIZONTAL", "Horizontal", "Place circumference on U"),
+               ("VERTICAL", "Vertical", "Place circumference on V")),
+        default="AUTO",
+    )
+    ring_normalize: BoolProperty(
+        name="Normalize Result",
+        description="Scale the generated island to fit one 0-1 square without changing its aspect ratio",
+        default=False,
+    )
+
     circular_strip_min_faces: IntProperty(
         name="Circular Strip Min Faces",
         description="Minimum face count required to treat an island as a circular strip candidate",
