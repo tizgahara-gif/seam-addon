@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import bpy
 
-from .seam_detection import clear_seams, mark_auto_seams, mark_longitudinal_seam_helper
+from .seam_detection import clear_seams, mark_auto_seams, mark_advanced_seams, mark_longitudinal_seam_helper
+from .symmetry import mirror_edge_map
 from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
 
 
@@ -88,6 +89,25 @@ def _mesh_datablock_key(obj) -> int:
     return obj.data.as_pointer()
 
 
+def _auto_mark(obj, settings):
+    """Dispatch without removing the stable classic workflow."""
+    if settings.seam_mode == "ADVANCED":
+        count = mark_advanced_seams(obj, settings)
+    else:
+        count = mark_auto_seams(obj, settings.angle_threshold, settings.material_boundary,
+                                settings.boundary_edges, settings.non_manifold_edges)
+    if settings.maintain_symmetry:
+        mesh = obj.data
+        mapping, _ = mirror_edge_map([tuple(v.co) for v in mesh.vertices],
+                                     [tuple(e.vertices) for e in mesh.edges],
+                                     "XYZ".index(settings.mirror_axis), settings.mirror_tolerance)
+        for source, target in mapping.items():
+            if mesh.edges[source].use_seam and not mesh.edges[target].use_seam:
+                mesh.edges[target].use_seam = True; count += 1
+        mesh.update()
+    return count
+
+
 def _objects_for_processing(operator, objects: list[bpy.types.Object], process_shared_mesh_once: bool) -> tuple[list[bpy.types.Object], int]:
     if not process_shared_mesh_once:
         _warn_shared_meshes(operator, objects)
@@ -142,13 +162,7 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
                 try:
                     if settings.clear_existing:
                         total_cleared += clear_seams(obj.data)
-                    total_marked += mark_auto_seams(
-                        obj,
-                        settings.angle_threshold,
-                        settings.material_boundary,
-                        settings.boundary_edges,
-                        settings.non_manifold_edges,
-                    )
+                    total_marked += _auto_mark(obj, settings)
                     if settings.longitudinal_seam_helper:
                         total_longitudinal += mark_longitudinal_seam_helper(obj)
                     processed += 1
@@ -313,13 +327,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                 try:
                     if settings.clear_existing:
                         total_cleared += clear_seams(obj.data)
-                    total_marked += mark_auto_seams(
-                        obj,
-                        settings.angle_threshold,
-                        settings.material_boundary,
-                        settings.boundary_edges,
-                        settings.non_manifold_edges,
-                    )
+                    total_marked += _auto_mark(obj, settings)
                     if settings.longitudinal_seam_helper:
                         total_longitudinal += mark_longitudinal_seam_helper(obj)
                     total_straightened += unwrap_object(
@@ -585,8 +593,13 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
             overlap_faces = set()
             pair_count = 0
             seen_pairs = set()
+            # Sweep on bbox min-X. This avoids the former unconditional T x T scan;
+            # only triangles whose X ranges overlap become exact-test candidates.
+            triangles.sort(key=lambda item: item["bbox"][0])
             for i, tri_a in enumerate(triangles):
                 for tri_b in triangles[i + 1:]:
+                    if tri_b["bbox"][0] >= tri_a["bbox"][2] - settings.overlap_epsilon:
+                        break
                     if tri_a["obj"] == tri_b["obj"] and tri_a["face"] == tri_b["face"]:
                         continue
                     if not settings.check_overlap_across_objects and tri_a["obj"] != tri_b["obj"]:
@@ -604,8 +617,8 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
                         overlap_faces.add(key_b)
 
             _select_overlap_faces(valid_objects, overlap_faces)
-            if settings.assign_overlap_debug_material and overlap_faces:
-                _assign_debug_material(valid_objects, overlap_faces)
+            # Selection is deliberately the only visualization: material slots and
+            # polygon material indices are never modified by validation.
         finally:
             _restore_context(context, active, selected, mode)
 
