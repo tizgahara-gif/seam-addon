@@ -2,11 +2,17 @@
 
 ## Overview
 
-Auto Seam UV Equalizer is a Blender 5.1 add-on that helps with the initial UV setup pass for mesh objects. It automatically marks seams from face-angle changes, material boundaries, open boundary edges, non-manifold edges, and an optional longitudinal helper for cylindrical or cable-like forms. It can then unwrap, average UV island scale, and pack islands into the 0-1 UV space.
+ZBrushからGoZで転送されたSubTool MeshをBlender上でUV展開するためのAdd-on。
 
-This add-on is intended to reduce repetitive setup work for VRC accessories, hard-surface props, supports, panels, pipes, cables, and mixed small parts. It does not guarantee final production-ready UV layouts.
+It automatically marks seams from face-angle changes, material boundaries, open boundary edges, non-manifold edges, and an optional longitudinal helper for cylindrical or cable-like forms. It can then unwrap, average UV island scale, and pack islands into the 0-1 UV space. It does not guarantee final production-ready UV layouts.
 
-## v0.2 Features
+## Example Applications
+
+- VRC accessories.
+- Hard-surface props, supports, and panels.
+- Pipes, cables, and mixed small parts.
+
+## v0.5.0 Features
 
 - Longitudinal seam helper for cylinders, pipes, supports, and cable-like meshes.
 - Better error reporting during unwrap.
