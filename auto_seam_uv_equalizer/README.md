@@ -286,14 +286,28 @@ Manual cleanup is expected when the model has:
 
 Detects UV faces that overlap in UV space.
 
-Detected faces are selected as a non-destructive highlight.
-
-Detected faces are highlighted exclusively with Blender face selection. Material indices, material slots, and material datablocks are never modified. The former **Assign Overlap Debug Material** setting remains stored for file compatibility but is ignored and is no longer shown in the panel.
-
-**Overlap Area Epsilon** is the minimum UV intersection area that counts as overlap. **Overlap Coordinate Epsilon** is independently used for bbox and clipping coordinate comparisons. The old **Overlap Epsilon** property remains available to older saved files/scripts as a compatibility property.
-
-Overlap validation uses Blender's `mesh.loop_triangles` tessellation (so concave N-gons are handled by Blender rather than fan triangulation) and an adaptive uniform-grid broad phase. Candidate triangle pairs are deduplicated before exact polygon clipping, and triangles belonging to the same source face are not compared with one another.
+Detected faces are highlighted through face/UV selection. Validation never changes material slots or polygon material indices.
 
 Auto Unwrap Grid is for readable organization.
 Auto Unwrap Pack is for texture-space efficiency.
 Atlas Pack Selected Objects is for multi-object UV atlas layout.
+
+## Version 1.0 workflow
+
+The Blender 5.1 release reframes the add-on as an **initial UV processing and review tool**. Advanced detection scores curvature, material and sharp boundaries, boundary/existing-seam attraction, edge length, and persistent Force/Protect tags, then retains bounded continuous graph paths rather than emitting every locally interesting edge. Classic detection remains available for existing files.
+
+Force and Protect are independent boolean EDGE attributes (`autoseam_force` and `autoseam_protect`). Clearing ordinary seams does not clear these attributes. Coordinate mirroring uses a spatial hash and copies only unique vertex/edge matches; ambiguous or asymmetric matches are reported and skipped.
+
+Numeric texel density uses world-space tessellated geometry area and pixel-space UV area, including both texture dimensions. Quality Analysis uses Blender loop triangles to report flipped and degenerate UV faces, area stretch, coverage, and seam counts without changing material indices.
+
+The sidebar is divided into Auto Seam, Unwrap, Pack, Validate, and Utilities. Equal-cell placement is now labelled **Diagnostic Grid Layout**, defaults to Preserve Scale, and explicitly warns when Fit Each Cell changes relative texel density. Packing remains a wrapper around Blender's maintained Pack Islands implementation rather than a custom production packer.
+
+### Phase status
+
+- **Phase 1:** advanced path scoring/solver, Force/Protect attributes, safe coordinate symmetry, and seam conversion utilities are implemented. The path search is bounded Dijkstra over adjacency maps; coordinate mirror matching uses spatial hashing.
+- **Phase 2:** world-space numeric density plus loop-triangle flipped, zero-area, stretch and coverage analysis are implemented. Overlap broad-phase uses an X-axis sweep instead of an unconditional triangle-pair scan. Per-island padding analysis remains future work.
+- **Phase 3:** Blender 5.1 pack properties and diagnostic-grid positioning are exposed. Some Blender builds accept different operator keyword subsets, so the wrapper falls back to the stable margin/rotate subset.
+- **Phase 4:** circular-strip straightening remains available. General quad rectification, world orientation and in-place unwrap are not yet implemented.
+- **Phase 5:** mesh-persistent seam groups are implemented. Similar-island stacking remains future work.
+
+Checker/stretch material replacement is intentionally not performed: validation highlights faces through selection and preserves all original material slots and indices.
