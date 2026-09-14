@@ -297,14 +297,21 @@ Manual cleanup is expected when the model has:
 
 Detects UV faces that overlap in UV space.
 
-Detected faces are selected as a non-destructive highlight.
-
-Detected faces are highlighted exclusively with Blender face selection. Material indices, material slots, and material datablocks are never modified. The former **Assign Overlap Debug Material** setting remains stored for file compatibility but is ignored and is no longer shown in the panel.
-
-**Overlap Area Epsilon** is the minimum UV intersection area that counts as overlap. **Overlap Coordinate Epsilon** is independently used for bbox and clipping coordinate comparisons. The old **Overlap Epsilon** property remains available to older saved files/scripts as a compatibility property.
-
-Overlap validation uses Blender's `mesh.loop_triangles` tessellation (so concave N-gons are handled by Blender rather than fan triangulation) and an adaptive uniform-grid broad phase. Candidate triangle pairs are deduplicated before exact polygon clipping, and triangles belonging to the same source face are not compared with one another.
+Detected faces are highlighted through face/UV selection. Validation never changes material slots or polygon material indices.
 
 Auto Unwrap Grid is for readable organization.
 Auto Unwrap Pack is for texture-space efficiency.
 Atlas Pack Selected Objects is for multi-object UV atlas layout.
+# Ring / Strip Unwrap
+
+`Ring / Strip Unwrap` is an additional topology-driven workflow; the existing
+`Straighten Circular Strip Islands` option and operator IDs remain available.
+It validates a selected connected quad component, recovers its logical grid
+from opposite face edges, chooses a complete longitudinal seam, and only then
+writes UV loops.  Rectangular and circumference-preserving layouts, three
+spacing modes, explicit/existing/automatic seams, orientation, and optional
+0-1 normalization are exposed in the sidebar.
+
+Unsupported input (triangles, N-gons, poles, branches, disconnected or
+non-manifold components, ambiguous/revisited traversal, inconsistent grid
+dimensions, and incomplete requested seams) is rejected without UV edits.

@@ -1,10 +1,5 @@
-"""User interface panel for Auto Seam UV Equalizer."""
-
-from __future__ import annotations
-
+"""Task-oriented Blender 5.1 sidebar UI."""
 import bpy
-
-
 class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     """3D View sidebar panel for automatic seam and UV operations."""
 
@@ -53,6 +48,20 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if settings.straighten_circular_strip_islands:
             post_box.prop(settings, "circular_strip_min_faces")
             post_box.prop(settings, "circular_strip_margin")
+
+        ring_box = layout.box()
+        ring_box.label(text="Ring / Strip Unwrap")
+        ring_box.label(text="Topology:")
+        ring_box.prop(settings, "ring_auto_detect")
+        ring_box.prop(settings, "ring_layout")
+        ring_box.prop(settings, "ring_spacing")
+        ring_box.prop(settings, "ring_seam_mode")
+        ring_box.prop(settings, "ring_orientation")
+        ring_box.label(text="Options:")
+        ring_box.prop(settings, "ring_normalize")
+        row = ring_box.row(align=True)
+        row.operator("autoseamuv.detect_ring_strip", text="Detect Ring / Strip", icon="VIEWZOOM")
+        row.operator("autoseamuv.unwrap_ring_strip", text="Unwrap Ring / Strip", icon="UV")
 
         processing_box = layout.box()
         processing_box.label(text="Processing")
