@@ -1,9 +1,11 @@
 """Blender 5.1 runtime/registration and core-workflow smoke tests."""
+import math
 import pathlib
 import sys
 import unittest
 
 import bpy
+import bmesh
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
@@ -16,6 +18,26 @@ def mesh_object(name, vertices, faces):
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj; obj.select_set(True)
     return obj
+
+
+def ring_object(name="Ring", rows=4, columns=8):
+    vertices = [
+        (math.cos(2.0 * math.pi * column / columns),
+         math.sin(2.0 * math.pi * column / columns), row)
+        for row in range(rows)
+        for column in range(columns)
+    ]
+    faces = []
+    for row in range(rows - 1):
+        for column in range(columns):
+            next_column = (column + 1) % columns
+            faces.append((
+                row * columns + column,
+                row * columns + next_column,
+                (row + 1) * columns + next_column,
+                (row + 1) * columns + column,
+            ))
+    return mesh_object(name, vertices, faces)
 
 
 class IntegrationTests(unittest.TestCase):
@@ -66,6 +88,27 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
         settings.symmetry_layout = "SEPARATE_MIRRORED"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+
+    def test_ring_unwrap_restores_partial_face_selection_and_select_mode(self):
+        obj = ring_object()
+        selected_faces = set(range(8))
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bpy.ops.object.mode_set(mode="OBJECT")
+        for polygon in obj.data.polygons:
+            polygon.select = polygon.index in selected_faces
+        bpy.ops.object.mode_set(mode="EDIT")
+
+        original_select_mode = tuple(bpy.context.tool_settings.mesh_select_mode)
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_ring_strip(), {"FINISHED"})
+
+        edit_mesh = bmesh.from_edit_mesh(obj.data)
+        edit_mesh.faces.ensure_lookup_table()
+        restored_faces = {face.index for face in edit_mesh.faces if face.select}
+        self.assertEqual(restored_faces, selected_faces)
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), original_select_mode)
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
