@@ -61,9 +61,15 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"CANCELLED"})
         layer = obj.data.uv_layers.new(name="UVMap")
-        for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))): layer.uv[index].vector = uv
+        source_uvs = ((0,0),(1,0),(1,1),(0,1))
+        for index, uv in enumerate(source_uvs): layer.uv[index].vector = uv
+        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         settings.symmetry_layout = "OVERLAP"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        corresponding_loops = ((0,4),(1,7),(2,6),(3,5))
+        for source_loop, destination_loop in corresponding_loops:
+            self.assertEqual(tuple(layer.uv[destination_loop].vector),
+                             source_uvs[source_loop])
         settings.symmetry_layout = "SEPARATE_MIRRORED"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
