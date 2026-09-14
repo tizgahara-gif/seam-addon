@@ -24,6 +24,16 @@ It automatically marks seams from face-angle changes, material boundaries, open 
 - Clearer zip installation instructions.
 - Mark Selected Region Boundary as Seam for converting Edit Mode face-selection outlines into UV seams.
 
+## Exact Texture-X Symmetric UV Transfer
+
+**Transfer Exact Texture-X Symmetry** reuses the mesh symmetry validation and
+loop pairing backend, then reflects destination UV loops around the fixed
+texture axis `U = 0.5`. Choose **Left Half** or **Right Half** independently of
+the 3D mesh source direction. The operation rejects source UVs outside the
+chosen half or the 0–1 UV square before making changes, does not pack or
+normalize the result, and rolls destination UVs back if exact post-validation
+fails.
+
 ## Installation
 
 Install the packaged add-on zip named `auto_seam_uv_equalizer.zip` in Blender:

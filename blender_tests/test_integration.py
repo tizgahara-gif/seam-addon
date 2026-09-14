@@ -74,7 +74,8 @@ class IntegrationTests(unittest.TestCase):
         for name in ("mark_selected_region_boundary", "mark_only", "mark_and_unwrap",
                      "unwrap_only", "grid_layout", "pack_islands", "auto_unwrap_pack",
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
-                     "validate_symmetry", "transfer_symmetric_uv"):
+                     "validate_symmetry", "transfer_symmetric_uv",
+                     "transfer_exact_texture_x_symmetry"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
     def test_independent_grid_and_pack_preserve_mesh_and_edit_selection(self):

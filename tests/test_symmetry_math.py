@@ -59,3 +59,30 @@ def test_missing_face_rejected_without_writes():
         assert "missing mirrored face" in str(exc)
     else:
         raise AssertionError("asymmetric mesh accepted")
+
+
+def test_exact_texture_x_transfer_from_each_half():
+    pairs = ((0, 2), (1, 3))
+    left = [(0.1, 0.25), (0.5, 0.75), (9, 9), (9, 9)]
+    assert symmetry.exact_texture_x_uvs(left, pairs) == {
+        2: (0.9, 0.25), 3: (0.5, 0.75),
+    }
+    right = [(0.6, 0.2), (1.0, 0.8), (9, 9), (9, 9)]
+    assert symmetry.exact_texture_x_uvs(right, pairs, "RIGHT_HALF") == {
+        2: (0.4, 0.2), 3: (0.0, 0.8),
+    }
+
+
+def test_exact_texture_x_rejects_half_range_and_duplicate_errors():
+    for uvs, pairs, message in (
+        ([(0.6, 0.5), (9, 9)], ((0, 1),), "texture half"),
+        ([(0.2, 1.1), (9, 9)], ((0, 1),), "0-1 UV space"),
+        ([(0.2, 0.5), (9, 9)], ((0, 0),), "duplication"),
+        ([(0.2, 0.5), (9, 9)], ((0, 3),), "out of range"),
+    ):
+        try:
+            symmetry.exact_texture_x_uvs(uvs, pairs)
+        except symmetry.SymmetryError as exc:
+            assert message in str(exc)
+        else:
+            raise AssertionError("invalid exact Texture-X transfer accepted")
