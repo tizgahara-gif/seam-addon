@@ -6,6 +6,8 @@ from collections import defaultdict, deque
 from itertools import combinations
 from typing import DefaultDict, Iterable
 
+from .mesh_utils import build_mesh_topology
+
 
 EPSILON = 1.0e-6
 MAX_CIRCULAR_STRIP_ASPECT = 100.0
@@ -16,29 +18,19 @@ def _uv_points_close(point_a, point_b, tolerance: float = EPSILON) -> bool:
     return (point_a - point_b).length <= tolerance
 
 
-def _mesh_loop_uv_edge(mesh, uv_layer, loop_index: int) -> tuple:
-    polygon = next(polygon for polygon in mesh.polygons if polygon.loop_start <= loop_index < polygon.loop_start + polygon.loop_total)
-    offset = loop_index - polygon.loop_start
-    next_loop_index = polygon.loop_start + ((offset + 1) % polygon.loop_total)
-    return uv_layer.data[loop_index].uv, uv_layer.data[next_loop_index].uv
+def _mesh_loop_uv_edge(uv_layer, loop_index: int, loop_to_next: dict[int, int]) -> tuple:
+    next_loop_index = loop_to_next[loop_index]
+    return uv_layer.uv[loop_index].vector, uv_layer.uv[next_loop_index].vector
 
 
-def _mesh_uv_edges_match(mesh, uv_layer, loop_a_index: int, loop_b_index: int) -> bool:
-    a_start, a_end = _mesh_loop_uv_edge(mesh, uv_layer, loop_a_index)
-    b_start, b_end = _mesh_loop_uv_edge(mesh, uv_layer, loop_b_index)
+def _mesh_uv_edges_match(uv_layer, loop_a_index: int, loop_b_index: int, loop_to_next) -> bool:
+    a_start, a_end = _mesh_loop_uv_edge(uv_layer, loop_a_index, loop_to_next)
+    b_start, b_end = _mesh_loop_uv_edge(uv_layer, loop_b_index, loop_to_next)
     return (
         _uv_points_close(a_start, b_start) and _uv_points_close(a_end, b_end)
     ) or (
         _uv_points_close(a_start, b_end) and _uv_points_close(a_end, b_start)
     )
-
-
-def _mesh_edge_to_polygon_loops(mesh) -> dict[int, list[tuple[int, int]]]:
-    edge_to_loops: DefaultDict[int, list[tuple[int, int]]] = defaultdict(list)
-    for polygon in mesh.polygons:
-        for loop_index in polygon.loop_indices:
-            edge_to_loops[mesh.loops[loop_index].edge_index].append((polygon.index, loop_index))
-    return dict(edge_to_loops)
 
 
 def find_uv_islands(obj) -> list[set[int]]:
@@ -52,11 +44,12 @@ def find_uv_islands(obj) -> list[set[int]]:
         raise RuntimeError("Active object has no UV map.")
 
     face_neighbors: DefaultDict[int, set[int]] = defaultdict(set)
-    for linked_loops in _mesh_edge_to_polygon_loops(mesh).values():
+    _edge_faces, edge_to_loops, _loop_faces, loop_to_next = build_mesh_topology(mesh)
+    for linked_loops in edge_to_loops.values():
         for (face_a, loop_a_index), (face_b, loop_b_index) in combinations(linked_loops, 2):
             if face_a == face_b:
                 continue
-            if _mesh_uv_edges_match(mesh, uv_layer, loop_a_index, loop_b_index):
+            if _mesh_uv_edges_match(uv_layer, loop_a_index, loop_b_index, loop_to_next):
                 face_neighbors[face_a].add(face_b)
                 face_neighbors[face_b].add(face_a)
 
@@ -84,14 +77,8 @@ def find_uv_islands(obj) -> list[set[int]]:
     return islands
 
 
-def _loop_face_count(mesh, loop_indices: Iterable[int]) -> int:
-    face_indices = set()
-    for loop_index in loop_indices:
-        for polygon in mesh.polygons:
-            if polygon.loop_start <= loop_index < polygon.loop_start + polygon.loop_total:
-                face_indices.add(polygon.index)
-                break
-    return len(face_indices)
+def _loop_face_count(loop_indices: Iterable[int], loop_to_face: dict[int, int]) -> int:
+    return len({loop_to_face[loop_index] for loop_index in loop_indices})
 
 
 def _normalized_angle_from_start(angle: float, start_angle: float) -> float:
@@ -105,14 +92,14 @@ def _normalized_angle_from_start(angle: float, start_angle: float) -> float:
     return value
 
 
-def _circular_strip_parameters(mesh, uv_layer, loop_indices: Iterable[int], min_faces: int):
+def _circular_strip_parameters(uv_layer, loop_indices: Iterable[int], min_faces: int, loop_to_face):
     from math import atan2, pi, tau
 
     loop_list = list(loop_indices)
-    if _loop_face_count(mesh, loop_list) < min_faces or len(loop_list) < 6:
+    if _loop_face_count(loop_list, loop_to_face) < min_faces or len(loop_list) < 6:
         return None
 
-    coords = [uv_layer.data[loop_index].uv.copy() for loop_index in loop_list]
+    coords = [uv_layer.uv[loop_index].vector.copy() for loop_index in loop_list]
     center_u = sum(coord.x for coord in coords) / len(coords)
     center_v = sum(coord.y for coord in coords) / len(coords)
     polar = []
@@ -169,9 +156,11 @@ def _circular_strip_parameters(mesh, uv_layer, loop_indices: Iterable[int], min_
     }
 
 
-def straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin: float) -> bool:
+def straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin: float, loop_to_face=None) -> bool:
     """Straighten one circular or arc-shaped UV island into a horizontal strip."""
-    parameters = _circular_strip_parameters(mesh, uv_layer, loop_indices, min_faces=3)
+    if loop_to_face is None:
+        loop_to_face = build_mesh_topology(mesh)[2]
+    parameters = _circular_strip_parameters(uv_layer, loop_indices, min_faces=3, loop_to_face=loop_to_face)
     if parameters is None:
         return False
 
@@ -210,7 +199,7 @@ def straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin: float
 
     center_u, center_v = parameters["center"]
     for loop_index in loop_indices:
-        uv = uv_layer.data[loop_index].uv
+        uv = uv_layer.uv[loop_index].vector
         delta_u = uv.x - center_u
         delta_v = uv.y - center_v
         radius = (delta_u * delta_u + delta_v * delta_v) ** 0.5
@@ -236,11 +225,12 @@ def straighten_circular_strip_islands_on_object(obj, min_faces: int, margin: flo
         raise RuntimeError("Active object has no UV map.")
 
     straightened_count = 0
+    loop_to_face = build_mesh_topology(mesh)[2]
     for loop_indices in find_uv_islands(obj):
         try:
-            if _loop_face_count(mesh, loop_indices) < min_faces:
+            if _loop_face_count(loop_indices, loop_to_face) < min_faces:
                 continue
-            if straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin):
+            if straighten_circular_strip_island(mesh, uv_layer, loop_indices, margin, loop_to_face):
                 straightened_count += 1
         except Exception:
             continue

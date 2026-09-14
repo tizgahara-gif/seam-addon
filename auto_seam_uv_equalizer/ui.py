@@ -59,7 +59,11 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         processing_box.prop(settings, "process_shared_mesh_once")
 
         atlas_box = layout.box()
-        atlas_box.label(text="Pack")
+        atlas_box.label(text="Atlas Pack")
+        atlas_box.prop(settings, "atlas_uv_source")
+        if settings.atlas_uv_source == "NAMED":
+            atlas_box.prop(settings, "uv_map_name")
+            atlas_box.prop(settings, "create_uv_if_missing")
         atlas_box.prop(settings, "atlas_texture_size")
         atlas_box.prop(settings, "atlas_pixel_margin")
         atlas_box.prop(settings, "atlas_average_island_scale")
@@ -67,9 +71,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         validation_box = layout.box()
         validation_box.label(text="Validation")
-        validation_box.prop(settings, "overlap_epsilon")
+        validation_box.prop(settings, "overlap_area_epsilon")
+        validation_box.prop(settings, "overlap_coord_epsilon")
         validation_box.prop(settings, "check_overlap_across_objects")
-        validation_box.prop(settings, "assign_overlap_debug_material")
 
         actions_box = layout.box()
         actions_box.label(text="Actions")
