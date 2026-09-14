@@ -10,6 +10,7 @@ import bpy
 
 from .island_tools import straighten_circular_strip_islands_on_object
 from .mesh_utils import build_edge_to_faces
+from .uv_pack import pack as blender_pack
 
 
 def ensure_uv_layer(obj, uv_map_name: str, create_if_missing: bool) -> bool:
@@ -45,18 +46,33 @@ def _select_only_object(obj) -> None:
     bpy.context.view_layer.objects.active = obj
 
 
-def _find_seam_delimited_face_islands(mesh) -> list[list[int]]:
-    """Find face islands separated by mesh seam edges."""
+def _find_uv_face_islands(mesh, uv_layer) -> list[list[int]]:
+    """Find islands from the active UV coordinates, without consulting seams."""
     edge_to_faces = build_edge_to_faces(mesh)
     face_neighbors: DefaultDict[int, set[int]] = defaultdict(set)
+
+    def edge_uvs(face_index, edge_index):
+        polygon = mesh.polygons[face_index]
+        result = []
+        for loop_index in polygon.loop_indices:
+            loop = mesh.loops[loop_index]
+            if loop.edge_index == edge_index:
+                result.append(tuple(uv_layer.uv[loop_index].vector))
+                result.append(tuple(uv_layer.uv[polygon.loop_indices[(list(polygon.loop_indices).index(loop_index) + 1) % polygon.loop_total]].vector))
+                break
+        return result
 
     for edge_index, face_indices in edge_to_faces.items():
         if len(face_indices) != 2:
             continue
-        if mesh.edges[edge_index].use_seam:
-            continue
-
         face_a, face_b = face_indices
+        a_uvs = edge_uvs(face_a, edge_index)
+        b_uvs = edge_uvs(face_b, edge_index)
+        if len(a_uvs) != 2 or len(b_uvs) != 2 or not all(
+            any(abs(a[0] - b[0]) <= 1.0e-7 and abs(a[1] - b[1]) <= 1.0e-7 for b in b_uvs)
+            for a in a_uvs
+        ):
+            continue
         face_neighbors[face_a].add(face_b)
         face_neighbors[face_b].add(face_a)
 
@@ -115,10 +131,10 @@ def equal_region_pack_object(
     obj,
     margin: float,
     layout: str,
-    fit_to_cell: bool = True,
+    fit_mode: str = "PRESERVE_SCALE",
     fill_ratio: float = 1.0,
 ) -> int:
-    """Place each seam-delimited UV island into an equal 0-1 UV cell."""
+    """Place each active-map UV island into an equal 0-1 UV cell."""
     if obj is None or obj.type != "MESH":
         return 0
 
@@ -127,7 +143,7 @@ def equal_region_pack_object(
     if uv_layer is None:
         raise RuntimeError("Equal Region Pack requires an active UV map.")
 
-    islands = _find_seam_delimited_face_islands(mesh)
+    islands = _find_uv_face_islands(mesh, uv_layer)
     if not islands:
         return 0
 
@@ -158,9 +174,12 @@ def equal_region_pack_object(
             continue
 
         scale = 1.0
-        if fit_to_cell or source_width > target_width or source_height > target_height:
+        if fit_mode == "FIT_EACH_CELL" or (
+            fit_mode == "FIT_OVERSIZED_ONLY"
+            and (source_width > target_width or source_height > target_height)
+        ):
             scale = min(target_width / source_width, target_height / source_height)
-        if fit_to_cell:
+        if fit_mode == "FIT_EACH_CELL":
             scale *= safe_fill_ratio
         source_center_u = (min_u + max_u) * 0.5
         source_center_v = (min_v + max_v) * 0.5
@@ -188,17 +207,11 @@ def unwrap_object(
     method: str,
     margin: float,
     average_islands: bool,
-    pack_islands: bool,
     straighten_circular_strip_islands: bool,
     circular_strip_min_faces: int,
     circular_strip_margin: float,
-    equal_region_pack: bool,
-    equal_region_margin: float,
-    equal_region_layout: str,
-    grid_fit_to_cell: bool = True,
-    grid_cell_fill_ratio: float = 1.0,
 ) -> int:
-    """Unwrap one mesh object using the currently marked seams."""
+    """Unwrap one mesh object using current seams; never grid or pack it."""
     if obj is None or obj.type != "MESH":
         return 0
 
@@ -226,18 +239,6 @@ def unwrap_object(
 
         if average_islands:
             bpy.ops.uv.average_islands_scale()
-
-        if equal_region_pack:
-            bpy.ops.object.mode_set(mode="OBJECT")
-            equal_region_pack_object(
-                obj,
-                equal_region_margin,
-                equal_region_layout,
-                grid_fit_to_cell,
-                grid_cell_fill_ratio,
-            )
-        elif pack_islands:
-            bpy.ops.uv.pack_islands(margin=margin)
 
         bpy.ops.object.mode_set(mode="OBJECT")
         return straightened_count
@@ -248,51 +249,32 @@ def unwrap_object(
 
 
 
-def unwrap_object_pack(
-    obj,
-    uv_map_name: str,
-    create_if_missing: bool,
-    method: str,
-    margin: float,
-    average_islands: bool,
-    straighten_circular_strip_islands: bool,
-    circular_strip_min_faces: int,
-    circular_strip_margin: float,
-) -> int:
-    """Unwrap one mesh object and always pack islands with Blender Pack Islands."""
+def grid_layout_object(obj, margin, layout, fit_mode="PRESERVE_SCALE", fill_ratio=1.0) -> int:
+    """Arrange existing active-map UV islands in a grid without unwrapping or packing."""
     if obj is None or obj.type != "MESH":
         return 0
-
     try:
         _switch_to_object_mode()
         _select_only_object(obj)
+        return equal_region_pack_object(obj, margin, layout, fit_mode, fill_ratio)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to grid layout {obj.name}: {exc}") from exc
 
-        if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
-            raise RuntimeError(f"UV map '{uv_map_name}' does not exist and Create UV If Missing is disabled.")
 
+def pack_object(obj, settings) -> None:
+    """Pack existing islands on the active UV map with Blender's pack operator."""
+    if obj is None or obj.type != "MESH":
+        return
+    try:
+        _switch_to_object_mode()
+        _select_only_object(obj)
+        if obj.data.uv_layers.active is None:
+            raise RuntimeError("Pack Islands requires an active UV map.")
         bpy.ops.object.mode_set(mode="EDIT")
-        bpy.ops.mesh.select_mode(type="FACE")
         bpy.ops.mesh.select_all(action="SELECT")
-        bpy.ops.uv.unwrap(method=method, margin=margin)
-
-        straightened_count = 0
-        if straighten_circular_strip_islands:
-            bpy.ops.object.mode_set(mode="OBJECT")
-            straightened_count = straighten_circular_strip_islands_on_object(
-                obj,
-                circular_strip_min_faces,
-                circular_strip_margin,
-            )
-            bpy.ops.object.mode_set(mode="EDIT")
-
-        if average_islands:
-            bpy.ops.uv.average_islands_scale()
-
-        bpy.ops.uv.pack_islands(margin=margin)
-
+        blender_pack(bpy, settings)
         bpy.ops.object.mode_set(mode="OBJECT")
-        return straightened_count
     except Exception as exc:
         if bpy.ops.object.mode_set.poll():
             bpy.ops.object.mode_set(mode="OBJECT")
-        raise RuntimeError(f"Failed to pack unwrap {obj.name}: {exc}") from exc
+        raise RuntimeError(f"Failed to pack {obj.name}: {exc}") from exc

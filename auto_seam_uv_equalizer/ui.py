@@ -25,24 +25,35 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         seam_box.prop(settings, "longitudinal_seam_helper")
 
         uv_box = layout.box()
-        uv_box.label(text="UV Settings")
+        uv_box.label(text="UV")
         uv_box.prop(settings, "uv_map_name")
         uv_box.prop(settings, "create_uv_if_missing")
         uv_box.prop(settings, "unwrap_method")
         uv_box.prop(settings, "margin")
         uv_box.prop(settings, "average_islands")
-        uv_box.prop(settings, "equal_region_pack")
-        if settings.equal_region_pack:
-            uv_box.prop(settings, "equal_region_margin")
-            uv_box.prop(settings, "equal_region_layout")
-        else:
-            uv_box.prop(settings, "pack_islands")
+        uv_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap", icon="UV")
 
         grid_box = layout.box()
-        grid_box.label(text="Grid Settings")
-        grid_box.prop(settings, "grid_fit_to_cell")
+        grid_box.label(text="Grid Layout")
+        grid_box.prop(settings, "equal_region_layout")
+        grid_box.prop(settings, "grid_scale_mode")
         grid_box.prop(settings, "grid_cell_margin")
-        grid_box.prop(settings, "grid_cell_fill_ratio")
+        if settings.grid_scale_mode == "FIT_EACH_CELL":
+            grid_box.prop(settings, "grid_cell_fill_ratio")
+        grid_box.operator("autoseamuv.grid_layout", text="Grid Layout", icon="UV")
+
+        packing_box = layout.box()
+        packing_box.label(text="Packing")
+        packing_box.prop(settings, "margin")
+        packing_box.prop(settings, "pack_shape_method")
+        packing_box.prop(settings, "pack_rotation")
+        packing_box.prop(settings, "pack_margin_method")
+        packing_box.prop(settings, "lock_pinned_islands")
+        if settings.lock_pinned_islands:
+            packing_box.prop(settings, "pack_pin_method")
+        packing_box.prop(settings, "merge_overlapping")
+        packing_box.prop(settings, "pack_target")
+        packing_box.operator("autoseamuv.pack_islands", text="Pack Islands", icon="UV")
 
         post_box = layout.box()
         post_box.label(text="Post Process")
@@ -108,8 +119,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         )
         boundary_operator.include_open_boundaries = settings.include_open_boundaries
         actions_box.operator("autoseamuv.mark_only", text="Auto Mark Seams Only", icon="MOD_UVPROJECT")
-        actions_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap Grid", icon="UV")
-        actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap Pack", icon="UV")
+        actions_box.label(text="Quick Actions")
+        actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap + Pack", icon="UV")
         actions_box.operator("autoseamuv.mark_and_unwrap", text="Auto Seam + Unwrap", icon="PLAY")
         actions_box.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects", icon="UV")
         actions_box.operator("autoseamuv.check_uv_overlap", text="Check UV Overlap", icon="VIEWZOOM")

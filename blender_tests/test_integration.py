@@ -72,9 +72,58 @@ class IntegrationTests(unittest.TestCase):
 
     def test_operator_registration(self):
         for name in ("mark_selected_region_boundary", "mark_only", "mark_and_unwrap",
+                     "unwrap_only", "grid_layout", "pack_islands", "auto_unwrap_pack",
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
                      "validate_symmetry", "transfer_symmetric_uv"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
+
+    def test_independent_grid_and_pack_preserve_mesh_and_edit_selection(self):
+        obj = mesh_object(
+            "IndependentUV",
+            [(0,0,0),(1,0,0),(1,1,0),(0,1,0), (3,0,0),(5,0,0),(5,1,0),(3,1,0)],
+            [(0,1,2,3), (4,5,6,7)],
+        )
+        layer = obj.data.uv_layers.new(name="ExistingUV")
+        for index, uv in enumerate(((2,2),(3,2),(3,3),(2,3), (5,5),(7,5),(7,6),(5,6))):
+            layer.uv[index].vector = uv
+        topology = (len(obj.data.vertices), len(obj.data.edges), len(obj.data.polygons))
+        seams = tuple(edge.use_seam for edge in obj.data.edges)
+        island_sizes = ((1.0, 1.0), (2.0, 1.0))
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.context.tool_settings.mesh_select_mode = (True, True, True)
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+        for item in (*bm.verts, *bm.edges, *bm.faces):
+            item.select = False
+        bm.verts[0].select = True; bm.edges[0].select = True; bm.faces[0].select = True
+        bmesh.update_edit_mesh(obj.data)
+        selection = ({v.index for v in bm.verts if v.select},
+                     {e.index for e in bm.edges if e.select},
+                     {f.index for f in bm.faces if f.select})
+
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.grid_scale_mode = "PRESERVE_SCALE"
+        settings.equal_region_layout = "HORIZONTAL_STRIP"
+        self.assertEqual(bpy.ops.autoseamuv.grid_layout(), {"FINISHED"})
+        self.assertEqual(topology, (len(obj.data.vertices), len(obj.data.edges), len(obj.data.polygons)))
+        self.assertEqual(seams, tuple(edge.use_seam for edge in obj.data.edges))
+        for start, expected in zip((0, 4), island_sizes):
+            coords = [tuple(layer.uv[index].vector) for index in range(start, start + 4)]
+            bounds = uv_bounds(coords)
+            self.assertAlmostEqual(bounds[1] - bounds[0], expected[0])
+            self.assertAlmostEqual(bounds[3] - bounds[2], expected[1])
+
+        before_pack = tuple(tuple(item.vector) for item in layer.uv)
+        self.assertEqual(bpy.ops.autoseamuv.pack_islands(), {"FINISHED"})
+        self.assertNotEqual(before_pack, tuple(tuple(item.vector) for item in layer.uv))
+        self.assertEqual(topology, (len(obj.data.vertices), len(obj.data.edges), len(obj.data.polygons)))
+        self.assertEqual(seams, tuple(edge.use_seam for edge in obj.data.edges))
+        restored = bmesh.from_edit_mesh(obj.data)
+        self.assertEqual(selection, ({v.index for v in restored.verts if v.select},
+                                     {e.index for e in restored.edges if e.select},
+                                     {f.index for f in restored.faces if f.select}))
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), (True, True, True))
 
     def test_selected_boundary_and_auto_seams(self):
         obj = mesh_object("Cube", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
