@@ -1,13 +1,28 @@
 """Blender 5.1 runtime/registration and core-workflow smoke tests."""
+import math
 import pathlib
 import sys
 import unittest
 
 import bmesh
 import bpy
+import bmesh
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
+
+
+def uv_bounds(uvs):
+    us, vs = zip(*uvs)
+    return min(us), max(us), min(vs), max(vs)
+
+
+def uv_area(uvs):
+    return abs(sum(
+        uvs[index][0] * uvs[(index + 1) % len(uvs)][1]
+        - uvs[(index + 1) % len(uvs)][0] * uvs[index][1]
+        for index in range(len(uvs))
+    )) * 0.5
 
 
 def mesh_object(name, vertices, faces):
@@ -17,6 +32,26 @@ def mesh_object(name, vertices, faces):
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj; obj.select_set(True)
     return obj
+
+
+def ring_object(name="Ring", rows=4, columns=8):
+    vertices = [
+        (math.cos(2.0 * math.pi * column / columns),
+         math.sin(2.0 * math.pi * column / columns), row)
+        for row in range(rows)
+        for column in range(columns)
+    ]
+    faces = []
+    for row in range(rows - 1):
+        for column in range(columns):
+            next_column = (column + 1) % columns
+            faces.append((
+                row * columns + column,
+                row * columns + next_column,
+                (row + 1) * columns + next_column,
+                (row + 1) * columns + column,
+            ))
+    return mesh_object(name, vertices, faces)
 
 
 class IntegrationTests(unittest.TestCase):
@@ -53,19 +88,56 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(bpy.ops.autoseamuv.mark_only(), {"FINISHED"})
             self.assertEqual({p.index for p in obj.data.polygons if p.select}, original)
 
+    def test_auto_unwrap_pack_restores_edit_face_selection_and_select_mode(self):
+        obj = mesh_object("PackSelection", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
+                                             (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],
+                          [(0,1,2,3),(4,7,6,5),(0,4,5,1),(1,5,6,2),(2,6,7,3),(4,0,3,7)])
+        bpy.ops.object.mode_set(mode="EDIT")
+        original_select_mode = (True, False, True)
+        bpy.context.tool_settings.mesh_select_mode = original_select_mode
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        for face in bm.faces:
+            face.select_set(False)
+        for face_index in (0, 2):
+            bm.faces[face_index].select_set(True)
+        bm.select_flush_mode()
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        original_faces = {face.index for face in bm.faces if face.select}
+        self.assertEqual(original_faces, {0, 2})
+
+        self.assertEqual(bpy.ops.autoseamuv.auto_unwrap_pack(), {"FINISHED"})
+
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), original_select_mode)
+        restored_bm = bmesh.from_edit_mesh(obj.data)
+        restored_bm.faces.ensure_lookup_table()
+        restored_faces = {face.index for face in restored_bm.faces if face.select}
+        self.assertEqual(restored_faces, original_faces)
+
     def test_symmetric_uv_layouts_and_missing_map(self):
         obj = mesh_object("Symmetric", [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
                                          (1,0,0),(1,0,1),(1,1,1),(1,1,0)],
                           [(0,1,2,3),(4,5,6,7)])
         settings = bpy.context.scene.autoseamuv_settings
         settings.symmetry_scope = "WHOLE"
-        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"CANCELLED"})
         layer = obj.data.uv_layers.new(name="UVMap")
-        for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))): layer.uv[index].vector = uv
+        source_coordinates = ((0.125, 0.25), (1.375, 0.25),
+                              (1.375, 1.0), (0.125, 1.0))
+        for index, uv in enumerate(source_coordinates):
+            layer.uv[index].vector = uv
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         settings.symmetry_layout = "OVERLAP"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        corresponding_loops = ((0,4),(1,7),(2,6),(3,5))
+        for source_loop, destination_loop in corresponding_loops:
+            self.assertEqual(tuple(layer.uv[destination_loop].vector),
+                             source_uvs[source_loop])
         settings.symmetry_layout = "SEPARATE_MIRRORED"
+        settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
     def test_symmetric_uv_transfer_restores_edit_mode_face_selection(self):
