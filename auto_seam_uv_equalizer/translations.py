@@ -31,6 +31,9 @@ _JA_JP = {
     "Separate Mirrored": "左右を分離",
     "Overlap": "重ねる",
     "Source Side": "転送元",
+    "Axis": "軸",
+    "Scope": "対象範囲",
+    "Tolerance": "許容値",
     "Selected Faces": "選択面",
     "Whole Mesh": "メッシュ全体",
     "Island Gap": "アイランド間隔",
@@ -174,6 +177,7 @@ _JA_JP = {
 
     # Runtime report templates. Translate the template before interpolation.
     "Tagged %d edge(s)": "%d本の辺をタグ付けしました",
+    "Selected Face Count: %d; Boundary Edge Count: %d; Newly Marked Seam Count: %d; Open Boundary Count: %d; Skipped Non-Manifold Edge Count: %d.": "選択面数: %d、境界辺数: %d、新規シーム設定数: %d、開いた境界数: %d、スキップした非多様体辺数: %d。",
     "Mirrored %d; skipped %d ambiguous/unmatched edge(s)": "%d本を対称化し、曖昧または不一致の辺%d本をスキップしました",
     "Seam group not found": "シームグループが見つかりません",
     "Texel density: %.3f %s": "テクセル密度: %.3f %s",
