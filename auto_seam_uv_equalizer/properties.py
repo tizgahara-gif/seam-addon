@@ -313,7 +313,6 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     pack_pin_method: EnumProperty(name="Pin Method", items=(("LOCKED", "Lock All", ""), ("ROTATION", "Lock Rotation", ""), ("ROTATION_SCALE", "Lock Rotation & Scale", "")), default="LOCKED")
     merge_overlapping: BoolProperty(name="Merge Overlapping", default=False)
     pack_target: EnumProperty(name="Pack Target", items=(("CLOSEST_UDIM", "Closest UDIM", ""), ("ACTIVE_UDIM", "Active UDIM", ""), ("ORIGINAL_AABB", "Original Bounding Box", ""), ("CUSTOM_REGION", "Custom Region", "")), default="CLOSEST_UDIM")
-    grid_layout_mode: EnumProperty(name="Grid Mode", items=(("PRESERVE_SCALE", "Preserve Scale", "Move only"), ("FIT_OVERSIZED", "Fit Oversized Only", "Shrink only islands exceeding cells"), ("FIT_EACH", "Fit Each Cell", "Changes relative texel density")), default="PRESERVE_SCALE")
     seam_group_name: StringProperty(name="Seam Group", default="UV0")
     seam_group_apply_mode: EnumProperty(name="Apply Mode", items=(("REPLACE", "Replace", ""), ("MERGE", "Merge", "")), default="REPLACE")
 
