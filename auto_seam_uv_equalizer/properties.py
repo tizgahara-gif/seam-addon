@@ -198,8 +198,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     grid_fit_to_cell: BoolProperty(
         name="Fit Islands to Grid Cells",
-        description="Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio",
-        default=True,
+        description="Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio; enabling this changes relative texel density",
+        default=False,
     )
 
     grid_cell_margin: FloatProperty(
