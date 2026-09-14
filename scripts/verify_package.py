@@ -31,6 +31,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "include_open_boundaries",
         "symmetry_layout",
         "symmetry_scope",
+        "texture_source_side",
     ),
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",
@@ -88,14 +89,18 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         'actions_box.prop(settings, "include_open_boundaries")',
         'symmetry_box.operator("autoseamuv.validate_symmetry"',
         'symmetry_box.operator("autoseamuv.transfer_symmetric_uv"',
+        'symmetry_box.operator("autoseamuv.transfer_exact_texture_x_symmetry"',
     ),
     "auto_seam_uv_equalizer/symmetry.py": (
         "def build_symmetry_plan",
         "def transferred_uvs",
+        "def exact_texture_x_uvs",
     ),
     "auto_seam_uv_equalizer/operators_symmetry.py": (
         'bl_idname = "autoseamuv.validate_symmetry"',
         'bl_idname = "autoseamuv.transfer_symmetric_uv"',
+        "class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry",
+        'bl_idname = "autoseamuv.transfer_exact_texture_x_symmetry"',
     ),
     "auto_seam_uv_equalizer/mesh_utils.py": (
         "def build_mesh_topology",

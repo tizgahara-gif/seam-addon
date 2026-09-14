@@ -28,6 +28,11 @@ _JA_JP = {
     "Symmetric UV": "対称UV",
     "Validate Symmetry": "対称性を検証",
     "Transfer Symmetric UV": "対称UVを転送",
+    "Transfer Exact Texture-X Symmetric UV": "UVをテクスチャX方向に厳密対称転送",
+    "Transfer Exact Texture-X Symmetry": "UVをテクスチャX方向に厳密対称転送",
+    "Texture Source Side": "テクスチャ転送元",
+    "Left Half": "左半面",
+    "Right Half": "右半面",
     "Separate Mirrored": "左右を分離",
     "Overlap": "重ねる",
     "Source Side": "転送元",
@@ -41,6 +46,9 @@ _JA_JP = {
     "%s: symmetry valid for %d face pair(s)": "%s: %d組の面の対称性を確認しました",
     "Symmetric UV transfer failed: %s": "対称UV転送に失敗しました: %s",
     "Transferred %d symmetric UV face pair(s)": "%d組の対称UV面を転送しました",
+    "Transferred %d exact Texture-X symmetric UV face pair(s)": "%d組のUV面をテクスチャX方向に厳密対称転送しました",
+    "Source UVs are not fully contained in the selected texture half.": "転送元UVが指定したテクスチャ半面内に完全に収まっていません。",
+    "Source UVs are outside the 0-1 UV space.": "転送元UVが0–1 UV空間外にあります。",
     "Auto Seam UV: failed on %s: %s": "自動シーム UV: %sの処理に失敗しました: %s",
 
     # Operators and operator descriptions.

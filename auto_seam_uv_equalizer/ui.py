@@ -80,6 +80,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         symmetry_box.label(text="Symmetric UV")
         symmetry_box.prop(settings, "symmetry_axis")
         symmetry_box.prop(settings, "symmetry_direction")
+        symmetry_box.prop(settings, "texture_source_side")
         symmetry_box.prop(settings, "symmetry_scope")
         symmetry_box.prop(settings, "symmetry_layout")
         symmetry_box.prop(settings, "symmetry_tolerance")
@@ -87,6 +88,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             symmetry_box.prop(settings, "symmetry_island_gap")
         symmetry_box.operator("autoseamuv.validate_symmetry", text="Validate Symmetry", icon="CHECKMARK")
         symmetry_box.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV", icon="UV")
+        symmetry_box.operator("autoseamuv.transfer_exact_texture_x_symmetry",
+                              text="Transfer Exact Texture-X Symmetry", icon="UV")
 
         processing_box = layout.box()
         processing_box.label(text="Processing")

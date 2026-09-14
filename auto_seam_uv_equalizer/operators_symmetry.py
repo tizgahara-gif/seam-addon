@@ -4,7 +4,8 @@ from __future__ import annotations
 import bmesh
 import bpy
 
-from .symmetry import SymmetryError, build_symmetry_plan, transferred_uvs
+from .symmetry import (SymmetryError, build_symmetry_plan, exact_texture_x_uvs,
+                       transferred_uvs)
 from .translations import iface_
 from .operators import _restore_context, _snapshot_context
 
@@ -98,4 +99,61 @@ class AUTOSEAMUV_OT_transfer_symmetric_uv(bpy.types.Operator):
         return return_value
 
 
-CLASSES = (AUTOSEAMUV_OT_validate_symmetry, AUTOSEAMUV_OT_transfer_symmetric_uv)
+class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry(bpy.types.Operator):
+    bl_idname = "autoseamuv.transfer_exact_texture_x_symmetry"
+    bl_label = "Transfer Exact Texture-X Symmetric UV"
+    bl_options = {"REGISTER", "UNDO"}
+
+    _EPSILON = 1.0e-7
+
+    def execute(self, context):
+        active, selected_objects, original_mode = _snapshot_context(context)
+        try:
+            if original_mode == "EDIT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            obj, layer, plan = _plan(context, True)
+            source_uvs = [tuple(item.vector) for item in layer.uv]
+            writes = exact_texture_x_uvs(
+                source_uvs, plan.loop_pairs,
+                context.scene.autoseamuv_settings.texture_source_side,
+                self._EPSILON,
+            )
+
+            # Retain every destination value so even assignment or post-check
+            # failures leave the active map exactly as it was before execution.
+            previous = {loop_index: tuple(layer.uv[loop_index].vector)
+                        for loop_index in writes}
+            try:
+                for loop_index, uv in writes.items():
+                    layer.uv[loop_index].vector = uv
+                for source_loop, destination_loop in plan.loop_pairs:
+                    source_uv = layer.uv[source_loop].vector
+                    destination_uv = layer.uv[destination_loop].vector
+                    if (abs((source_uv.x + destination_uv.x) - 1.0) > self._EPSILON
+                            or abs(source_uv.y - destination_uv.y) > self._EPSILON):
+                        raise SymmetryError("exact Texture-X post-validation failed")
+            except Exception:
+                for loop_index, uv in previous.items():
+                    layer.uv[loop_index].vector = uv
+                obj.data.update()
+                raise
+            obj.data.update()
+        except (SymmetryError, ValueError) as exc:
+            self.report({"ERROR"}, iface_(str(exc)))
+            return_value = {"CANCELLED"}
+        except Exception as exc:
+            # A write-time Blender error has already been rolled back above.
+            self.report({"ERROR"}, iface_("Exact Texture-X UV transfer failed: %s", str(exc)))
+            return_value = {"CANCELLED"}
+        else:
+            self.report({"INFO"}, iface_(
+                "Transferred %d exact Texture-X symmetric UV face pair(s)",
+                len(plan.face_pairs)))
+            return_value = {"FINISHED"}
+        finally:
+            _restore_context(context, active, selected_objects, original_mode)
+        return return_value
+
+
+CLASSES = (AUTOSEAMUV_OT_validate_symmetry, AUTOSEAMUV_OT_transfer_symmetric_uv,
+           AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry)

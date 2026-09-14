@@ -41,6 +41,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     symmetry_layout: EnumProperty(name="Layout", items=(("OVERLAP", "Overlap", ""), ("SEPARATE_MIRRORED", "Separate Mirrored", "")), default="OVERLAP")
     symmetry_tolerance: FloatProperty(name="Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     symmetry_island_gap: FloatProperty(name="Island Gap", default=0.02, min=0.0, max=10.0)
+    texture_source_side: EnumProperty(
+        name="Texture Source Side",
+        items=(("LEFT_HALF", "Left Half", "Use UVs in the left texture half as the source"),
+               ("RIGHT_HALF", "Right Half", "Use UVs in the right texture half as the source")),
+        default="LEFT_HALF",
+    )
 
     margin: FloatProperty(
         name="UV Margin",

@@ -7,7 +7,7 @@ without Blender.
 from __future__ import annotations
 
 from itertools import product
-from math import floor
+from math import floor, isfinite
 from typing import NamedTuple
 
 
@@ -162,3 +162,48 @@ def transferred_uvs(source_uvs, loop_pairs, layout="OVERLAP", island_gap=0.02):
     offset = (maximum_u - minimum_u) + island_gap
     return {destination: (minimum_u + maximum_u - uv[0] + offset, uv[1])
             for _, destination, uv in values}
+
+
+def exact_texture_x_uvs(source_uvs, loop_pairs, source_side="LEFT_HALF", epsilon=1e-7):
+    """Validate and plan an exact reflection about U=0.5 without mutating UVs."""
+    if epsilon < 0:
+        raise ValueError("epsilon must not be negative")
+    if source_side not in {"LEFT_HALF", "RIGHT_HALF"}:
+        raise SymmetryError(f"unknown texture source side: {source_side}")
+    if not loop_pairs:
+        raise SymmetryError("no UV loop pairs to transfer")
+
+    source_loops = [source for source, _destination in loop_pairs]
+    destination_loops = [destination for _source, destination in loop_pairs]
+    if (len(set(source_loops)) != len(source_loops)
+            or len(set(destination_loops)) != len(destination_loops)
+            or set(source_loops) & set(destination_loops)):
+        raise SymmetryError("source/destination loop duplication error")
+
+    writes = {}
+    for source, destination in loop_pairs:
+        if (not isinstance(source, int) or not isinstance(destination, int)
+                or source < 0 or destination < 0
+                or source >= len(source_uvs) or destination >= len(source_uvs)):
+            raise SymmetryError("loop pair is incomplete or out of range")
+        try:
+            u, v = (float(value) for value in source_uvs[source][:2])
+        except (IndexError, TypeError, ValueError) as exc:
+            raise SymmetryError(f"invalid source UV loop: {source}") from exc
+        if not isfinite(u) or not isfinite(v):
+            raise SymmetryError("Source UVs are outside the 0-1 UV space.")
+        if not (-epsilon <= u <= 1.0 + epsilon
+                and -epsilon <= v <= 1.0 + epsilon):
+            raise SymmetryError("Source UVs are outside the 0-1 UV space.")
+        if source_side == "LEFT_HALF" and not -epsilon <= u <= 0.5 + epsilon:
+            raise SymmetryError(
+                "Source UVs are not fully contained in the selected texture half.")
+        if source_side == "RIGHT_HALF" and not 0.5 - epsilon <= u <= 1.0 + epsilon:
+            raise SymmetryError(
+                "Source UVs are not fully contained in the selected texture half.")
+        destination_uv = (1.0 - u, v)
+        if not (-epsilon <= destination_uv[0] <= 1.0 + epsilon
+                and -epsilon <= destination_uv[1] <= 1.0 + epsilon):
+            raise SymmetryError("Destination UVs would be outside the 0-1 UV space.")
+        writes[destination] = destination_uv
+    return writes
