@@ -67,6 +67,22 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_layout = "SEPARATE_MIRRORED"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
+    def test_ring_unwrap_activates_target_uv_map(self):
+        vertices = [(column, row, 0) for row in range(3) for column in range(4)]
+        faces = []
+        for row in range(2):
+            for column in range(3):
+                first = row * 4 + column
+                faces.append((first, first + 1, first + 5, first + 4))
+        obj = mesh_object("Strip", vertices, faces)
+        uv_map = obj.data.uv_layers.new(name="UVMap")
+        obj.data.uv_layers.new(name="UV_Auto")
+        obj.data.uv_layers.active = uv_map
+        bpy.context.scene.autoseamuv_settings.uv_map_name = "UV_Auto"
+
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_ring_strip(), {"FINISHED"})
+        self.assertEqual(obj.data.uv_layers.active.name, "UV_Auto")
+
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
 result = unittest.TextTestRunner(verbosity=2).run(suite)
