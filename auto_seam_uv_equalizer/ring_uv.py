@@ -5,6 +5,7 @@ from __future__ import annotations
 from math import isfinite
 
 from .ring_topology import TopologyError
+from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 
 
 def _length(mesh, a, b):
@@ -25,8 +26,8 @@ def choose_seam(mesh, grid, mode):
     # Existing markings dominate; then prefer continuous, low-curvature and
     # material-boundary paths. Protected paths are excluded.
     attrs = getattr(mesh, "attributes", {})
-    protect = attrs.get("protect_seam") if hasattr(attrs, "get") else None
-    force = attrs.get("force_seam") if hasattr(attrs, "get") else None
+    protect = attrs.get(PROTECT_SEAM_ATTRIBUTE) if hasattr(attrs, "get") else None
+    force = attrs.get(FORCE_SEAM_ATTRIBUTE) if hasattr(attrs, "get") else None
     edge_faces = {edge.index: [] for edge in mesh.edges}
     by_vertices = {tuple(sorted(edge.vertices)): edge.index for edge in mesh.edges}
     for face in mesh.polygons:
@@ -108,5 +109,5 @@ def build_uv_coordinates(mesh, grid, seam_column, layout, spacing, orientation, 
 def assign_uv_loops(mesh, uv_layer, coordinates):
     """Commit a previously validated layout to MeshLoopUV records."""
     for loop_index, uv in coordinates.items():
-        uv_layer.data[loop_index].uv = uv
+        uv_layer.uv[loop_index].vector = uv
     mesh.update()

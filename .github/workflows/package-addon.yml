@@ -8,6 +8,8 @@ on:
     paths:
       - "auto_seam_uv_equalizer/**"
       - "scripts/**"
+      - "tests/**"
+      - "blender_tests/**"
       - ".github/workflows/package-addon.yml"
 
 jobs:
@@ -18,9 +20,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: python -m pip install pytest
+
       - name: Compile Python files
         run: |
           python -m compileall auto_seam_uv_equalizer
+
+      - name: Run pure Python tests
+        run: python -m pytest -q
 
       - name: Remove generated cache files
         run: |
@@ -29,8 +41,7 @@ jobs:
 
       - name: Create add-on zip
         run: |
-          rm -f auto_seam_uv_equalizer.zip
-          zip -r auto_seam_uv_equalizer.zip auto_seam_uv_equalizer -x "*/__pycache__/*" "*.pyc"
+          bash scripts/package.sh
 
       - name: Verify zip contents
         run: |
@@ -42,3 +53,19 @@ jobs:
         with:
           name: auto_seam_uv_equalizer
           path: auto_seam_uv_equalizer.zip
+
+  blender:
+    runs-on: ubuntu-latest
+    env:
+      BLENDER_VERSION: 5.1.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Blender 5.1
+        run: |
+          curl -fL "https://download.blender.org/release/Blender5.1/blender-${BLENDER_VERSION}-linux-x64.tar.xz" -o blender.tar.xz
+          tar -xf blender.tar.xz
+          echo "$PWD/blender-${BLENDER_VERSION}-linux-x64" >> "$GITHUB_PATH"
+      - name: Runtime and workflow tests
+        run: blender --background --factory-startup --python blender_tests/test_integration.py
+      - name: Ring and strip tests
+        run: blender --background --factory-startup --python scripts/test_ring_strip_headless.py

@@ -63,6 +63,18 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         row.operator("autoseamuv.detect_ring_strip", text="Detect Ring / Strip", icon="VIEWZOOM")
         row.operator("autoseamuv.unwrap_ring_strip", text="Unwrap Ring / Strip", icon="UV")
 
+        symmetry_box = layout.box()
+        symmetry_box.label(text="Symmetric UV")
+        symmetry_box.prop(settings, "symmetry_axis")
+        symmetry_box.prop(settings, "symmetry_direction")
+        symmetry_box.prop(settings, "symmetry_scope")
+        symmetry_box.prop(settings, "symmetry_layout")
+        symmetry_box.prop(settings, "symmetry_tolerance")
+        if settings.symmetry_layout == "SEPARATE_MIRRORED":
+            symmetry_box.prop(settings, "symmetry_island_gap")
+        symmetry_box.operator("autoseamuv.validate_symmetry", text="Validate Symmetry", icon="CHECKMARK")
+        symmetry_box.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV", icon="UV")
+
         processing_box = layout.box()
         processing_box.label(text="Processing")
         processing_box.prop(settings, "process_shared_mesh_once")

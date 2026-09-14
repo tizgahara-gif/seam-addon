@@ -9,6 +9,7 @@ from bpy.props import BoolProperty
 from .seam_detection import (
     clear_seams,
     mark_auto_seams,
+    mark_advanced_seams,
     mark_longitudinal_seam_helper,
     mark_selected_region_boundary_seams,
 )
@@ -20,6 +21,7 @@ from .translations import iface_
 
 
 REPORT_PREFIX = "Auto Seam UV"
+_EDIT_SELECTION_SNAPSHOTS = {}
 
 
 def _selected_visible_mesh_objects(context) -> list[bpy.types.Object]:
@@ -34,6 +36,15 @@ def _snapshot_context(context) -> tuple[bpy.types.Object | None, list[bpy.types.
     active = context.view_layer.objects.active
     selected = list(context.selected_objects)
     mode = active.mode if active is not None else None
+    if active is not None and mode == "EDIT" and active.type == "MESH":
+        bm = bmesh.from_edit_mesh(active.data)
+        bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+        _EDIT_SELECTION_SNAPSHOTS[active.data.as_pointer()] = (
+            {item.index for item in bm.verts if item.select},
+            {item.index for item in bm.edges if item.select},
+            {item.index for item in bm.faces if item.select},
+            tuple(context.tool_settings.mesh_select_mode),
+        )
     return active, selected, mode
 
 
@@ -62,6 +73,17 @@ def _restore_context(context, active, selected: list[bpy.types.Object], mode: st
                 bpy.ops.object.mode_set(mode=mode)
         except Exception:
             pass
+    if active is not None and mode == "EDIT" and active.type == "MESH":
+        snapshot = _EDIT_SELECTION_SNAPSHOTS.pop(active.data.as_pointer(), None)
+        if snapshot is not None:
+            vertices, edges, faces, select_mode = snapshot
+            context.tool_settings.mesh_select_mode = select_mode
+            bm = bmesh.from_edit_mesh(active.data)
+            bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+            for item in bm.verts: item.select = item.index in vertices
+            for item in bm.edges: item.select = item.index in edges
+            for item in bm.faces: item.select = item.index in faces
+            bmesh.update_edit_mesh(active.data, loop_triangles=False, destructive=False)
 
 
 def _ensure_object_mode() -> None:
@@ -93,6 +115,19 @@ def _warn_non_uniform_scale(operator, objects: list[bpy.types.Object]) -> None:
 
 def _get_settings(context):
     return context.scene.autoseamuv_settings
+
+
+def _auto_mark(obj, settings) -> int:
+    """Dispatch to the selected seam engine with its complete settings."""
+    if settings.seam_mode == "ADVANCED":
+        return mark_advanced_seams(obj, settings)
+    return mark_auto_seams(
+        obj,
+        settings.angle_threshold,
+        settings.material_boundary,
+        settings.boundary_edges,
+        settings.non_manifold_edges,
+    )
 
 
 def _mesh_datablock_key(obj) -> int:
@@ -328,7 +363,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Operation failed: %s", exc))
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
@@ -385,7 +420,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Operation failed: %s", exc))
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
@@ -448,7 +483,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Operation failed: %s", exc))
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
