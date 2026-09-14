@@ -232,6 +232,7 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                         if not settings.create_uv_if_missing:
                             raise TopologyError(f"UV map '{settings.uv_map_name}' does not exist")
                         layer = obj.data.uv_layers.new(name=settings.uv_map_name)
+                    obj.data.uv_layers.active = layer
                     assign_uv_loops(obj.data, layer, coordinates)
                     completed += 1
                     self.report({"INFO"}, iface_("%s: Rings %d, Columns %d, Boundaries %d, Seam %s", obj.name, grid.ring_count, grid.column_count, grid.boundary_count, seam))
