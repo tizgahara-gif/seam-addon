@@ -297,3 +297,16 @@ Overlap validation uses Blender's `mesh.loop_triangles` tessellation (so concave
 Auto Unwrap Grid is for readable organization.
 Auto Unwrap Pack is for texture-space efficiency.
 Atlas Pack Selected Objects is for multi-object UV atlas layout.
+# Ring / Strip Unwrap
+
+`Ring / Strip Unwrap` is an additional topology-driven workflow; the existing
+`Straighten Circular Strip Islands` option and operator IDs remain available.
+It validates a selected connected quad component, recovers its logical grid
+from opposite face edges, chooses a complete longitudinal seam, and only then
+writes UV loops.  Rectangular and circumference-preserving layouts, three
+spacing modes, explicit/existing/automatic seams, orientation, and optional
+0-1 normalization are exposed in the sidebar.
+
+Unsupported input (triangles, N-gons, poles, branches, disconnected or
+non-manifold components, ambiguous/revisited traversal, inconsistent grid
+dimensions, and incomplete requested seams) is rejected without UV edits.
