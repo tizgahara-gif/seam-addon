@@ -12,7 +12,7 @@ It automatically marks seams from face-angle changes, material boundaries, open 
 - Hard-surface props, supports, and panels.
 - Pipes, cables, and mixed small parts.
 
-## v0.5.0 Features
+## v0.6.0 Features
 
 - Longitudinal seam helper for cylinders, pipes, supports, and cable-like meshes.
 - Better error reporting during unwrap.
@@ -33,6 +33,31 @@ the 3D mesh source direction. The operation rejects source UVs outside the
 chosen half or the 0–1 UV square before making changes, does not pack or
 normalize the result, and rolls destination UVs back if exact post-validation
 fails.
+
+Treat Exact Texture-X Symmetry as the final UV placement step. Packing after
+this transfer can break the exact `U_source + U_destination = 1` relationship.
+
+## Example Workflow
+
+```text
+ZBrush
+↓
+SubTool / PolyGroup整理
+↓
+GoZ
+↓
+Blender
+↓
+Selected Region Boundary / Auto Seam
+↓
+Auto Unwrap または Ring / Strip Unwrap
+↓
+必要なら Grid Layout / Pack Islands
+↓
+Symmetric UV / Exact Texture-X Symmetry
+↓
+外部Texture Paint
+```
 
 ## Installation
 

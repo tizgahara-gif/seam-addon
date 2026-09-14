@@ -126,6 +126,20 @@ class IntegrationTests(unittest.TestCase):
                                      {f.index for f in restored.faces if f.select}))
         self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), (True, True, True))
 
+    def test_pack_rotation_modes(self):
+        obj = mesh_object("PackRotation", [(0,0,0),(1,0,0),(1,1,0),(0,1,0)],
+                          [(0,1,2,3)])
+        obj.data.uv_layers.new(name="UVMap")
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.pack_shape_method = "CONVEX"
+        settings.pack_margin_method = "FRACTION"
+        settings.lock_pinned_islands = False
+        settings.merge_overlapping = False
+        settings.pack_target = "CLOSEST_UDIM"
+        for rotation in ("OFF", "ANY", "CARDINAL"):
+            settings.pack_rotation = rotation
+            self.assertEqual(bpy.ops.autoseamuv.pack_islands(), {"FINISHED"}, rotation)
+
     def test_selected_boundary_and_auto_seams(self):
         obj = mesh_object("Cube", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
                                     (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],
@@ -255,6 +269,93 @@ class IntegrationTests(unittest.TestCase):
             face.index for face in restored_mesh.faces if face.select
         }
         self.assertEqual(restored_selection, original_selection)
+
+    def _exact_texture_mesh(self):
+        return mesh_object(
+            "ExactTextureX",
+            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+             (1,0,0),(1,0,1),(1,1,1),(1,1,0),
+             (3,0,0),(4,0,0),(4,1,0),(3,1,0)],
+            [(0,1,2,3),(4,5,6,7),(8,9,10,11)],
+        )
+
+    def _prepare_exact_texture_transfer(self, source_uvs):
+        obj = self._exact_texture_mesh()
+        layer = obj.data.uv_layers.new(name="UVMap")
+        initial = tuple(source_uvs) + ((0.02,0.03),) * 4 + ((0.41,0.42),) * 4
+        for loop_index, uv in enumerate(initial):
+            layer.uv[loop_index].vector = uv
+        initial = tuple(tuple(item.vector) for item in layer.uv)
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.symmetry_axis = "X"
+        settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
+        settings.symmetry_scope = "SELECTED"
+        bpy.ops.object.mode_set(mode="EDIT")
+        select_mode = (False, False, True)
+        bpy.context.tool_settings.mesh_select_mode = select_mode
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        bm.faces[0].select_set(True)
+        bmesh.update_edit_mesh(obj.data)
+        return obj, layer, settings, initial, select_mode
+
+    def test_exact_texture_x_left_source_selection_and_unrelated(self):
+        source = ((0.10,0.20),(0.30,0.20),(0.30,0.80),(0.10,0.80))
+        obj, layer, settings, initial, select_mode = self._prepare_exact_texture_transfer(source)
+        settings.texture_source_side = "LEFT_HALF"
+        self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(),
+                         {"FINISHED"})
+        loop_pairs = ((0,4),(1,7),(2,6),(3,5))
+        for source_loop, destination_loop in loop_pairs:
+            self.assertAlmostEqual(layer.uv[destination_loop].vector.x,
+                                   1.0 - layer.uv[source_loop].vector.x)
+            self.assertAlmostEqual(layer.uv[destination_loop].vector.y,
+                                   layer.uv[source_loop].vector.y)
+        self.assertEqual(tuple(tuple(layer.uv[index].vector) for index in range(4)),
+                         initial[:4])
+        self.assertEqual(tuple(tuple(layer.uv[index].vector) for index in range(8, 12)),
+                         initial[8:12])
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), select_mode)
+        bm = bmesh.from_edit_mesh(obj.data)
+        self.assertEqual({face.index for face in bm.faces if face.select}, {0})
+
+    def test_exact_texture_x_center_line_is_valid(self):
+        source = ((0.10,0.20),(0.30,0.20),(0.50,0.80),(0.10,0.80))
+        _obj, layer, settings, _initial, _select_mode = self._prepare_exact_texture_transfer(source)
+        settings.texture_source_side = "LEFT_HALF"
+        self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(),
+                         {"FINISHED"})
+        self.assertAlmostEqual(layer.uv[6].vector.x, 0.5)
+
+    def test_exact_texture_x_right_half(self):
+        source = ((0.70,0.20),(0.90,0.20),(0.90,0.80),(0.70,0.80))
+        _obj, layer, settings, _initial, _select_mode = self._prepare_exact_texture_transfer(source)
+        settings.texture_source_side = "RIGHT_HALF"
+        self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(),
+                         {"FINISHED"})
+        for source_loop, destination_loop in ((0,4),(1,7),(2,6),(3,5)):
+            self.assertAlmostEqual(layer.uv[destination_loop].vector.x,
+                                   1.0 - source[source_loop][0])
+            self.assertAlmostEqual(layer.uv[destination_loop].vector.y,
+                                   source[source_loop][1])
+
+    def test_exact_texture_x_rejections_do_not_modify_uvs(self):
+        for source in (
+            ((0.30,0.20),(0.70,0.20),(0.70,0.80),(0.30,0.80)),
+            ((-0.10,0.20),(0.30,0.20),(0.30,0.80),(0.10,0.80)),
+            ((0.10,0.20),(0.30,0.20),(0.30,1.10),(0.10,0.80)),
+        ):
+            with self.subTest(source=source):
+                _obj, layer, settings, initial, _select_mode = self._prepare_exact_texture_transfer(source)
+                settings.texture_source_side = "LEFT_HALF"
+                self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(),
+                                 {"CANCELLED"})
+                self.assertEqual(tuple(tuple(item.vector) for item in layer.uv), initial)
+                bpy.ops.object.mode_set(mode="OBJECT")
+                bpy.ops.object.select_all(action="SELECT")
+                bpy.ops.object.delete(use_global=False)
 
     def test_symmetric_uv_selected_scope_preserves_unrelated_active_map_region(self):
         obj = mesh_object(

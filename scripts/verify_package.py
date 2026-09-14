@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import ast
 import zipfile
 from pathlib import Path
 
@@ -162,6 +163,50 @@ def _read_zip_text(archive: zipfile.ZipFile, member_name: str) -> str:
         raise RuntimeError(f"Required file is not valid UTF-8: {member_name}") from exc
 
 
+def _classes_module_references(init_source: str) -> set[str]:
+    """Return modules expanded as ``*module.CLASSES`` in the package registry."""
+    tree = ast.parse(init_source, filename="auto_seam_uv_equalizer/__init__.py")
+    references = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Starred):
+            continue
+        attribute = node.value
+        if (isinstance(attribute, ast.Attribute)
+                and attribute.attr == "CLASSES"
+                and isinstance(attribute.value, ast.Name)):
+            references.add(attribute.value.id)
+    return references
+
+
+def _defines_classes(module_source: str, filename: str) -> bool:
+    """Check for a real module-level CLASSES assignment rather than a token."""
+    tree = ast.parse(module_source, filename=filename)
+    for statement in tree.body:
+        if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            if any(isinstance(target, ast.Name) and target.id == "CLASSES"
+                   for target in targets):
+                return True
+    return False
+
+
+def _verify_classes_registries(archive: zipfile.ZipFile) -> None:
+    init_name = "auto_seam_uv_equalizer/__init__.py"
+    init_source = _read_zip_text(archive, init_name)
+    references = _classes_module_references(init_source)
+    if not references:
+        raise RuntimeError(f"No *module.CLASSES references found in {init_name}")
+    for module_name in sorted(references):
+        member_name = f"auto_seam_uv_equalizer/{module_name}.py"
+        module_source = _read_zip_text(archive, member_name)
+        if not _defines_classes(module_source, member_name):
+            raise RuntimeError(
+                f"{init_name} references {module_name}.CLASSES, but "
+                f"{member_name} has no module-level CLASSES assignment"
+            )
+        print(f"OK: {module_name}.CLASSES is defined")
+
+
 def verify_package(zip_path: Path) -> None:
     if not zip_path.is_file():
         raise RuntimeError(f"Package zip not found: {zip_path}")
@@ -174,6 +219,8 @@ def verify_package(zip_path: Path) -> None:
         bad_parent_entries = [name for name in names if name.startswith("seam-addon-main/")]
         if bad_parent_entries:
             raise RuntimeError("Zip contains an extra seam-addon-main/ parent folder")
+
+        _verify_classes_registries(archive)
 
         for member_name, tokens in REQUIRED_TOKENS.items():
             text = _read_zip_text(archive, member_name)
