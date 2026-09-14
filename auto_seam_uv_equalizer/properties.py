@@ -17,7 +17,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         max=179.0,
     )
 
-    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Independent edge rules"), ("ADVANCED", "Advanced Paths", "Score candidates and build continuous paths")), default="ADVANCED")
+    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Independent edge rules"), ("ADVANCED", "Advanced Paths", "Score candidates and build continuous paths")), default="CLASSIC")
     seam_preset: EnumProperty(name="Seam Strategy", items=(("HARD_SURFACE", "Hard Surface", "Angle, sharp and material boundaries"), ("ORGANIC", "Organic / Cloth", "Long continuous low-noise cuts"), ("CYLINDER", "Cylinder / Cable", "End-to-end longitudinal path"), ("MANUAL", "Manual Assisted", "Force, protect and existing seams first")), default="HARD_SURFACE")
     weight_curvature: FloatProperty(name="Curvature Weight", default=1.0, min=0.0, max=10.0)
     weight_material: FloatProperty(name="Material Weight", default=1.5, min=0.0, max=10.0)

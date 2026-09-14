@@ -15,11 +15,13 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         seam_box = layout.box()
         seam_box.label(text="Seam Detection")
-        seam_box.prop(settings, "angle_threshold")
+        seam_box.prop(settings, "seam_mode")
+        if settings.seam_mode == "CLASSIC":
+            seam_box.prop(settings, "angle_threshold")
+            seam_box.prop(settings, "material_boundary")
+            seam_box.prop(settings, "boundary_edges")
+            seam_box.prop(settings, "non_manifold_edges")
         seam_box.prop(settings, "clear_existing")
-        seam_box.prop(settings, "material_boundary")
-        seam_box.prop(settings, "boundary_edges")
-        seam_box.prop(settings, "non_manifold_edges")
         seam_box.prop(settings, "longitudinal_seam_helper")
 
         uv_box = layout.box()

@@ -71,7 +71,8 @@ class IntegrationTests(unittest.TestCase):
                           [(0,1,2,3),(4,5,6,7)])
         settings = bpy.context.scene.autoseamuv_settings
         settings.symmetry_scope = "WHOLE"
-        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"CANCELLED"})
         layer = obj.data.uv_layers.new(name="UVMap")
         source_coordinates = ((0.125, 0.25), (1.375, 0.25),
                               (1.375, 1.0), (0.125, 1.0))
@@ -80,6 +81,10 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         settings.symmetry_layout = "OVERLAP"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        corresponding_loops = ((0,4),(1,7),(2,6),(3,5))
+        for source_loop, destination_loop in corresponding_loops:
+            self.assertEqual(tuple(layer.uv[destination_loop].vector),
+                             source_uvs[source_loop])
         settings.symmetry_layout = "SEPARATE_MIRRORED"
         settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
