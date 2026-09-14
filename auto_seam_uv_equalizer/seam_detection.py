@@ -6,6 +6,8 @@ from collections import defaultdict, deque
 from math import radians
 from typing import DefaultDict
 
+from .mesh_utils import build_edge_to_faces
+
 
 MIN_MESH_FACE_COUNT = 1
 LONGITUDINAL_ALIGNMENT = 0.65
@@ -21,18 +23,6 @@ def clear_seams(mesh) -> int:
             cleared_count += 1
     mesh.update()
     return cleared_count
-
-
-def build_edge_to_faces(mesh) -> dict[int, list[int]]:
-    """Build a mapping from mesh edge index to connected polygon indices."""
-    edge_to_faces: DefaultDict[int, list[int]] = defaultdict(list)
-
-    for polygon in mesh.polygons:
-        for loop_index in polygon.loop_indices:
-            edge_index = mesh.loops[loop_index].edge_index
-            edge_to_faces[edge_index].append(polygon.index)
-
-    return dict(edge_to_faces)
 
 
 def _should_mark_two_face_edge(mesh, face_indices: list[int], threshold_radians: float, use_material_boundary: bool) -> bool:
