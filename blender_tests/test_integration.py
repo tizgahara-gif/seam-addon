@@ -4,6 +4,7 @@ import sys
 import unittest
 
 import bpy
+import bmesh
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
@@ -51,6 +52,34 @@ class IntegrationTests(unittest.TestCase):
             bpy.context.scene.autoseamuv_settings.seam_mode = mode
             self.assertEqual(bpy.ops.autoseamuv.mark_only(), {"FINISHED"})
             self.assertEqual({p.index for p in obj.data.polygons if p.select}, original)
+
+    def test_auto_unwrap_pack_restores_edit_face_selection_and_select_mode(self):
+        obj = mesh_object("PackSelection", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
+                                             (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],
+                          [(0,1,2,3),(4,7,6,5),(0,4,5,1),(1,5,6,2),(2,6,7,3),(4,0,3,7)])
+        bpy.ops.object.mode_set(mode="EDIT")
+        original_select_mode = (True, False, True)
+        bpy.context.tool_settings.mesh_select_mode = original_select_mode
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        for face in bm.faces:
+            face.select_set(False)
+        for face_index in (0, 2):
+            bm.faces[face_index].select_set(True)
+        bm.select_flush_mode()
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        original_faces = {face.index for face in bm.faces if face.select}
+        self.assertEqual(original_faces, {0, 2})
+
+        self.assertEqual(bpy.ops.autoseamuv.auto_unwrap_pack(), {"FINISHED"})
+
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), original_select_mode)
+        restored_bm = bmesh.from_edit_mesh(obj.data)
+        restored_bm.faces.ensure_lookup_table()
+        restored_faces = {face.index for face in restored_bm.faces if face.select}
+        self.assertEqual(restored_faces, original_faces)
 
     def test_symmetric_uv_layouts_and_missing_map(self):
         obj = mesh_object("Symmetric", [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
