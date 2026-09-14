@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import bpy
+import bmesh
+from bpy.props import BoolProperty
 
-from .seam_detection import clear_seams, mark_auto_seams, mark_advanced_seams, mark_longitudinal_seam_helper
-from .symmetry import mirror_edge_map
+from .seam_detection import (
+    clear_seams,
+    mark_auto_seams,
+    mark_longitudinal_seam_helper,
+    mark_selected_region_boundary_seams,
+)
 from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
@@ -93,22 +99,24 @@ def _mesh_datablock_key(obj) -> int:
     return obj.data.as_pointer()
 
 
-def _ring_face_indices(mesh):
-    selected = [face.index for face in mesh.polygons if face.select]
-    return selected if selected and len(selected) != len(mesh.polygons) else None
+class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
+    """Mark only the boundary of the current Edit Mode face selection as seams."""
 
+    bl_idname = "autoseamuv.mark_selected_region_boundary"
+    bl_label = "Mark Selected Region Boundary as Seam"
+    bl_description = "Add UV seams along the boundary of the currently selected faces"
+    bl_options = {"REGISTER", "UNDO"}
 
-def _analyze_object_ring(obj, settings):
-    grid = analyze_ring_topology(obj.data, _ring_face_indices(obj.data))
-    seam = choose_seam(obj.data, grid, settings.ring_seam_mode)
-    return grid, seam
+    include_open_boundaries: BoolProperty(
+        name="Include Open Boundaries",
+        description="Include selected faces' edges on the open boundary of the mesh",
+        default=True,
+    )
 
-
-class AUTOSEAMUV_OT_detect_ring_strip(bpy.types.Operator):
-    """Validate selected topology without changing seams or UV data."""
-    bl_idname = "autoseamuv.detect_ring_strip"
-    bl_label = "Detect Ring / Strip"
-    bl_options = {"REGISTER"}
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        return active is not None and active.type == "MESH" and context.mode == "EDIT_MESH"
 
     def execute(self, context):
         objects = _selected_visible_mesh_objects(context)

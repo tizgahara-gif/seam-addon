@@ -15,6 +15,50 @@ LONGITUDINAL_ALIGNMENT = 0.65
 LONGITUDINAL_SIDE_TOLERANCE = 0.18
 
 
+def mark_selected_region_boundary_seams(bm, include_open_boundaries: bool = True) -> tuple[int, int, int, int, int]:
+    """Add seams around selected BMesh faces without changing any selection.
+
+    Returns selected faces, boundary edges, newly marked seams, included open
+    boundaries, and skipped non-manifold edges, in that order.
+    """
+    selected_face_count = sum(1 for face in bm.faces if face.select)
+    boundary_edge_count = 0
+    newly_marked_seam_count = 0
+    open_boundary_count = 0
+    skipped_non_manifold_edge_count = 0
+
+    for edge in bm.edges:
+        linked_faces = edge.link_faces
+        linked_face_count = len(linked_faces)
+
+        if linked_face_count >= 3:
+            skipped_non_manifold_edge_count += 1
+            continue
+
+        is_boundary = False
+        if linked_face_count == 2:
+            is_boundary = linked_faces[0].select != linked_faces[1].select
+        elif linked_face_count == 1 and include_open_boundaries and linked_faces[0].select:
+            is_boundary = True
+            open_boundary_count += 1
+
+        if not is_boundary:
+            continue
+
+        boundary_edge_count += 1
+        if not edge.seam:
+            edge.seam = True
+            newly_marked_seam_count += 1
+
+    return (
+        selected_face_count,
+        boundary_edge_count,
+        newly_marked_seam_count,
+        open_boundary_count,
+        skipped_non_manifold_edge_count,
+    )
+
+
 def clear_seams(mesh) -> int:
     """Clear all seam flags on a mesh and return the number of changed edges."""
     cleared_count = 0
