@@ -27,6 +27,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "grid_fit_to_cell",
         "grid_cell_margin",
         "grid_cell_fill_ratio",
+        "include_open_boundaries",
     ),
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",
@@ -58,6 +59,8 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         'bl_label = "Auto Seam + Unwrap"',
         'margin_method="FRACTION"',
         "mark_longitudinal_seam_helper",
+        "class AUTOSEAMUV_OT_mark_selected_region_boundary",
+        'bl_idname = "autoseamuv.mark_selected_region_boundary"',
     ),
     "auto_seam_uv_equalizer/ui.py": (
         "straighten_circular_strip_islands",
@@ -73,6 +76,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "grid_fit_to_cell",
         "grid_cell_margin",
         "grid_cell_fill_ratio",
+        'actions_box.prop(settings, "include_open_boundaries")',
     ),
     "auto_seam_uv_equalizer/mesh_utils.py": (
         "def build_mesh_topology",
@@ -94,6 +98,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "Material UV Scale Rules",
         "Fit Islands to Grid Cells",
         "Grid Cell Margin",
+        "Mark Selected Region Boundary as Seam",
     ),
 }
 

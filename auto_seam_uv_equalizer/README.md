@@ -2,7 +2,7 @@
 
 ## Overview
 
-Auto Seam UV Equalizer is a Blender 4.x add-on that helps with the initial UV setup pass for mesh objects. It automatically marks seams from face-angle changes, material boundaries, open boundary edges, non-manifold edges, and an optional longitudinal helper for cylindrical or cable-like forms. It can then unwrap, average UV island scale, and pack islands into the 0-1 UV space.
+Auto Seam UV Equalizer is a Blender 5.1 add-on that helps with the initial UV setup pass for mesh objects. It automatically marks seams from face-angle changes, material boundaries, open boundary edges, non-manifold edges, and an optional longitudinal helper for cylindrical or cable-like forms. It can then unwrap, average UV island scale, and pack islands into the 0-1 UV space.
 
 This add-on is intended to reduce repetitive setup work for VRC accessories, hard-surface props, supports, panels, pipes, cables, and mixed small parts. It does not guarantee final production-ready UV layouts.
 
@@ -16,6 +16,7 @@ This add-on is intended to reduce repetitive setup work for VRC accessories, har
 - Atlas Pack Selected Objects for packing active UV maps from multiple selected mesh objects into one 0-1 atlas without joining objects.
 - Straighten Circular Strip Islands for converting C-shaped, ring-like, or arc-like UV islands into horizontal strips before packing.
 - Clearer zip installation instructions.
+- Mark Selected Region Boundary as Seam for converting Edit Mode face-selection outlines into UV seams.
 
 ## Installation
 
@@ -135,10 +136,13 @@ auto_seam_uv_equalizer/README.md
    - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and then either uses Equal Region Pack or Blender Pack Islands.
    - **Atlas Pack Selected Objects**: packs active UV maps from selected mesh objects into one 0-1 atlas without unwrapping or joining the objects.
    - **Clear Seams**: removes seam marks from selected mesh objects.
+   - **Mark Selected Region Boundary as Seam**: in Edit Mode, adds seams only around the current face selection while preserving the selection and existing seams.
 
 ## Settings
 
 ### Seam Detection
+
+- **Include Open Boundaries**: Includes selected edges on the mesh's open boundary when using **Mark Selected Region Boundary as Seam**. Enabled by default.
 
 - **Angle Threshold (Degrees)**: Marks an edge as a seam when the angle between the two adjacent face normals is at least this many degrees. This value is stored and processed as degrees; the add-on converts it to radians internally for comparison.
 - **Clear Existing Seams**: Removes current seams before automatic seam detection.
@@ -193,7 +197,13 @@ auto_seam_uv_equalizer/README.md
 - **Efficient texture output**: Use **Auto Unwrap Pack** when UV space usage matters more than equal-region organization.
 - **Multi-object atlases**: Use **Atlas Pack Selected Objects** after objects already have UVs and you want all selected objects to share one 0-1 UV atlas while keeping the objects separate.
 
+## Selected Face Region Boundary
 
+In Mesh Edit Mode, select one or more face regions and click **Mark Selected Region Boundary as Seam**. An edge shared by exactly two faces is marked only when one face is selected and the other is not. An open edge belonging to a selected face is also marked when **Include Open Boundaries** is enabled.
+
+The operation adds seam flags without clearing existing seams. It does not alter the face selection, selection mode, UVs, topology, vertex groups, materials, sharp flags, or material indices. Edges linked to three or more faces are skipped and included in the completion report. Multiple disconnected selections are handled in the same pass.
+
+The completion report includes selected-face, boundary-edge, newly-marked-seam, open-boundary, and skipped-non-manifold counts.
 
 ## Auto Unwrap Grid
 
@@ -264,6 +274,7 @@ Manual cleanup is expected when the model has:
 - **Cable-like converted mesh**: Enable the longitudinal helper and confirm it adds a limited lengthwise seam strip instead of cutting all edges.
 - **Material Split Cube**: Enable and disable **Mark Material Boundaries** and confirm material boundary seams change.
 - **Shared Mesh Data**: Select multiple objects that share one mesh datablock. With **Process Shared Mesh Data Once** on, only the first is processed and later users are reported as skipped.
+- **Selected Face Region Boundary**: In Edit Mode, select multiple disconnected face regions and verify only their outlines become seams. Repeat with a selection touching an open mesh edge and toggle **Include Open Boundaries**; existing seams and the original face selection must remain unchanged.
 - **Auto Unwrap Grid**: Create or mark several seam-delimited islands, run **Auto Unwrap Grid**, and verify that four islands use a 2x2 grid while each island is scaled into one equal cell with aspect ratio preserved.
 - **Auto Unwrap Pack**: Run **Auto Unwrap Pack** and verify the islands are packed into the 0-1 UV space with Blender Pack Islands rather than equal grid cells.
 - **Atlas Pack Selected Objects**: Select multiple mesh objects that already have UVs, run **Atlas Pack Selected Objects**, and verify all selected objects share one 0-1 UV atlas while object meshes remain separate.

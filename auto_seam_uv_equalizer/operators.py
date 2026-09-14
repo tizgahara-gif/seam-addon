@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import bpy
+import bmesh
+from bpy.props import BoolProperty
 
-from .seam_detection import clear_seams, mark_auto_seams, mark_advanced_seams, mark_longitudinal_seam_helper
-from .symmetry import mirror_edge_map
+from .seam_detection import (
+    clear_seams,
+    mark_auto_seams,
+    mark_longitudinal_seam_helper,
+    mark_selected_region_boundary_seams,
+)
 from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
@@ -92,76 +98,46 @@ def _mesh_datablock_key(obj) -> int:
     return obj.data.as_pointer()
 
 
-def _ring_face_indices(mesh):
-    selected = [face.index for face in mesh.polygons if face.select]
-    return selected if selected and len(selected) != len(mesh.polygons) else None
+class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
+    """Mark only the boundary of the current Edit Mode face selection as seams."""
 
-
-def _analyze_object_ring(obj, settings):
-    grid = analyze_ring_topology(obj.data, _ring_face_indices(obj.data))
-    seam = choose_seam(obj.data, grid, settings.ring_seam_mode)
-    return grid, seam
-
-
-class AUTOSEAMUV_OT_detect_ring_strip(bpy.types.Operator):
-    """Validate selected topology without changing seams or UV data."""
-    bl_idname = "autoseamuv.detect_ring_strip"
-    bl_label = "Detect Ring / Strip"
-    bl_options = {"REGISTER"}
-
-    def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
-        if len(objects) != 1:
-            self.report({"ERROR"}, "Ring / Strip: select exactly one visible mesh object.")
-            return {"CANCELLED"}
-        try:
-            grid, seam = _analyze_object_ring(objects[0], _get_settings(context))
-        except TopologyError as exc:
-            self.report({"ERROR"}, f"Ring / Strip: Invalid - {exc}")
-            return {"CANCELLED"}
-        self.report({"INFO"}, f"Ring / Strip: Valid; Rings {grid.ring_count}, Columns {grid.column_count}, Boundaries {grid.boundary_count}, Seam candidate {seam}")
-        return {"FINISHED"}
-
-
-class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
-    """Generate loop UVs from a fully validated 3D quad grid."""
-    bl_idname = "autoseamuv.unwrap_ring_strip"
-    bl_label = "Unwrap Ring / Strip"
+    bl_idname = "autoseamuv.mark_selected_region_boundary"
+    bl_label = "Mark Selected Region Boundary as Seam"
+    bl_description = "Add UV seams along the boundary of the currently selected faces"
     bl_options = {"REGISTER", "UNDO"}
 
+    include_open_boundaries: BoolProperty(
+        name="Include Open Boundaries",
+        description="Include selected faces' edges on the open boundary of the mesh",
+        default=True,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        return active is not None and active.type == "MESH" and context.mode == "EDIT_MESH"
+
     def execute(self, context):
-        selected = _selected_visible_mesh_objects(context)
-        if not selected:
-            self.report({"ERROR"}, "Ring / Strip: no visible mesh object selected.")
-            return {"CANCELLED"}
-        settings = _get_settings(context)
-        objects, skipped = _objects_for_processing(self, selected, settings.process_shared_mesh_once)
-        active, original_selection, mode = _snapshot_context(context)
-        completed = 0
-        try:
-            _ensure_object_mode()
-            for obj in objects:
-                try:
-                    # Analysis, seam choice, and coordinate generation are pure;
-                    # the UV layer is not even created until all validation ends.
-                    grid, seam = _analyze_object_ring(obj, settings)
-                    coordinates = build_uv_coordinates(obj.data, grid, seam, settings.ring_layout,
-                                                       settings.ring_spacing, settings.ring_orientation,
-                                                       settings.ring_normalize)
-                    layer = obj.data.uv_layers.get(settings.uv_map_name)
-                    if layer is None:
-                        if not settings.create_uv_if_missing:
-                            raise TopologyError(f"UV map '{settings.uv_map_name}' does not exist")
-                        layer = obj.data.uv_layers.new(name=settings.uv_map_name)
-                    assign_uv_loops(obj.data, layer, coordinates)
-                    completed += 1
-                    self.report({"INFO"}, f"{obj.name}: Rings {grid.ring_count}, Columns {grid.column_count}, Boundaries {grid.boundary_count}, Seam {seam}")
-                except (TopologyError, ValueError) as exc:
-                    self.report({"ERROR"}, f"{obj.name}: Invalid - {exc}")
-        finally:
-            _restore_context(context, active, original_selection, mode)
-        self.report({"INFO"}, f"Ring / Strip: unwrapped {completed}, skipped shared {skipped}.")
-        return {"FINISHED"} if completed else {"CANCELLED"}
+        # objects_in_mode_unique_data avoids processing a shared edit BMesh twice.
+        objects = getattr(context, "objects_in_mode_unique_data", ())
+        if not objects:
+            objects = (context.active_object,)
+
+        totals = [0, 0, 0, 0, 0]
+        for obj in objects:
+            if obj is None or obj.type != "MESH":
+                continue
+            edit_bmesh = bmesh.from_edit_mesh(obj.data)
+            counts = mark_selected_region_boundary_seams(edit_bmesh, self.include_open_boundaries)
+            totals = [total + count for total, count in zip(totals, counts)]
+            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+
+        self.report(
+            {"INFO"},
+            "Selected Face Count: {}; Boundary Edge Count: {}; Newly Marked Seam Count: {}; "
+            "Open Boundary Count: {}; Skipped Non-Manifold Edge Count: {}.".format(*totals),
+        )
+        return {"FINISHED"}
 
 
 def _objects_for_processing(operator, objects: list[bpy.types.Object], process_shared_mesh_once: bool) -> tuple[list[bpy.types.Object], int]:
