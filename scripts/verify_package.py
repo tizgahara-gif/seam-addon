@@ -124,6 +124,7 @@ REMOVED_LAYOUT_PROP = "arrange" + "_selected_grid_layout"
 REMOVED_DUPLICATE_PROP = "duplicate_uv_before_" + "arrange"
 
 FORBIDDEN_TOKENS = (
+    "grid_layout_mode",
     REMOVED_FEATURE_LABEL,
     REMOVED_OPERATOR_CLASS,
     REMOVED_OPERATOR_ID,

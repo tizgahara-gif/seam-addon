@@ -17,7 +17,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         max=179.0,
     )
 
-    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Independent edge rules"), ("ADVANCED", "Advanced Paths", "Score candidates and build continuous paths")), default="ADVANCED")
+    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Independent edge rules"), ("ADVANCED", "Advanced Paths", "Score candidates and build continuous paths")), default="CLASSIC")
     seam_preset: EnumProperty(name="Seam Strategy", items=(("HARD_SURFACE", "Hard Surface", "Angle, sharp and material boundaries"), ("ORGANIC", "Organic / Cloth", "Long continuous low-noise cuts"), ("CYLINDER", "Cylinder / Cable", "End-to-end longitudinal path"), ("MANUAL", "Manual Assisted", "Force, protect and existing seams first")), default="HARD_SURFACE")
     weight_curvature: FloatProperty(name="Curvature Weight", default=1.0, min=0.0, max=10.0)
     weight_material: FloatProperty(name="Material Weight", default=1.5, min=0.0, max=10.0)
@@ -198,8 +198,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     grid_fit_to_cell: BoolProperty(
         name="Fit Islands to Grid Cells",
-        description="Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio",
-        default=True,
+        description="Scale each Auto Unwrap Grid island to fill its grid cell while preserving aspect ratio; enabling this changes relative texel density",
+        default=False,
     )
 
     grid_cell_margin: FloatProperty(
@@ -313,7 +313,6 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     pack_pin_method: EnumProperty(name="Pin Method", items=(("LOCKED", "Lock All", ""), ("ROTATION", "Lock Rotation", ""), ("ROTATION_SCALE", "Lock Rotation & Scale", "")), default="LOCKED")
     merge_overlapping: BoolProperty(name="Merge Overlapping", default=False)
     pack_target: EnumProperty(name="Pack Target", items=(("CLOSEST_UDIM", "Closest UDIM", ""), ("ACTIVE_UDIM", "Active UDIM", ""), ("ORIGINAL_AABB", "Original Bounding Box", ""), ("CUSTOM_REGION", "Custom Region", "")), default="CLOSEST_UDIM")
-    grid_layout_mode: EnumProperty(name="Grid Mode", items=(("PRESERVE_SCALE", "Preserve Scale", "Move only"), ("FIT_OVERSIZED", "Fit Oversized Only", "Shrink only islands exceeding cells"), ("FIT_EACH", "Fit Each Cell", "Changes relative texel density")), default="PRESERVE_SCALE")
     seam_group_name: StringProperty(name="Seam Group", default="UV0")
     seam_group_apply_mode: EnumProperty(name="Apply Mode", items=(("REPLACE", "Replace", ""), ("MERGE", "Merge", "")), default="REPLACE")
 

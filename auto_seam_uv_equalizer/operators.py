@@ -36,15 +36,27 @@ def _snapshot_context(context) -> tuple[bpy.types.Object | None, list[bpy.types.
     active = context.view_layer.objects.active
     selected = list(context.selected_objects)
     mode = active.mode if active is not None else None
+    _EDIT_SELECTION_SNAPSHOTS.clear()
     if active is not None and mode == "EDIT" and active.type == "MESH":
-        bm = bmesh.from_edit_mesh(active.data)
-        bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
-        _EDIT_SELECTION_SNAPSHOTS[active.data.as_pointer()] = (
-            {item.index for item in bm.verts if item.select},
-            {item.index for item in bm.edges if item.select},
-            {item.index for item in bm.faces if item.select},
-            tuple(context.tool_settings.mesh_select_mode),
-        )
+        # Deduplicate by Mesh because linked objects expose the same edit
+        # BMesh, and therefore the same component-selection state.
+        edit_objects = getattr(context, "objects_in_mode", ()) or (active,)
+        select_mode = tuple(context.tool_settings.mesh_select_mode)
+        for obj in edit_objects:
+            if obj.type != "MESH":
+                continue
+            mesh_key = obj.data.as_pointer()
+            if mesh_key in _EDIT_SELECTION_SNAPSHOTS:
+                continue
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+            _EDIT_SELECTION_SNAPSHOTS[mesh_key] = (
+                obj.data,
+                {item.index for item in bm.verts if item.select},
+                {item.index for item in bm.edges if item.select},
+                {item.index for item in bm.faces if item.select},
+                select_mode,
+            )
     return active, selected, mode
 
 
@@ -74,16 +86,16 @@ def _restore_context(context, active, selected: list[bpy.types.Object], mode: st
         except Exception:
             pass
     if active is not None and mode == "EDIT" and active.type == "MESH":
-        snapshot = _EDIT_SELECTION_SNAPSHOTS.pop(active.data.as_pointer(), None)
-        if snapshot is not None:
-            vertices, edges, faces, select_mode = snapshot
+        snapshots = list(_EDIT_SELECTION_SNAPSHOTS.values())
+        _EDIT_SELECTION_SNAPSHOTS.clear()
+        for mesh, vertices, edges, faces, select_mode in snapshots:
             context.tool_settings.mesh_select_mode = select_mode
-            bm = bmesh.from_edit_mesh(active.data)
+            bm = bmesh.from_edit_mesh(mesh)
             bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
             for item in bm.verts: item.select = item.index in vertices
             for item in bm.edges: item.select = item.index in edges
             for item in bm.faces: item.select = item.index in faces
-            bmesh.update_edit_mesh(active.data, loop_triangles=False, destructive=False)
+            bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
 
 
 def _ensure_object_mode() -> None:
@@ -158,7 +170,13 @@ class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         counts = mark_selected_region_boundary_seams(bm, self.include_open_boundaries)
         bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
-        self.report({"INFO"}, "Selected Face Count: {}; Boundary Edge Count: {}; Newly Marked Seam Count: {}; Open Boundary Count: {}; Skipped Non-Manifold Edge Count: {}.".format(*counts))
+        self.report(
+            {"INFO"},
+            iface_(
+                "Selected Face Count: %d; Boundary Edge Count: %d; Newly Marked Seam Count: %d; Open Boundary Count: %d; Skipped Non-Manifold Edge Count: %d.",
+                *counts,
+            ),
+        )
         return {"FINISHED"}
 
 
@@ -232,6 +250,7 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                         if not settings.create_uv_if_missing:
                             raise TopologyError(f"UV map '{settings.uv_map_name}' does not exist")
                         layer = obj.data.uv_layers.new(name=settings.uv_map_name)
+                    obj.data.uv_layers.active = layer
                     assign_uv_loops(obj.data, layer, coordinates)
                     completed += 1
                     self.report({"INFO"}, iface_("%s: Rings %d, Columns %d, Boundaries %d, Seam %s", obj.name, grid.ring_count, grid.column_count, grid.boundary_count, seam))
