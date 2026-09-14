@@ -1,10 +1,5 @@
-"""User interface panel for Auto Seam UV Equalizer."""
-
-from __future__ import annotations
-
+"""Task-oriented Blender 5.1 sidebar UI."""
 import bpy
-
-
 class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     """3D View sidebar panel for automatic seam and UV operations."""
 

@@ -17,6 +17,25 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         max=179.0,
     )
 
+    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Independent edge rules"), ("ADVANCED", "Advanced Paths", "Score candidates and build continuous paths")), default="ADVANCED")
+    seam_preset: EnumProperty(name="Seam Strategy", items=(("HARD_SURFACE", "Hard Surface", "Angle, sharp and material boundaries"), ("ORGANIC", "Organic / Cloth", "Long continuous low-noise cuts"), ("CYLINDER", "Cylinder / Cable", "End-to-end longitudinal path"), ("MANUAL", "Manual Assisted", "Force, protect and existing seams first")), default="HARD_SURFACE")
+    weight_curvature: FloatProperty(name="Curvature Weight", default=1.0, min=0.0, max=10.0)
+    weight_material: FloatProperty(name="Material Weight", default=1.5, min=0.0, max=10.0)
+    weight_sharp: FloatProperty(name="Sharp Weight", default=1.5, min=0.0, max=10.0)
+    weight_boundary: FloatProperty(name="Boundary Weight", default=0.75, min=0.0, max=10.0)
+    weight_existing: FloatProperty(name="Existing Seam Weight", default=1.0, min=0.0, max=10.0)
+    weight_length: FloatProperty(name="Edge Length Weight", default=0.15, min=0.0, max=10.0)
+    seam_search_radius: IntProperty(name="Seam Search Radius", default=24, min=2, max=512)
+    seam_minimum_spacing: IntProperty(name="Seam Minimum Spacing", default=3, min=0, max=128)
+    straightness_bias: FloatProperty(name="Straightness Bias", default=0.6, min=0.0, max=5.0)
+    curvature_bias: FloatProperty(name="Curvature Bias", default=1.0, min=0.0, max=5.0)
+    existing_seam_attraction: FloatProperty(name="Existing Seam Attraction", default=0.8, min=0.0, max=5.0)
+    boundary_attraction: FloatProperty(name="Boundary Attraction", default=0.5, min=0.0, max=5.0)
+    maintain_symmetry: BoolProperty(name="Maintain Symmetry", default=False)
+    mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
+    mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
+    mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
+
     margin: FloatProperty(
         name="UV Margin",
         description="Island margin used for unwrap and pack operations",
@@ -262,6 +281,29 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         description="Legacy compatibility option; overlap highlighting is now non-destructive face selection",
         default=False,
     )
+
+    texture_width: IntProperty(name="Texture Width", default=2048, min=1, max=65536)
+    texture_height: IntProperty(name="Texture Height", default=2048, min=1, max=65536)
+    texel_unit: EnumProperty(name="Unit", items=(("PX_M", "px/m", "Pixels per metre"), ("PX_CM", "px/cm", "Pixels per centimetre")), default="PX_M")
+    target_texel_density: FloatProperty(name="Target Density", default=1024.0, min=0.001)
+    measured_texel_density: FloatProperty(name="Measured Density", default=0.0, min=0.0, precision=3)
+    uv_zero_tolerance: FloatProperty(name="Zero Area Tolerance", default=1e-10, min=0.0, max=0.01, precision=10)
+    stretch_warning_threshold: FloatProperty(name="Stretch Warning Threshold", default=2.0, min=1.0, max=100.0)
+    report_summary: StringProperty(name="Last Quality Report", default="No report yet")
+    relax_after_unwrap: BoolProperty(name="Relax After Unwrap", default=False)
+    relax_iterations: IntProperty(name="Relax Iterations", default=3, min=1, max=100)
+    preserve_boundary: BoolProperty(name="Preserve Boundary", default=True)
+    respect_pins: BoolProperty(name="Respect Pins", default=True)
+    pack_shape_method: EnumProperty(name="Shape Method", items=(("CONCAVE", "Exact", ""), ("CONVEX", "Convex", ""), ("AABB", "Bounding Box", "")), default="CONCAVE")
+    pack_rotation: EnumProperty(name="Rotation", items=(("OFF", "Off", ""), ("ANY", "Any", ""), ("CARDINAL", "Cardinal", ""), ("AXIS_ALIGNED", "Axis Aligned", "")), default="ANY")
+    pack_margin_method: EnumProperty(name="Margin Method", items=(("SCALED", "Scaled", ""), ("ADD", "Add", ""), ("FRACTION", "Fraction", "")), default="SCALED")
+    lock_pinned_islands: BoolProperty(name="Lock Pinned Islands", default=False)
+    pack_pin_method: EnumProperty(name="Pin Method", items=(("LOCKED", "Lock All", ""), ("ROTATION", "Lock Rotation", ""), ("ROTATION_SCALE", "Lock Rotation & Scale", "")), default="LOCKED")
+    merge_overlapping: BoolProperty(name="Merge Overlapping", default=False)
+    pack_target: EnumProperty(name="Pack Target", items=(("CLOSEST_UDIM", "Closest UDIM", ""), ("ACTIVE_UDIM", "Active UDIM", ""), ("ORIGINAL_AABB", "Original Bounding Box", ""), ("CUSTOM_REGION", "Custom Region", "")), default="CLOSEST_UDIM")
+    grid_layout_mode: EnumProperty(name="Grid Mode", items=(("PRESERVE_SCALE", "Preserve Scale", "Move only"), ("FIT_OVERSIZED", "Fit Oversized Only", "Shrink only islands exceeding cells"), ("FIT_EACH", "Fit Each Cell", "Changes relative texel density")), default="PRESERVE_SCALE")
+    seam_group_name: StringProperty(name="Seam Group", default="UV0")
+    seam_group_apply_mode: EnumProperty(name="Apply Mode", items=(("REPLACE", "Replace", ""), ("MERGE", "Merge", "")), default="REPLACE")
 
     process_shared_mesh_once: BoolProperty(
         name="Process Shared Mesh Data Once",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from math import radians
 from typing import DefaultDict
+from .seam_path import PathWeights, candidate_score, shortest_path
 
 from .mesh_utils import build_edge_to_faces
 
@@ -82,6 +83,73 @@ def mark_auto_seams(
 
     mesh.update()
     return marked_count
+
+
+def _bool_edge_attribute(mesh, name: str) -> list[bool]:
+    attribute = mesh.attributes.get(name)
+    if attribute is None or attribute.domain != "EDGE" or attribute.data_type != "BOOLEAN":
+        return [False] * len(mesh.edges)
+    return [item.value for item in attribute.data]
+
+
+def mark_advanced_seams(obj, settings) -> int:
+    """Score edges, then connect high-value anchors with bounded graph searches."""
+    mesh = obj.data
+    mesh.update(calc_edges=True)
+    edge_faces = build_edge_to_faces(mesh)
+    force = _bool_edge_attribute(mesh, "autoseam_force")
+    protect = _bool_edge_attribute(mesh, "autoseam_protect")
+    weights = PathWeights(settings.weight_curvature, settings.weight_material,
+                          settings.weight_sharp, settings.weight_boundary,
+                          settings.weight_existing, settings.weight_length,
+                          settings.straightness_bias)
+    adjacency: DefaultDict[int, list[tuple[int, int]]] = defaultdict(list)
+    scores = {}
+    boundary_vertices = set()
+    existing_vertices = set()
+    for edge in mesh.edges:
+        a, b = edge.vertices
+        adjacency[a].append((b, edge.index)); adjacency[b].append((a, edge.index))
+        faces = edge_faces.get(edge.index, [])
+        boundary = len(faces) != 2
+        if boundary: boundary_vertices.update((a, b))
+        if edge.use_seam: existing_vertices.update((a, b))
+        curvature = 0.0
+        material = False
+        if len(faces) == 2:
+            pa, pb = (mesh.polygons[i] for i in faces)
+            curvature = pa.normal.angle(pb.normal) / 3.141592653589793
+            material = pa.material_index != pb.material_index
+        scores[edge.index] = candidate_score(
+            curvature=curvature * settings.curvature_bias,
+            material=material and settings.material_boundary,
+            sharp=edge.use_edge_sharp,
+            boundary_distance=0.0 if boundary else 1.0 / max(settings.boundary_attraction, 1e-6),
+            existing_distance=0.0 if edge.use_seam else 1.0 / max(settings.existing_seam_attraction, 1e-6),
+            length=edge.calc_length(), force=force[edge.index], protect=protect[edge.index], weights=weights)
+    score_vertices = {vertex for i, score in scores.items() if score >= 1.0 for vertex in mesh.edges[i].vertices}
+    anchors = boundary_vertices | existing_vertices | score_vertices
+    chosen = {i for i, value in enumerate(force) if value and not protect[i]}
+    # High scoring edges become seeds, but only bounded paths reaching a real anchor survive.
+    seed_edges = sorted((i for i,s in scores.items() if s >= 1.0 and not protect[i]), key=scores.get, reverse=True)
+    occupied_vertices = set()
+    for edge_index in seed_edges:
+        edge = mesh.edges[edge_index]
+        if occupied_vertices.intersection(edge.vertices):
+            continue
+        path = shortest_path(adjacency, edge.vertices, anchors - set(edge.vertices),
+                             lambda i: 1.0 / max(scores[i], .001), settings.seam_search_radius)
+        candidate = [edge_index] + path
+        if len(candidate) >= 3 or force[edge_index]:
+            chosen.update(i for i in candidate if not protect[i])
+            for i in candidate: occupied_vertices.update(mesh.edges[i].vertices)
+    before = sum(edge.use_seam for edge in mesh.edges)
+    for edge in mesh.edges:
+        if protect[edge.index]:
+            continue
+        if force[edge.index] or edge.index in chosen: edge.use_seam = True
+    mesh.update()
+    return max(0, sum(edge.use_seam for edge in mesh.edges) - before)
 
 
 def _longest_bbox_axis(mesh) -> tuple[int, list[float], list[float]] | None:
