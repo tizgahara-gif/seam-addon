@@ -58,7 +58,8 @@ class IntegrationTests(unittest.TestCase):
                           [(0,1,2,3),(4,5,6,7)])
         settings = bpy.context.scene.autoseamuv_settings
         settings.symmetry_scope = "WHOLE"
-        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"CANCELLED"})
         layer = obj.data.uv_layers.new(name="UVMap")
         for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))): layer.uv[index].vector = uv
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
