@@ -17,7 +17,7 @@ class AUTOSEAMUV_OT_set_texel_density(bpy.types.Operator):
         s=c.scene.autoseamuv_settings
         for obj in _objects(c):
             current=measure_object(obj,s.texture_width,s.texture_height,s.texel_unit); factor=scale_for_density(current,s.target_texel_density);uv=obj.data.uv_layers.active
-            loops=[d.uv for d in uv.data]; center=sum(loops,loops[0].copy()*0.0)/len(loops) if loops else None
+            loops=[uv.uv[index].vector for index in range(len(uv.uv))]; center=sum(loops,loops[0].copy()*0.0)/len(loops) if loops else None
             if center:
                 for point in loops:point[:]=center+(point-center)*factor
             obj.data.update()
