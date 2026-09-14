@@ -9,6 +9,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
 
 
+def uv_bounds(uvs):
+    us, vs = zip(*uvs)
+    return min(us), max(us), min(vs), max(vs)
+
+
+def uv_area(uvs):
+    return abs(sum(
+        uvs[index][0] * uvs[(index + 1) % len(uvs)][1]
+        - uvs[(index + 1) % len(uvs)][0] * uvs[index][1]
+        for index in range(len(uvs))
+    )) * 0.5
+
+
 def mesh_object(name, vertices, faces):
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(vertices, [], faces); mesh.update()
@@ -60,12 +73,37 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_scope = "WHOLE"
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"CANCELLED"})
         layer = obj.data.uv_layers.new(name="UVMap")
-        for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))): layer.uv[index].vector = uv
+        source_coordinates = ((0.125, 0.25), (1.375, 0.25),
+                              (1.375, 1.0), (0.125, 1.0))
+        for index, uv in enumerate(source_coordinates):
+            layer.uv[index].vector = uv
         self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         settings.symmetry_layout = "OVERLAP"
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
         settings.symmetry_layout = "SEPARATE_MIRRORED"
+        settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+
+        source_loops = tuple(obj.data.polygons[0].loop_indices)
+        destination_loops = tuple(obj.data.polygons[1].loop_indices)
+        source_uvs = [tuple(layer.uv[index].vector) for index in source_loops]
+        destination_uvs = [tuple(layer.uv[index].vector) for index in destination_loops]
+        source_bounds = uv_bounds(source_uvs)
+        destination_bounds = uv_bounds(destination_uvs)
+
+        self.assertAlmostEqual(uv_area(source_uvs), uv_area(destination_uvs))
+        self.assertAlmostEqual(source_bounds[1] - source_bounds[0],
+                               destination_bounds[1] - destination_bounds[0])
+        self.assertAlmostEqual(source_bounds[3] - source_bounds[2],
+                               destination_bounds[3] - destination_bounds[2])
+        mirrored_loop_pairs = ((0, 4), (1, 7), (2, 6), (3, 5))
+        mirror_axis_u = source_bounds[1] + destination_bounds[0]
+        for source_loop, destination_loop in mirrored_loop_pairs:
+            self.assertAlmostEqual(layer.uv[source_loop].vector.x
+                                   + layer.uv[destination_loop].vector.x,
+                                   mirror_axis_u)
+        self.assertGreaterEqual(destination_bounds[0] - source_bounds[1],
+                                settings.symmetry_island_gap)
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
