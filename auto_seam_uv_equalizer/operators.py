@@ -10,6 +10,7 @@ from .uv_tools import ensure_uv_layer, unwrap_object, unwrap_object_pack
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
+from .translations import iface_
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -67,7 +68,7 @@ def _warn_shared_meshes(operator, objects: list[bpy.types.Object]) -> None:
     if shared:
         operator.report(
             {"WARNING"},
-            f"{REPORT_PREFIX}: shared mesh datablock(s) detected; seam and UV edits are shared: {', '.join(shared)}",
+            iface_("Auto Seam UV: shared mesh datablock(s) detected; seam and UV edits are shared: %s", ", ".join(shared)),
         )
 
 
@@ -80,7 +81,7 @@ def _warn_non_uniform_scale(operator, objects: list[bpy.types.Object]) -> None:
     if names:
         operator.report(
             {"WARNING"},
-            f"{REPORT_PREFIX}: non-uniform object scale detected; UV density may need manual review: {', '.join(names)}",
+            iface_("Auto Seam UV: non-uniform object scale detected; UV density may need manual review: %s", ", ".join(names)),
         )
 
 
@@ -112,14 +113,14 @@ class AUTOSEAMUV_OT_detect_ring_strip(bpy.types.Operator):
     def execute(self, context):
         objects = _selected_visible_mesh_objects(context)
         if len(objects) != 1:
-            self.report({"ERROR"}, "Ring / Strip: select exactly one visible mesh object.")
+            self.report({"ERROR"}, iface_("Ring / Strip: select exactly one visible mesh object."))
             return {"CANCELLED"}
         try:
             grid, seam = _analyze_object_ring(objects[0], _get_settings(context))
         except TopologyError as exc:
-            self.report({"ERROR"}, f"Ring / Strip: Invalid - {exc}")
+            self.report({"ERROR"}, iface_("Ring / Strip: Invalid - %s", exc))
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Ring / Strip: Valid; Rings {grid.ring_count}, Columns {grid.column_count}, Boundaries {grid.boundary_count}, Seam candidate {seam}")
+        self.report({"INFO"}, iface_("Ring / Strip: Valid; Rings %d, Columns %d, Boundaries %d, Seam candidate %s", grid.ring_count, grid.column_count, grid.boundary_count, seam))
         return {"FINISHED"}
 
 
@@ -132,7 +133,7 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
     def execute(self, context):
         selected = _selected_visible_mesh_objects(context)
         if not selected:
-            self.report({"ERROR"}, "Ring / Strip: no visible mesh object selected.")
+            self.report({"ERROR"}, iface_("Ring / Strip: no visible mesh object selected."))
             return {"CANCELLED"}
         settings = _get_settings(context)
         objects, skipped = _objects_for_processing(self, selected, settings.process_shared_mesh_once)
@@ -155,12 +156,12 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                         layer = obj.data.uv_layers.new(name=settings.uv_map_name)
                     assign_uv_loops(obj.data, layer, coordinates)
                     completed += 1
-                    self.report({"INFO"}, f"{obj.name}: Rings {grid.ring_count}, Columns {grid.column_count}, Boundaries {grid.boundary_count}, Seam {seam}")
+                    self.report({"INFO"}, iface_("%s: Rings %d, Columns %d, Boundaries %d, Seam %s", obj.name, grid.ring_count, grid.column_count, grid.boundary_count, seam))
                 except (TopologyError, ValueError) as exc:
-                    self.report({"ERROR"}, f"{obj.name}: Invalid - {exc}")
+                    self.report({"ERROR"}, iface_("%s: Invalid - %s", obj.name, exc))
         finally:
             _restore_context(context, active, original_selection, mode)
-        self.report({"INFO"}, f"Ring / Strip: unwrapped {completed}, skipped shared {skipped}.")
+        self.report({"INFO"}, iface_("Ring / Strip: unwrapped %d, skipped shared %d.", completed, skipped))
         return {"FINISHED"} if completed else {"CANCELLED"}
 
 
@@ -184,7 +185,7 @@ def _objects_for_processing(operator, objects: list[bpy.types.Object], process_s
     if skipped_names:
         operator.report(
             {"WARNING"},
-            f"{REPORT_PREFIX}: shared mesh data skipped for {len(skipped_names)} object(s): {', '.join(skipped_names)}",
+            iface_("Auto Seam UV: shared mesh data skipped for %d object(s): %s", len(skipped_names), ", ".join(skipped_names)),
         )
 
     return process_objects, len(skipped_names)
@@ -200,7 +201,7 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -224,13 +225,13 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, f"{REPORT_PREFIX}: failed to mark seams on {obj.name}: {exc}")
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed to mark seams on %s: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, processed {processed}, skipped shared {skipped_shared}, failed {failures}.",
+            iface_("Auto Seam UV: marked %d seam(s), longitudinal %d, cleared %d, processed %d, skipped shared %d, failed %d.", total_marked, total_longitudinal, total_cleared, processed, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -245,7 +246,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -262,7 +263,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
             for obj in objects:
                 try:
                     if len(obj.data.polygons) == 0:
-                        self.report({"WARNING"}, f"{REPORT_PREFIX}: skipped {obj.name}; mesh has no faces.")
+                        self.report({"WARNING"}, iface_("Auto Seam UV: skipped %s; mesh has no faces.", obj.name))
                         continue
                     total_straightened += unwrap_object(
                         obj,
@@ -284,13 +285,13 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, str(exc))
+                    self.report({"ERROR"}, iface_("Operation failed: %s", exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: grid unwrapped {processed} object(s), marked 0 seam(s), straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
+            iface_("Auto Seam UV: grid unwrapped %d object(s), marked 0 seam(s), straightened %d circular strip island(s), skipped shared %d, failed %d.", processed, total_straightened, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -306,7 +307,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -325,7 +326,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                 try:
                     if len(obj.data.polygons) == 0:
                         skipped_empty += 1
-                        self.report({"WARNING"}, f"Auto Unwrap Pack: skipped {obj.name}; mesh has no faces.")
+                        self.report({"WARNING"}, iface_("Auto Unwrap Pack: skipped %s; mesh has no faces.", obj.name))
                         continue
                     total_straightened += unwrap_object_pack(
                         obj,
@@ -341,13 +342,13 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, str(exc))
+                    self.report({"ERROR"}, iface_("Operation failed: %s", exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"Auto Unwrap Pack: packed {processed} object(s), straightened {total_straightened} circular strip island(s), skipped empty {skipped_empty}, skipped shared {skipped_shared}, failed {failures}.",
+            iface_("Auto Unwrap Pack: packed %d object(s), straightened %d circular strip island(s), skipped empty %d, skipped shared %d, failed %d.", processed, total_straightened, skipped_empty, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -362,7 +363,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -404,13 +405,13 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, str(exc))
+                    self.report({"ERROR"}, iface_("Operation failed: %s", exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: marked {total_marked} seam(s), longitudinal {total_longitudinal}, cleared {total_cleared}, unwrapped {processed}, straightened {total_straightened} circular strip island(s), skipped shared {skipped_shared}, failed {failures}.",
+            iface_("Auto Seam UV: marked %d seam(s), longitudinal %d, cleared %d, unwrapped %d, straightened %d circular strip island(s), skipped shared %d, failed %d.", total_marked, total_longitudinal, total_cleared, processed, total_straightened, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -426,7 +427,7 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -443,7 +444,7 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
                 try:
                     if len(obj.data.polygons) == 0:
                         skipped_empty += 1
-                        self.report({"WARNING"}, f"Atlas Pack Selected Objects: skipped {obj.name}; mesh has no faces.")
+                        self.report({"WARNING"}, iface_("Atlas Pack Selected Objects: skipped %s; mesh has no faces.", obj.name))
                         continue
                     if settings.atlas_uv_source == "ACTIVE":
                         has_uv = obj.data.uv_layers.active is not None
@@ -452,17 +453,17 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
                     if not has_uv:
                         failures += 1
                         detail = "active UV map" if settings.atlas_uv_source == "ACTIVE" else f"UV map '{settings.uv_map_name}'"
-                        self.report({"WARNING"}, f"Atlas Pack Selected Objects: skipped {obj.name}; no {detail}.")
+                        self.report({"WARNING"}, iface_("Atlas Pack Selected Objects: skipped %s; no %s.", obj.name, detail))
                         continue
                     valid_objects.append(obj)
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, f"Atlas Pack Selected Objects: failed to prepare {obj.name}: {exc}")
+                    self.report({"ERROR"}, iface_("Atlas Pack Selected Objects: failed to prepare %s: %s", obj.name, exc))
 
             if not valid_objects:
                 self.report(
                     {"WARNING"},
-                    f"Atlas Pack Selected Objects: no valid mesh objects to pack, skipped empty {skipped_empty}, skipped shared {skipped_shared}, failed {failures}.",
+                    iface_("Atlas Pack Selected Objects: no valid mesh objects to pack, skipped empty %d, skipped shared %d, failed %d.", skipped_empty, skipped_shared, failures),
                 )
                 return {"CANCELLED"}
 
@@ -493,13 +494,13 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
             processed = len(valid_objects)
         except Exception as exc:
             failures += len(valid_objects) if valid_objects else 1
-            self.report({"ERROR"}, f"Atlas Pack Selected Objects: failed to atlas pack selected objects: {exc}")
+            self.report({"ERROR"}, iface_("Atlas Pack Selected Objects: failed to atlas pack selected objects: %s", exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"Atlas Pack Selected Objects: packed {processed} object(s), skipped empty {skipped_empty}, skipped shared {skipped_shared}, failed {failures}.",
+            iface_("Atlas Pack Selected Objects: packed %d object(s), skipped empty %d, skipped shared %d, failed %d.", processed, skipped_empty, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
 
@@ -523,7 +524,7 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -548,7 +549,7 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
                     triangles.extend(triangles_from_object(obj, area_epsilon))
                 except Exception as exc:
                     failed += 1
-                    self.report({"ERROR"}, f"Check UV Overlap: failed to inspect {obj.name}: {exc}")
+                    self.report({"ERROR"}, iface_("Check UV Overlap: failed to inspect %s: %s", obj.name, exc))
 
             overlap_faces = set()
             pair_count = 0
@@ -584,7 +585,7 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"Check UV Overlap: found {len(overlap_faces)} overlapping face(s) in {pair_count} pair(s), skipped {skipped}, failed {failed}.",
+            iface_("Check UV Overlap: found %d overlapping face(s) in %d pair(s), skipped %d, failed %d.", len(overlap_faces), pair_count, skipped, failed),
         )
         return {"FINISHED"} if valid_objects else {"CANCELLED"}
 
@@ -600,7 +601,7 @@ class AUTOSEAMUV_OT_clear_uv_overlap_highlight(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
         active, selected, mode = _snapshot_context(context)
         cleared = 0
@@ -614,7 +615,7 @@ class AUTOSEAMUV_OT_clear_uv_overlap_highlight(bpy.types.Operator):
                 obj.data.update()
         finally:
             _restore_context(context, active, selected, mode)
-        self.report({"INFO"}, f"Clear UV Overlap Highlight: cleared {cleared} selected face(s).")
+        self.report({"INFO"}, iface_("Clear UV Overlap Highlight: cleared %d selected face(s).", cleared))
         return {"FINISHED"}
 
 
@@ -628,7 +629,7 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
     def execute(self, context):
         selected_objects = _selected_visible_mesh_objects(context)
         if not selected_objects:
-            self.report({"WARNING"}, f"{REPORT_PREFIX}: no visible mesh objects selected.")
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
 
         settings = _get_settings(context)
@@ -646,12 +647,12 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, f"{REPORT_PREFIX}: failed to clear seams on {obj.name}: {exc}")
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed to clear seams on %s: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
-            f"{REPORT_PREFIX}: cleared {total_cleared} seam(s), processed {processed}, skipped shared {skipped_shared}, failed {failures}.",
+            iface_("Auto Seam UV: cleared %d seam(s), processed %d, skipped shared %d, failed %d.", total_cleared, processed, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}

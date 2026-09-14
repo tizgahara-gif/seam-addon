@@ -3,6 +3,7 @@ from __future__ import annotations
 import bpy
 from .symmetry import mirror_edge_map
 from .seam_groups import save, apply, delete
+from .translations import iface_
 
 def _active_mesh(context):
     obj=context.active_object
@@ -24,7 +25,7 @@ class _TagBase(bpy.types.Operator):
     bl_options={'REGISTER','UNDO'}; attribute=''
     def execute(self,context):
         count=_tag_selected(context,self.attribute)
-        self.report({'INFO'},f"Tagged {count} edge(s)"); return {'FINISHED'} if count else {'CANCELLED'}
+        self.report({'INFO'}, iface_("Tagged %d edge(s)", count)); return {'FINISHED'} if count else {'CANCELLED'}
 class AUTOSEAMUV_OT_force_seam(_TagBase):
     bl_idname='autoseamuv.force_seam'; bl_label='Force Auto Seam'; attribute='autoseam_force'
 class AUTOSEAMUV_OT_protect_seam(_TagBase):
@@ -50,7 +51,7 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
             mid=(mesh.vertices[mesh.edges[source].vertices[0]].co[axis]+mesh.vertices[mesh.edges[source].vertices[1]].co[axis])*.5
             allowed=(s.mirror_direction=='SELECTED' and mesh.edges[source].select) or (s.mirror_direction=='POSITIVE' and mid>s.mirror_tolerance) or (s.mirror_direction=='NEGATIVE' and mid < -s.mirror_tolerance) or abs(mid)<=s.mirror_tolerance
             if allowed and mesh.edges[source].use_seam and not mesh.edges[target].use_seam: mesh.edges[target].use_seam=True; changed+=1
-        mesh.update(); self.report({'INFO'},f"Mirrored {changed}; skipped {skipped} ambiguous/unmatched edge(s)"); return {'FINISHED'}
+        mesh.update(); self.report({'INFO'}, iface_("Mirrored %d; skipped %d ambiguous/unmatched edge(s)", changed, skipped)); return {'FINISHED'}
 class AUTOSEAMUV_OT_seams_from_sharp(bpy.types.Operator):
     bl_idname='autoseamuv.seams_from_sharp'; bl_label='Mark Seams From Sharp'; bl_options={'REGISTER','UNDO'}
     def execute(self,context):
@@ -107,7 +108,7 @@ class AUTOSEAMUV_OT_apply_seam_group(_GroupBase):
         m=self.mesh(c);s=c.scene.autoseamuv_settings
         if not m:return {'CANCELLED'}
         try:apply(m,s.seam_group_name,s.seam_group_apply_mode=='MERGE')
-        except KeyError:self.report({'ERROR'},'Seam group not found');return {'CANCELLED'}
+        except KeyError:self.report({'ERROR'}, iface_('Seam group not found'));return {'CANCELLED'}
         return {'FINISHED'}
 class AUTOSEAMUV_OT_delete_seam_group(_GroupBase):
     bl_idname='autoseamuv.delete_seam_group';bl_label='Delete Seam Group'
