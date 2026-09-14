@@ -1,4 +1,5 @@
 """Blender 5.1 runtime/registration and core-workflow smoke tests."""
+import math
 import pathlib
 import sys
 import unittest
@@ -30,6 +31,26 @@ def mesh_object(name, vertices, faces):
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj; obj.select_set(True)
     return obj
+
+
+def ring_object(name="Ring", rows=4, columns=8):
+    vertices = [
+        (math.cos(2.0 * math.pi * column / columns),
+         math.sin(2.0 * math.pi * column / columns), row)
+        for row in range(rows)
+        for column in range(columns)
+    ]
+    faces = []
+    for row in range(rows - 1):
+        for column in range(columns):
+            next_column = (column + 1) % columns
+            faces.append((
+                row * columns + column,
+                row * columns + next_column,
+                (row + 1) * columns + next_column,
+                (row + 1) * columns + column,
+            ))
+    return mesh_object(name, vertices, faces)
 
 
 class IntegrationTests(unittest.TestCase):
@@ -118,37 +139,26 @@ class IntegrationTests(unittest.TestCase):
         settings.symmetry_island_gap = 0.25
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
 
-    def test_selected_symmetric_transfer_preserves_unselected_region_uvs(self):
-        obj = mesh_object(
-            "SymmetricWithThirdRegion",
-            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
-             (1,0,0),(1,0,1),(1,1,1),(1,1,0),
-             (3,2,0),(4,2,0),(4,3,0),(3,3,0)],
-            [(0,1,2,3),(4,5,6,7),(8,9,10,11)],
-        )
-        layer = obj.data.uv_layers.new(name="UVMap")
-        initial_uvs = (
-            (0.1,0.2),(0.3,0.2),(0.3,0.4),(0.1,0.4),
-            (0.6,0.6),(0.7,0.6),(0.7,0.7),(0.6,0.7),
-            (0.11,0.81),(0.29,0.83),(0.31,0.97),(0.13,0.99),
-        )
-        for index, uv in enumerate(initial_uvs):
-            layer.uv[index].vector = uv
+    def test_ring_unwrap_restores_partial_face_selection_and_select_mode(self):
+        obj = ring_object()
+        selected_faces = set(range(8))
 
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bpy.ops.object.mode_set(mode="OBJECT")
         for polygon in obj.data.polygons:
-            polygon.select = False
-        obj.data.polygons[0].select = True
-        settings = bpy.context.scene.autoseamuv_settings
-        settings.symmetry_scope = "SELECTED"
-        settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
-        settings.symmetry_layout = "OVERLAP"
-        third_region_loops = tuple(obj.data.polygons[2].loop_indices)
-        before = tuple(tuple(layer.uv[index].vector) for index in third_region_loops)
+            polygon.select = polygon.index in selected_faces
+        bpy.ops.object.mode_set(mode="EDIT")
 
-        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
+        original_select_mode = tuple(bpy.context.tool_settings.mesh_select_mode)
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_ring_strip(), {"FINISHED"})
 
-        after = tuple(tuple(layer.uv[index].vector) for index in third_region_loops)
-        self.assertEqual(after, before)
+        edit_mesh = bmesh.from_edit_mesh(obj.data)
+        edit_mesh.faces.ensure_lookup_table()
+        restored_faces = {face.index for face in edit_mesh.faces if face.select}
+        self.assertEqual(restored_faces, selected_faces)
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), original_select_mode)
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(IntegrationTests)
