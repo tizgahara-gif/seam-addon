@@ -1,5 +1,8 @@
 """Task-oriented Blender 5.1 sidebar UI."""
+
 import bpy
+
+
 class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     """3D View sidebar panel for automatic seam and UV operations."""
 
@@ -78,16 +81,25 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         symmetry_box = layout.box()
         symmetry_box.label(text="Symmetric UV")
-        symmetry_box.prop(settings, "symmetry_axis")
-        symmetry_box.prop(settings, "symmetry_direction")
-        symmetry_box.prop(settings, "texture_source_side")
-        symmetry_box.prop(settings, "symmetry_scope")
-        symmetry_box.prop(settings, "symmetry_layout")
-        symmetry_box.prop(settings, "symmetry_tolerance")
-        if settings.symmetry_layout == "SEPARATE_MIRRORED":
-            symmetry_box.prop(settings, "symmetry_island_gap")
+
+        mesh_symmetry = symmetry_box.column(align=True)
+        mesh_symmetry.label(text="Mesh Symmetry")
+        mesh_symmetry.prop(settings, "symmetry_axis")
+        mesh_symmetry.prop(settings, "symmetry_direction")
+        mesh_symmetry.prop(settings, "symmetry_scope")
+        mesh_symmetry.prop(settings, "symmetry_tolerance")
         symmetry_box.operator("autoseamuv.validate_symmetry", text="Validate Symmetry", icon="CHECKMARK")
+
+        standard_transfer = symmetry_box.column(align=True)
+        standard_transfer.label(text="Standard Symmetric Transfer")
+        standard_transfer.prop(settings, "symmetry_layout")
+        if settings.symmetry_layout == "SEPARATE_MIRRORED":
+            standard_transfer.prop(settings, "symmetry_island_gap")
         symmetry_box.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV", icon="UV")
+
+        exact_transfer = symmetry_box.column(align=True)
+        exact_transfer.label(text="Exact Texture-X Transfer")
+        exact_transfer.prop(settings, "texture_source_side")
         symmetry_box.operator("autoseamuv.transfer_exact_texture_x_symmetry",
                               text="Transfer Exact Texture-X Symmetry", icon="UV")
 
@@ -129,3 +141,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         actions_box.operator("autoseamuv.check_uv_overlap", text="Check UV Overlap", icon="VIEWZOOM")
         actions_box.operator("autoseamuv.clear_uv_overlap_highlight", text="Clear UV Overlap Highlight", icon="BRUSH_DATA")
         actions_box.operator("autoseamuv.clear_seams", text="Clear Seams", icon="X")
+
+
+CLASSES = (
+    AUTOSEAMUV_PT_panel,
+)
