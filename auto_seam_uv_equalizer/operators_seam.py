@@ -4,6 +4,7 @@ import bpy
 from .symmetry import mirror_edge_map
 from .seam_groups import save, apply, delete
 from .translations import iface_
+from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 
 def _active_mesh(context):
     obj=context.active_object
@@ -27,15 +28,15 @@ class _TagBase(bpy.types.Operator):
         count=_tag_selected(context,self.attribute)
         self.report({'INFO'}, iface_("Tagged %d edge(s)", count)); return {'FINISHED'} if count else {'CANCELLED'}
 class AUTOSEAMUV_OT_force_seam(_TagBase):
-    bl_idname='autoseamuv.force_seam'; bl_label='Force Auto Seam'; attribute='autoseam_force'
+    bl_idname='autoseamuv.force_seam'; bl_label='Force Auto Seam'; attribute=FORCE_SEAM_ATTRIBUTE
 class AUTOSEAMUV_OT_protect_seam(_TagBase):
-    bl_idname='autoseamuv.protect_seam'; bl_label='Protect From Auto Seam'; attribute='autoseam_protect'
+    bl_idname='autoseamuv.protect_seam'; bl_label='Protect From Auto Seam'; attribute=PROTECT_SEAM_ATTRIBUTE
 class AUTOSEAMUV_OT_clear_edge_tags(bpy.types.Operator):
     bl_idname='autoseamuv.clear_edge_tags'; bl_label='Clear Auto Seam Tags'; bl_options={'REGISTER','UNDO'}
     def execute(self,context):
         obj=_active_mesh(context)
         if not obj:return {'CANCELLED'}
-        for name in ('autoseam_force','autoseam_protect'):
+        for name in (FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE):
             attr=obj.data.attributes.get(name)
             if attr: obj.data.attributes.remove(attr)
         return {'FINISHED'}

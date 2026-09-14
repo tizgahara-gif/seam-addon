@@ -15,7 +15,7 @@ bl_info = {
 import bpy  # noqa: E402
 from bpy.props import PointerProperty  # noqa: E402
 
-from . import operators, operators_seam, operators_validation, properties, translations, ui
+from . import operators, operators_seam, operators_symmetry, operators_validation, properties, translations, ui
 
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
@@ -31,6 +31,7 @@ CLASSES = (
     operators.AUTOSEAMUV_OT_clear_uv_overlap_highlight,
     operators.AUTOSEAMUV_OT_clear_seams,
     *operators_seam.CLASSES,
+    *operators_symmetry.CLASSES,
     *operators_validation.CLASSES,
     *ui.CLASSES,
 )

@@ -8,6 +8,7 @@ from typing import DefaultDict
 from .seam_path import PathWeights, candidate_score, shortest_path
 
 from .mesh_utils import build_edge_to_faces
+from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 
 
 MIN_MESH_FACE_COUNT = 1
@@ -141,8 +142,15 @@ def mark_advanced_seams(obj, settings) -> int:
     mesh = obj.data
     mesh.update(calc_edges=True)
     edge_faces = build_edge_to_faces(mesh)
-    force = _bool_edge_attribute(mesh, "autoseam_force")
-    protect = _bool_edge_attribute(mesh, "autoseam_protect")
+    force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
+    protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
+    # Advanced path lengths intentionally use object-local coordinates.  Object
+    # transforms are never applied because GoZ topology and transforms must stay
+    # untouched.  Precompute once because path scoring reuses these values.
+    edge_lengths = {
+        edge.index: (mesh.vertices[edge.vertices[0]].co - mesh.vertices[edge.vertices[1]].co).length
+        for edge in mesh.edges
+    }
     weights = PathWeights(settings.weight_curvature, settings.weight_material,
                           settings.weight_sharp, settings.weight_boundary,
                           settings.weight_existing, settings.weight_length,
@@ -170,7 +178,7 @@ def mark_advanced_seams(obj, settings) -> int:
             sharp=edge.use_edge_sharp,
             boundary_distance=0.0 if boundary else 1.0 / max(settings.boundary_attraction, 1e-6),
             existing_distance=0.0 if edge.use_seam else 1.0 / max(settings.existing_seam_attraction, 1e-6),
-            length=edge.calc_length(), force=force[edge.index], protect=protect[edge.index], weights=weights)
+            length=edge_lengths[edge.index], force=force[edge.index], protect=protect[edge.index], weights=weights)
     score_vertices = {vertex for i, score in scores.items() if score >= 1.0 for vertex in mesh.edges[i].vertices}
     anchors = boundary_vertices | existing_vertices | score_vertices
     chosen = {i for i, value in enumerate(force) if value and not protect[i]}

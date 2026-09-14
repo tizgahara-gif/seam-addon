@@ -13,6 +13,7 @@ import bpy
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from auto_seam_uv_equalizer.ring_topology import TopologyError, analyze_ring_topology
 from auto_seam_uv_equalizer.ring_uv import build_uv_coordinates, choose_seam
+from auto_seam_uv_equalizer.constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 
 
 def ring_mesh(name="Ring", rows=4, columns=8, radii=None, curved=False, uneven=False):
@@ -72,6 +73,14 @@ class RingStripTests(unittest.TestCase):
         for edge in grid.column_edges[3]: mesh.edges[edge].select = True
         self.assertEqual(choose_seam(mesh, grid, "SELECTED"), 3)
     def test_10_automatic_seam(self): self.assertIsInstance(choose_seam(ring_mesh(), analyze_ring_topology(ring_mesh()), "AUTO"), int)
+    def test_force_and_protect_canonical_attributes(self):
+        mesh = ring_mesh(); grid = analyze_ring_topology(mesh)
+        force = mesh.attributes.new(FORCE_SEAM_ATTRIBUTE, "BOOLEAN", "EDGE")
+        for edge in grid.column_edges[3]: force.data[edge].value = True
+        self.assertEqual(choose_seam(mesh, grid, "AUTO"), 3)
+        protect = mesh.attributes.new(PROTECT_SEAM_ATTRIBUTE, "BOOLEAN", "EDGE")
+        for edge in grid.column_edges[3]: protect.data[edge].value = True
+        self.assertNotEqual(choose_seam(mesh, grid, "AUTO"), 3)
 
     def _invalid_face(self, vertices, face):
         mesh = bpy.data.meshes.new("Invalid"); mesh.from_pydata(vertices, [], [face]); mesh.update()

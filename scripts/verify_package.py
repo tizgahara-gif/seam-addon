@@ -28,10 +28,13 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "grid_cell_margin",
         "grid_cell_fill_ratio",
         "include_open_boundaries",
+        "symmetry_layout",
+        "symmetry_scope",
     ),
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",
         "def mark_longitudinal_seam_helper",
+        "def mark_advanced_seams",
     ),
     "auto_seam_uv_equalizer/island_tools.py": (
         "def find_uv_islands",
@@ -61,6 +64,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "mark_longitudinal_seam_helper",
         "class AUTOSEAMUV_OT_mark_selected_region_boundary",
         'bl_idname = "autoseamuv.mark_selected_region_boundary"',
+        "def _auto_mark",
     ),
     "auto_seam_uv_equalizer/ui.py": (
         "straighten_circular_strip_islands",
@@ -77,6 +81,16 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "grid_cell_margin",
         "grid_cell_fill_ratio",
         'actions_box.prop(settings, "include_open_boundaries")',
+        'symmetry_box.operator("autoseamuv.validate_symmetry"',
+        'symmetry_box.operator("autoseamuv.transfer_symmetric_uv"',
+    ),
+    "auto_seam_uv_equalizer/symmetry.py": (
+        "def build_symmetry_plan",
+        "def transferred_uvs",
+    ),
+    "auto_seam_uv_equalizer/operators_symmetry.py": (
+        'bl_idname = "autoseamuv.validate_symmetry"',
+        'bl_idname = "autoseamuv.transfer_symmetric_uv"',
     ),
     "auto_seam_uv_equalizer/mesh_utils.py": (
         "def build_mesh_topology",

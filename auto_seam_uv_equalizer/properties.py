@@ -35,6 +35,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
     mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
+    symmetry_axis: EnumProperty(name="Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
+    symmetry_direction: EnumProperty(name="Source Side", items=(("NEGATIVE_TO_POSITIVE", "Negative to Positive", ""), ("POSITIVE_TO_NEGATIVE", "Positive to Negative", "")), default="NEGATIVE_TO_POSITIVE")
+    symmetry_scope: EnumProperty(name="Scope", items=(("SELECTED", "Selected Faces", ""), ("WHOLE", "Whole Mesh", "")), default="SELECTED")
+    symmetry_layout: EnumProperty(name="Layout", items=(("OVERLAP", "Overlap", ""), ("SEPARATE_MIRRORED", "Separate Mirrored", "")), default="OVERLAP")
+    symmetry_tolerance: FloatProperty(name="Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
+    symmetry_island_gap: FloatProperty(name="Island Gap", default=0.02, min=0.0, max=10.0)
 
     margin: FloatProperty(
         name="UV Margin",
