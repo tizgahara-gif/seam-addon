@@ -313,7 +313,7 @@ class IntegrationTests(unittest.TestCase):
             layer.uv[index].vector = uv
 
         settings = bpy.context.scene.autoseamuv_settings
-        settings.symmetry_axis = "X"
+        settings.mesh_symmetry_axis = "X"
         settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
         settings.symmetry_scope = "SELECTED"
         settings.symmetry_layout = "OVERLAP"
@@ -357,7 +357,7 @@ class IntegrationTests(unittest.TestCase):
             layer.uv[loop_index].vector = uv
         initial = tuple(tuple(item.vector) for item in layer.uv)
         settings = bpy.context.scene.autoseamuv_settings
-        settings.symmetry_axis = "X"
+        settings.mesh_symmetry_axis = "X"
         settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
         settings.symmetry_scope = "SELECTED"
         bpy.ops.object.mode_set(mode="EDIT")
@@ -478,7 +478,7 @@ class IntegrationTests(unittest.TestCase):
             layer.uv[loop_index].vector = uv
 
         settings = bpy.context.scene.autoseamuv_settings
-        settings.symmetry_axis = "X"
+        settings.mesh_symmetry_axis = "X"
         settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
         settings.symmetry_scope = "SELECTED"
         settings.symmetry_layout = "OVERLAP"
@@ -568,7 +568,7 @@ class IntegrationTests(unittest.TestCase):
         settings = bpy.context.scene.autoseamuv_settings
         settings.uv_map_name = target.name
         settings.ring_seam_mode = "AUTO"
-        settings.symmetry_axis = "X"
+        settings.mesh_symmetry_axis = "X"
         settings.symmetry_direction = "NEGATIVE_TO_POSITIVE"
         settings.symmetry_scope = "SELECTED"
         settings.symmetry_layout = "OVERLAP"

@@ -161,7 +161,7 @@ def analyze_chart_seams(obj, settings, quality_evaluator=None):
         mirror_edges, _ambiguous = mirror_edge_map(
             [tuple(vertex.co) for vertex in mesh.vertices],
             [tuple(edge.vertices) for edge in mesh.edges],
-            "XYZ".index(getattr(settings, "mirror_axis", "X")),
+            "XYZ".index(getattr(settings, "mesh_symmetry_axis", "X")),
             getattr(settings, "mirror_tolerance", 0.0001))
     result = analyze(mesh, edge_faces, force, protect, settings, quality_evaluator,
                      preferred_paths, mirror_edges, topology_rings)
@@ -180,7 +180,7 @@ def analysis_signature(obj, settings):
                      "curvature_bias", "weight_material", "seam_search_radius",
                      "chart_refinement_iterations")
     setting_names += ("character_front_axis", "use_professional_garment_prior",
-                      "mirror_axis", "mirror_tolerance")
+                      "mesh_symmetry_axis", "mirror_tolerance")
     return (
         tuple(tuple(vertex.co) for vertex in mesh.vertices),
         tuple(tuple(edge.vertices) for edge in mesh.edges),

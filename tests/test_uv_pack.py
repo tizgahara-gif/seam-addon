@@ -24,7 +24,7 @@ class PackRecorder:
 
 def settings(rotation):
     return SimpleNamespace(
-        margin=0.125,
+        pack_margin=0.125,
         pack_shape_method="CONVEX",
         pack_rotation=rotation,
         pack_margin_method="FRACTION",

@@ -48,6 +48,8 @@ def register() -> None:
         bpy.utils.register_class(cls)
 
     bpy.types.Scene.autoseamuv_settings = PointerProperty(type=properties.AUTOSEAMUV_PG_settings)
+    for scene in bpy.data.scenes:
+        properties.migrate_legacy_settings(scene.autoseamuv_settings)
     translations.register()
 
 

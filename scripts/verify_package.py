@@ -33,6 +33,9 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "symmetry_layout",
         "symmetry_scope",
         "texture_source_side",
+        "unwrap_margin",
+        "pack_margin",
+        "mesh_symmetry_axis",
     ),
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",

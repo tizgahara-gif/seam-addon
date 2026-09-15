@@ -1,6 +1,7 @@
 """Five-stage UV-production sidebar UI for Blender 5.1."""
 
 import bpy
+from .translations import iface_
 
 
 def _mesh_objects(context):
@@ -26,7 +27,11 @@ def _selected_face_count(context):
 def _warning(layout, text):
     row = layout.row()
     row.alert = True
-    row.label(text=text, icon="ERROR")
+    row.label(text=iface_(text), icon="ERROR")
+
+
+def _info(layout, text):
+    layout.label(text=iface_(text), icon="INFO")
 
 
 class AUTOSEAMUV_PT_panel(bpy.types.Panel):
@@ -44,13 +49,16 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         status = layout.box()
         status.label(text="Status", icon="INFO")
-        status.label(text=f"Active UV: {active_uv.name if active_uv else 'None'}")
-        status.label(text=f"Mode: {'Edit' if edit_mode else 'Object'}")
+        status.label(text=iface_("Active UV: %s") % (active_uv.name if active_uv else iface_("None")))
+        status.label(text=iface_("Mode: %s") % iface_("Edit" if edit_mode else "Object"))
         if edit_mode:
-            status.label(text=f"Selected Faces: {_selected_face_count(context)}")
-        status.label(text=f"Selected Objects: {len(meshes)}")
+            status.label(text=iface_("Selected Faces: %d") % _selected_face_count(context))
+        status.label(text=iface_("Selected Objects: %d") % len(meshes))
         if active_uv is None:
-            _warning(status, "No active UV map.")
+            if settings.create_uv_if_missing:
+                _info(status, "No active UV map. A UV map will be created when Unwrap runs.")
+            else:
+                _warning(status, "No active UV map. Enable Create UV If Missing or create a UV map manually.")
 
         self._draw_seam(layout, settings)
         self._draw_unwrap(layout, settings, edit_mode)
@@ -79,19 +87,19 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 "CYLINDER": "Topology-flow longitudinal seams prioritized.",
                 "MANUAL": "Force / Protect / existing seams prioritized.",
             }
-            box.label(text=descriptions[settings.seam_preset], icon="INFO")
+            box.label(text=iface_(descriptions[settings.seam_preset]), icon="INFO")
             row = box.row(align=True)
             row.operator("autoseamuv.analyze_seams", text="Analyze Seams", icon="VIEWZOOM")
             row.operator("autoseamuv.generate_seams", text="Generate Seams", icon="MOD_UVPROJECT")
 
         assist = box.column(align=True)
-        assist.label(text="Assist")
+        assist.label(text="Assist — Active Object")
         row = assist.row(align=True)
         boundary = row.operator("autoseamuv.mark_selected_region_boundary", text="Selected Boundary", icon="EDGESEL")
         boundary.include_open_boundaries = settings.include_open_boundaries
         row.operator("autoseamuv.mirror_seams", text="Mirror Seam")
         mirror = assist.row(align=True)
-        mirror.prop(settings, "mirror_axis", text="Axis")
+        mirror.prop(settings, "mesh_symmetry_axis", text="Mesh Symmetry Axis")
         mirror.prop(settings, "mirror_direction", text="Direction")
         if settings.seam_mode != "CLASSIC":
             row = assist.row(align=True)
@@ -120,6 +128,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="2. Unwrap", icon="UV")
         box.prop(settings, "unwrap_method", text="Method")
+        box.prop(settings, "unwrap_margin", text="Unwrap Margin")
         box.label(text="Scope")
         selected = box.column()
         selected.enabled = edit_mode
@@ -162,7 +171,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         pack = box.column(align=True)
         pack.separator()
         pack.label(text="Pack Islands")
-        pack.prop(settings, "margin", text="UV Margin")
+        pack.prop(settings, "pack_margin", text="Pack Margin")
         pack.prop(settings, "pack_rotation", text="Rotation")
         pack.prop(settings, "pack_margin_method", text="Margin Method")
         action = pack.row()
@@ -175,6 +184,14 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         atlas = box.column(align=True)
         atlas.separator()
         atlas.label(text="Multiple Objects")
+        atlas.prop(settings, "show_atlas_settings", toggle=True)
+        if settings.show_atlas_settings:
+            atlas_settings = atlas.column(align=True)
+            atlas_settings.prop(settings, "atlas_uv_source", text="UV Source")
+            atlas_settings.prop(settings, "atlas_texture_size", text="Texture Size")
+            atlas_settings.prop(settings, "atlas_pixel_margin", text="Pixel Margin")
+            atlas_settings.prop(settings, "atlas_average_island_scale", text="Average Island Scale")
+            atlas_settings.prop(settings, "atlas_pack_rotate", text="Allow Rotation")
         atlas.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects")
 
     @staticmethod
@@ -183,13 +200,16 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.label(text="4. Symmetry")
         mesh = box.column(align=True)
         mesh.label(text="Mesh Symmetry")
-        mesh.prop(settings, "symmetry_axis", text="Axis")
+        mesh.prop(settings, "mesh_symmetry_axis", text="Mesh Symmetry Axis")
         mesh.prop(settings, "symmetry_direction", text="Mesh Source Side")
         mesh.prop(settings, "symmetry_scope", text="Scope")
         mesh.prop(settings, "symmetry_tolerance", text="Tolerance")
         if settings.symmetry_scope == "SELECTED" and not edit_mode:
             _warning(mesh, "Selected Faces requires Edit Mode.")
-        mesh.operator("autoseamuv.validate_symmetry", text="Validate Symmetry")
+        symmetry_available = not (settings.symmetry_scope == "SELECTED" and not edit_mode)
+        action = mesh.row()
+        action.enabled = symmetry_available
+        action.operator("autoseamuv.validate_symmetry", text="Validate Symmetry")
 
         standard = box.column(align=True)
         standard.separator()
@@ -198,7 +218,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if settings.symmetry_layout == "SEPARATE_MIRRORED":
             standard.prop(settings, "symmetry_island_gap", text="Island Gap")
         action = standard.row()
-        action.enabled = active_uv is not None
+        action.enabled = active_uv is not None and symmetry_available
         action.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV")
 
         exact = box.column(align=True)
@@ -212,9 +232,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         elif target != source:
             _warning(exact, "Target region does not match Exact Texture-X source.")
         else:
-            exact.label(text="Ready for Exact Texture-X", icon="CHECKMARK")
+            exact.label(text="Layout settings match Exact Texture-X.", icon="CHECKMARK")
         action = exact.row()
-        action.enabled = active_uv is not None
+        action.enabled = active_uv is not None and symmetry_available
         action.operator("autoseamuv.transfer_exact_texture_x_symmetry", text="Exact Texture-X Symmetry")
 
     @staticmethod

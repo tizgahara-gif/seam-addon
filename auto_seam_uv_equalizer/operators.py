@@ -104,6 +104,31 @@ def _restore_context(context, active, selected: list[bpy.types.Object], mode: st
             bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
 
 
+def _restore_validation_context(context, active, selected, mode):
+    """Restore object/mode context while intentionally retaining face results."""
+    select_modes = [snapshot[4] for snapshot in _EDIT_SELECTION_SNAPSHOTS.values()]
+    _EDIT_SELECTION_SNAPSHOTS.clear()
+    try:
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:
+        pass
+    for obj in context.view_layer.objects:
+        try:
+            obj.select_set(obj in selected)
+        except Exception:
+            pass
+    if active is not None:
+        context.view_layer.objects.active = active
+    if active is not None and mode and mode != "OBJECT" and active.select_get():
+        try:
+            bpy.ops.object.mode_set(mode=mode)
+        except Exception:
+            pass
+    if select_modes:
+        context.tool_settings.mesh_select_mode = select_modes[0]
+
+
 def _ensure_object_mode() -> None:
     if bpy.ops.object.mode_set.poll():
         bpy.ops.object.mode_set(mode="OBJECT")
@@ -264,7 +289,7 @@ class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
 
     bl_idname = "autoseamuv.mark_selected_region_boundary"
     bl_label = "Mark Selected Region Boundary as Seam"
-    bl_description = "Add UV seams along the boundary of the currently selected faces"
+    bl_description = "Add UV seams along the boundary of selected faces on the active mesh object"
     bl_options = {"REGISTER", "UNDO"}
 
     include_open_boundaries: BoolProperty(
@@ -481,7 +506,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
                         settings.unwrap_method,
-                        settings.margin,
+                        settings.unwrap_margin,
                         settings.average_islands,
                         settings.straighten_circular_strip_islands,
                         settings.circular_strip_min_faces,
@@ -518,7 +543,7 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
         try:
             unwrap_selected_faces(obj, settings.uv_map_name,
                                   settings.create_uv_if_missing,
-                                  settings.unwrap_method, settings.margin)
+                                  settings.unwrap_method, settings.unwrap_margin)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Unwrap Selected Faces failed: %s", exc))
             return {"CANCELLED"}
@@ -593,7 +618,7 @@ class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):
 
     bl_idname = "autoseamuv.pack_islands"
     bl_label = "Pack Islands"
-    bl_description = "Pack existing active-map UV islands with Blender Pack Islands"
+    bl_description = "Packs each selected object independently"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -637,7 +662,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
                         settings.unwrap_method,
-                        settings.margin,
+                        settings.unwrap_margin,
                         settings.average_islands,
                         settings.straighten_circular_strip_islands,
                         settings.circular_strip_min_faces,
@@ -697,7 +722,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
                         settings.unwrap_method,
-                        settings.margin,
+                        settings.unwrap_margin,
                         settings.average_islands,
                         settings.straighten_circular_strip_islands,
                         settings.circular_strip_min_faces,
@@ -724,7 +749,7 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
 
     bl_idname = "autoseamuv.atlas_pack_selected_objects"
     bl_label = "Atlas Pack Selected Objects"
-    bl_description = "Pack all UV islands from selected mesh objects into one 0-1 UV atlas without joining objects"
+    bl_description = "Packs selected mesh objects into one shared UV atlas"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -863,7 +888,7 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
             # Selection is deliberately the only visualization: material slots and
             # polygon material indices are never modified by validation.
         finally:
-            _restore_context(context, active, selected, mode)
+            _restore_validation_context(context, active, selected, mode)
 
         self.report(
             {"INFO"},
@@ -896,7 +921,7 @@ class AUTOSEAMUV_OT_clear_uv_overlap_highlight(bpy.types.Operator):
                     poly.select = False
                 obj.data.update()
         finally:
-            _restore_context(context, active, selected, mode)
+            _restore_validation_context(context, active, selected, mode)
         self.report({"INFO"}, iface_("Clear UV Overlap Highlight: cleared %d selected face(s).", cleared))
         return {"FINISHED"}
 

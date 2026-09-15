@@ -15,6 +15,23 @@ def test_all_literal_ui_text_has_a_japanese_translation():
         if keyword.arg == "text" and isinstance(keyword.value, ast.Constant)
         and isinstance(keyword.value.value, str)
     }
+    # Runtime helpers and iface_ templates are not covered by Blender's
+    # automatic translation of literal layout text.
+    visible |= {
+        arg.value
+        for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and ((isinstance(node.func, ast.Name) and node.func.id in {"_warning", "_info", "iface_"}))
+        for arg in node.args
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+    }
+    # Preset descriptions are canonical English dictionary values translated
+    # at draw time.
+    visible |= {
+        value.value for node in ast.walk(ui_tree) if isinstance(node, ast.Dict)
+        for value in node.values
+        if isinstance(value, ast.Constant) and isinstance(value.value, str)
+    }
 
     translation_tree = ast.parse((ROOT / "translations.py").read_text(encoding="utf-8"))
     dictionary = next(
