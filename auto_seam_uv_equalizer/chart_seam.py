@@ -186,7 +186,7 @@ def professional_edge_prior(mesh, edge_index, faces, settings, sleeve=False):
 
 def professional_prior_multiplier(seam_preset):
     """Scale the complete prior so presets do not selectively double-count features."""
-    return {"HARD_SURFACE": .25, "MANUAL": .25}.get(seam_preset, 1.0)
+    return PROFESSIONAL_PRESET_MULTIPLIER.get(seam_preset, .25)
 
 
 @dataclass
@@ -437,10 +437,12 @@ def path_professional_prior(mesh, path, edge_faces, settings, visibility_overrid
     return sum(values) / len(values)
 
 
-def path_final_rank(path, costs, professional_prior):
-    """Rank every completed candidate on one scale; seed ranks are prefilter-only."""
-    return (sum(costs[index] for index in path) / len(path) - professional_prior
-            if path else float("inf"))
+def completed_path_rank(path, costs, professional_prior, force_priority=False):
+    """Rank a completed path without carrying its seed-prefilter score forward."""
+    if not path:
+        return float("inf")
+    rank = sum(costs[index] for index in path) / len(path) - professional_prior
+    return rank - (1.0 if force_priority else 0.0)
 
 
 def mirror_pair_path(path, mirror_edges, protect_set):
@@ -524,9 +526,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                         getattr(settings, "character_front_axis", "-Y")) if sleeve else None
                     score = path_professional_prior(
                         mesh, path, edge_faces, settings, visibility) if professional else 0.0
-                    rank = path_final_rank(path, costs, score)
-                    if path & force_set:
-                        rank -= 1.0
+                    rank = completed_path_rank(path, costs, score, bool(path & force_set))
                     professional_paths.append((rank, min(path), path))
             if professional:
                 for path in structural_candidate_paths(
@@ -535,7 +535,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     if path - cuts:
                         score = path_professional_prior(mesh, path, edge_faces, settings)
                         professional_paths.append((
-                            path_final_rank(path, costs, score), min(path), set(path)))
+                            completed_path_rank(path, costs, score), min(path), set(path)))
             for edge_index, faces in edge_faces.items():
                 if len(faces) != 2 or not set(faces).issubset(chart) or edge_index in cuts or edge_index in protect_set:
                     continue
@@ -570,7 +570,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 split = {chosen, *path}
                 path_prior = path_professional_prior(mesh, split, edge_faces, settings) if professional else 0.0
                 professional_paths.append((
-                    path_final_rank(split, costs, path_prior), chosen, split))
+                    completed_path_rank(split, costs, path_prior), chosen, split))
 
             if professional and mirror_edges is not None:
                 professional_paths = [
