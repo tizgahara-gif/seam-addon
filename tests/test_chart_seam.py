@@ -308,16 +308,29 @@ def test_professional_rejection_does_not_starve_geodesic_fallback():
     assert any(len(cuts) >= 3 for cuts in tried)
 
 
-def test_completed_path_prior_beats_high_seed_low_path(monkeypatch):
-    test_mesh = _edge_mesh([(i, 0, 0) for i in range(5)],
-                           [(i, i + 1) for i in range(4)])
-    priorities = {0: 10.0, 1: 0.0, 2: 6.0, 3: 6.0}
+def test_analyze_discards_seed_prior_when_ranking_completed_paths(monkeypatch):
+    test_mesh = _edge_mesh([(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)],
+                           [(0, 1), (2, 3)])
+    priorities = {0: 10.0, 1: 5.0}
     monkeypatch.setattr(chart_seam, "professional_edge_prior",
                         lambda _m, index, _f, _s, sleeve=False:
                         (priorities[index], (0.0, 0.0, 0.0, 0.0)))
-    high_seed = chart_seam.path_professional_prior(test_mesh, {0, 1}, {}, settings())
-    consistent = chart_seam.path_professional_prior(test_mesh, {2, 3}, {}, settings())
-    assert consistent > high_seed
+    monkeypatch.setattr(chart_seam, "path_professional_prior",
+                        lambda _m, path, _f, _s, visibility_override=None:
+                        .5 if path == {0} else 3.0)
+    monkeypatch.setattr(chart_seam, "shortest_path", lambda *_args, **_kwargs: [])
+    trials = []
+
+    def quality(_chart, cuts):
+        if cuts:
+            trials.append(frozenset(cuts))
+            return .5
+        return 1.0
+
+    analyze(test_mesh, {0: [0, 1], 1: [0, 1]}, [False] * 2, [False] * 2,
+            settings(chart_refinement_iterations=1), quality)
+    # Both seeds enter the pool, but completed-path prior 3.0 ranks ahead of .5.
+    assert trials[:2] == [frozenset({1}), frozenset({0})]
 
 
 def test_material_boundary_closed_loop_is_one_structural_candidate():
@@ -346,6 +359,26 @@ def test_sleeve_visibility_uses_topology_local_frame():
         test_mesh, {column * 2, column * 2 + 1}, rings, "Y", "+Z")
         for column in range(4)]
     assert scores[0] > scores[3] > scores[2] > scores[1]
+
+
+def test_sleeve_parallel_mirror_axis_has_no_false_outer_bonus():
+    centers = [(0, 2, 0), (1, 2, 0), (2, 2, 0)]
+    coordinates = [(x, y + radial_y, z) for x, y, z in centers
+                   for radial_y in (-1, 1)]
+    rings = ((0, 1), (2, 3), (4, 5))
+    test_mesh = _edge_mesh(coordinates, [(0, 2), (2, 4)])
+    assert chart_seam.topology_sleeve_visibility(
+        test_mesh, {0, 1}, rings, "X", "+Z") == 0.0
+
+
+def test_sleeve_front_degenerate_still_uses_medial_projection():
+    centers = [(0, 2, 0), (1, 2, 0), (2, 2, 0)]
+    coordinates = [(x, y + radial_y, z) for x, y, z in centers
+                   for radial_y in (-1, 1)]
+    rings = ((0, 1), (2, 3), (4, 5))
+    test_mesh = _edge_mesh(coordinates, [(0, 2), (2, 4)])
+    assert chart_seam.topology_sleeve_visibility(
+        test_mesh, {0, 1}, rings, "Y", "+X") == pytest.approx(.30)
 
 
 def test_all_cylinder_columns_reach_professional_ranking(monkeypatch):
@@ -395,4 +428,18 @@ def test_object_level_sparsity_and_manual_prior_multiplier(monkeypatch):
     organic = chart_seam.professional_edge_prior(test_mesh, 0, [0, 1], settings())[0]
     manual = chart_seam.professional_edge_prior(
         test_mesh, 0, [0, 1], settings(seam_preset="MANUAL"))[0]
+    assert manual == pytest.approx(organic * .25)
+
+
+def test_hard_surface_and_manual_scale_entire_professional_prior(monkeypatch):
+    test_mesh = mesh()
+    test_mesh.polygons[1].material_index = 1
+    test_mesh.polygons[1].normal = Normal(math.radians(60.0))
+    monkeypatch.setattr(chart_seam, "visibility_prior", lambda *_args, **_kwargs: 0.0)
+    organic = chart_seam.professional_edge_prior(test_mesh, 0, [0, 1], settings())[0]
+    hard = chart_seam.professional_edge_prior(
+        test_mesh, 0, [0, 1], settings(seam_preset="HARD_SURFACE"))[0]
+    manual = chart_seam.professional_edge_prior(
+        test_mesh, 0, [0, 1], settings(seam_preset="MANUAL"))[0]
+    assert hard == pytest.approx(organic * .25)
     assert manual == pytest.approx(organic * .25)
