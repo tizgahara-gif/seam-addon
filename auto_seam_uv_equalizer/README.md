@@ -17,7 +17,7 @@ It automatically marks seams from face-angle changes, material boundaries, open 
 - Longitudinal seam helper for cylinders, pipes, supports, and cable-like meshes.
 - Better error reporting during unwrap.
 - Shared mesh datablock processing option.
-- Independent Auto Unwrap and Grid Layout for assigning existing UV islands to equal 0-1 regions.
+- Weighted Island Layout allocates UV space using world-space surface area and polygon density.
 - Auto Unwrap + Pack for efficient Blender Pack Islands output in the 0-1 UV space.
 - Atlas Pack Selected Objects for packing active UV maps from multiple selected mesh objects into one 0-1 atlas without joining objects.
 - Straighten Circular Strip Islands for converting C-shaped, ring-like, or arc-like UV islands into horizontal strips before packing.
@@ -52,7 +52,9 @@ Selected Region Boundary / Auto Seam
 ↓
 Auto Unwrap または Ring / Strip Unwrap
 ↓
-必要なら Grid Layout / Pack Islands
+Weighted Island Layout
+↓
+必要なら Pack Islands
 ↓
 Symmetric UV / Exact Texture-X Symmetry
 ↓
@@ -162,7 +164,7 @@ auto_seam_uv_equalizer/README.md
 4. The zip must not contain an extra parent folder such as `seam-addon-main/`.
 5. This README documents that GitHub's `Code > Download ZIP` source archive should not be used as the add-on distribution.
 6. This README documents how to download the GitHub Actions artifact and how to run the Windows and macOS/Linux package scripts.
-7. `scripts/verify_package.py` must pass against the generated zip, confirming the zip itself contains required implementation tokens and no removed selected-UV grid arrangement tokens.
+7. `scripts/verify_package.py` must pass against the generated zip, confirming the zip itself contains required implementation tokens and the required weighted-layout implementation.
 
 ## Usage
 
@@ -172,11 +174,11 @@ auto_seam_uv_equalizer/README.md
 4. Adjust **Angle Threshold (Degrees)**, **UV Margin**, seam detection options, and processing options.
 5. Click one of the action buttons:
    - **Auto Mark Seams Only**: only marks automatic seams.
-   - **Auto Unwrap**: unwraps using current seams without grid layout or packing.
-   - **Grid Layout**: places existing active-map UV islands into equal grid regions without unwrapping or packing.
+   - **Auto Unwrap**: unwraps using current seams without weighted layout or packing.
+   - **Weighted Island Layout**: allocates the active UV map by world-space surface area and median-normalized polygon density.
    - **Pack Islands**: packs existing active-map UV islands without unwrapping or changing seams.
    - **Auto Unwrap + Pack**: unwraps using current seams and runs Blender Pack Islands for efficient 0-1 texture usage.
-   - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and then either uses Equal Region Pack or Blender Pack Islands.
+   - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and optionally runs Blender Pack Islands.
    - **Atlas Pack Selected Objects**: packs active UV maps from selected mesh objects into one 0-1 atlas without unwrapping or joining the objects.
    - **Clear Seams**: removes seam marks from selected mesh objects.
    - **Mark Selected Region Boundary as Seam**: in Edit Mode, adds seams only around the current face selection while preserving the selection and existing seams.
@@ -204,16 +206,7 @@ auto_seam_uv_equalizer/README.md
 - **Straighten Circular Strip Islands**: Converts C-shaped, ring-like, or arc-like UV strip islands into horizontal rectangular strips after unwrap and before Average Island Scale / Pack Islands. This is off by default.
 - **Circular Strip Min Faces**: Minimum island face count needed before the circular strip detector will consider an island. The default is `6`.
 - **Circular Strip Margin**: Optional padding inside the straightened strip's original UV bbox. The default is `0.0`.
-- **Equal Region Pack**: Divides the 0-1 UV space into equal cells based on the number of seam-delimited face islands, then places one UV island into each cell while preserving aspect ratio. When enabled, Blender's normal **Pack Islands** operation is skipped.
-- **Equal Region Margin**: Padding applied inside each equal UV cell. The default is `0.02`.
-- **Equal Region Layout**: Chooses the equal-cell layout: **Square Grid**, **Horizontal Strip**, or **Vertical Strip**. Four islands in **Square Grid** use a 2x2 layout.
-- **Pack Islands**: Packs islands into the 0-1 UV space after unwrap when **Equal Region Pack** is disabled.
-
-### Grid Settings
-
-- **Grid Scale**: **Preserve Scale** (default) only translates islands and retains relative texel density. **Fit Oversized Only** shrinks islands that exceed their cells. **Fit Each Cell** scales every island to its cell.
-- **Grid Cell Margin**: Padding inside each **Grid Layout** cell. The default is `0.02`.
-- **Grid Cell Fill Ratio**: Optional multiplier for fitted island scale inside the cell. The default is `1.0`.
+- **Pack Islands**: Packs islands into the 0-1 UV space after unwrap.
 
 ### Atlas Pack
 
@@ -236,7 +229,6 @@ auto_seam_uv_equalizer/README.md
 - **Cylinders / Pipes / Cables**: Enable **Mark Longitudinal Seam Helper** when the side surface needs a lengthwise seam.
 - **Shared mesh users**: Keep **Process Shared Mesh Data Once** enabled unless you intentionally want to run operators once per object selection.
 - **Circular / arc strips**: Enable **Straighten Circular Strip Islands** only when C-shaped, ring-shaped, or arc-shaped UV islands should be normalized into horizontal strips before packing.
-- **Region-based layouts**: Use **Grid Layout** or enable **Equal Region Pack** for **Auto Seam + Unwrap** when each seam-delimited UV island should occupy its own equal region of the 0-1 UV space.
 - **Efficient texture output**: Use **Auto Unwrap + Pack** when UV space usage matters more than equal-region organization.
 - **Multi-object atlases**: Use **Atlas Pack Selected Objects** after objects already have UVs and you want all selected objects to share one 0-1 UV atlas while keeping the objects separate.
 
@@ -248,19 +240,19 @@ The operation adds seam flags without clearing existing seams. It does not alter
 
 The completion report includes selected-face, boundary-edge, newly-marked-seam, open-boundary, and skipped-non-manifold counts.
 
-## Grid Layout
+## Weighted Island Layout
 
-Arranges existing UV islands into equal grid regions without unwrapping or packing. Use this when you want predictable, readable UV placement by island or part.
+Weighted Island Layout partitions the 0–1 space into weighted rectangles. Each island weight is `world_surface_area × clamp(polygon_density / median_density, 0.25, 4.0) ^ Density Influence`, where polygon density is `face_count / world_surface_area`. Density Influence defaults to `0.25`; face count is never used directly as the weight.
 
-Grid Layout is for readable organization. It does not use Blender's efficient Pack Islands placement; it assigns seam-delimited islands to equal regions using the Equal Region layout and Grid Cell settings.
+**Allocate by Importance** uniformly scales each island to the largest size that fits its rectangle. **Preserve Texel Density** translates islands without per-island scaling and applies one global uniform downscale only when necessary. Both modes retain island orientation and aspect ratio. **Padding Pixels / Texture Size** defines the UV inset. The operator edits only the active UV map and can process selected faces or the whole object.
 
-Grid Layout places each existing UV island into a grid cell and can scale each island to fill its cell while preserving aspect ratio. This may change texel density between islands. Use Auto Unwrap + Pack when texture-space efficiency is preferred.
+Run it before Exact Texture-X Symmetry: `Unwrap → Weighted Island Layout → Exact Texture-X Symmetry`. Running it afterward is allowed but can break the exact `U_source + U_destination = 1` relationship. It never invokes symmetry or packing automatically.
 
 ## Auto Unwrap + Pack
 
 Runs the independent Auto Unwrap backend and then packs UV islands efficiently into the 0-1 UV space with `bpy.ops.uv.pack_islands()`. Use this when you want better texture space usage for Substance Painter, Unity, or VRChat assets.
 
-Auto Unwrap + Pack is for texture space efficiency. It uses **UV Margin**, respects **Process Shared Mesh Data Once**, can run **Straighten Circular Strip Islands** before packing, and does not call Equal Region Pack or any UV Editor selection-based arrangement tool.
+Auto Unwrap + Pack is for texture space efficiency. It uses **UV Margin**, respects **Process Shared Mesh Data Once**, can run **Straighten Circular Strip Islands** before packing, and does not call Weighted Island Layout automatically.
 
 ## Atlas Pack Selected Objects
 
@@ -282,14 +274,9 @@ Use it only when needed for circular trim, rings, pipes, cables, or arc-shaped U
 
 The detector skips islands below **Circular Strip Min Faces**, islands without enough UV points, islands with too little radius variation, and islands that do not look sufficiently arc-like. If one island fails during this post-process, other islands continue processing.
 
-## Removed Features
-
-The previous selected-UV grid arrangement tool was removed because it depended on UV Editor selection state, was sensitive to UV Sync Selection behavior, and did not match the object-based UV arrangement workflow expected by users. No replacement arrangement tool is included in this version.
-
 ## Known Limitations
 
 - Longitudinal seam helper is heuristic, not a perfect cylinder detector.
-- Grid Layout uses active-map UV connectivity, so incorrect or missing seams can produce unexpected regions.
 - Straighten Circular Strip Islands is a heuristic for circular or arc-like strips and can distort complex or hand-edited UVs.
 - Important faces may still require manual UV editing.
 - This add-on reduces UV setup labor but does not guarantee final production-ready UVs.
@@ -318,8 +305,7 @@ Manual cleanup is expected when the model has:
 - **Material Split Cube**: Enable and disable **Mark Material Boundaries** and confirm material boundary seams change.
 - **Shared Mesh Data**: Select multiple objects that share one mesh datablock. With **Process Shared Mesh Data Once** on, only the first is processed and later users are reported as skipped.
 - **Selected Face Region Boundary**: In Edit Mode, select multiple disconnected face regions and verify only their outlines become seams. Repeat with a selection touching an open mesh edge and toggle **Include Open Boundaries**; existing seams and the original face selection must remain unchanged.
-- **Grid Layout**: Create or mark several seam-delimited islands, run **Grid Layout**, and verify that four islands use a 2x2 grid while each island is scaled into one equal cell with aspect ratio preserved.
-- **Auto Unwrap + Pack**: Run **Auto Unwrap + Pack** and verify the islands are packed into the 0-1 UV space with Blender Pack Islands rather than equal grid cells.
+- **Auto Unwrap + Pack**: Run **Auto Unwrap + Pack** and verify the islands are packed into the 0-1 UV space with Blender Pack Islands without invoking Weighted Island Layout.
 - **Atlas Pack Selected Objects**: Select multiple mesh objects that already have UVs, run **Atlas Pack Selected Objects**, and verify all selected objects share one 0-1 UV atlas while object meshes remain separate.
 - **Straighten Circular Strip Islands**: Use a C-shaped or ring-like UV strip with at least the configured minimum face count, enable the option, and verify it becomes a horizontal strip before final packing.
 
@@ -329,7 +315,7 @@ Manual cleanup is expected when the model has:
 2. Assign color/material IDs if needed for a Substance Painter mask workflow.
 3. Enable **Mark Longitudinal Seam Helper** for pipes, supports, or cable-heavy meshes if needed.
 4. Optionally enable **Straighten Circular Strip Islands** for C-shaped, ring-like, or arc-like UV strips that should become horizontal strips before packing.
-5. Use **Grid Layout** for readable equal-region organization, or **Auto Unwrap + Pack** for efficient texture-space usage when seams already exist.
+5. Run **Weighted Island Layout** after unwrap when important islands should receive more texture area.
 6. Use **Atlas Pack Selected Objects** when several selected objects already have UVs and should share one 0-1 atlas without joining meshes.
 7. Use **Auto Seam + Unwrap** when you want seam detection and the currently configured unwrap/pack settings in one step.
 8. Open the UV Editor and manually adjust important islands.
@@ -342,7 +328,6 @@ Detects UV faces that overlap in UV space.
 
 Detected faces are highlighted through face/UV selection. Validation never changes material slots or polygon material indices.
 
-Grid Layout is for readable organization.
 Auto Unwrap + Pack is for texture-space efficiency.
 Atlas Pack Selected Objects is for multi-object UV atlas layout.
 # Ring / Strip Unwrap

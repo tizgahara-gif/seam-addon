@@ -72,13 +72,13 @@ class IntegrationTests(unittest.TestCase):
 
     def test_operator_registration(self):
         for name in ("mark_selected_region_boundary", "mark_only", "mark_and_unwrap",
-                     "unwrap_only", "grid_layout", "pack_islands", "auto_unwrap_pack",
+                     "unwrap_only", "weighted_island_layout", "pack_islands", "auto_unwrap_pack",
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
                      "validate_symmetry", "transfer_symmetric_uv",
                      "transfer_exact_texture_x_symmetry"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
-    def test_independent_grid_and_pack_preserve_mesh_and_edit_selection(self):
+    def test_weighted_layout_and_pack_preserve_mesh_and_edit_selection(self):
         obj = mesh_object(
             "IndependentUV",
             [(0,0,0),(1,0,0),(1,1,0),(0,1,0), (3,0,0),(5,0,0),(5,1,0),(3,1,0)],
@@ -104,16 +104,19 @@ class IntegrationTests(unittest.TestCase):
                      {f.index for f in bm.faces if f.select})
 
         settings = bpy.context.scene.autoseamuv_settings
-        settings.grid_scale_mode = "PRESERVE_SCALE"
-        settings.equal_region_layout = "HORIZONTAL_STRIP"
-        self.assertEqual(bpy.ops.autoseamuv.grid_layout(), {"FINISHED"})
+        settings.weighted_scale_mode = "PRESERVE_TEXEL_DENSITY"
+        settings.weighted_scope = "WHOLE_OBJECT"
+        settings.weighted_padding_pixels = 0
+        self.assertEqual(bpy.ops.autoseamuv.weighted_island_layout(), {"FINISHED"})
         self.assertEqual(topology, (len(obj.data.vertices), len(obj.data.edges), len(obj.data.polygons)))
         self.assertEqual(seams, tuple(edge.use_seam for edge in obj.data.edges))
+        scales = []
         for start, expected in zip((0, 4), island_sizes):
             coords = [tuple(layer.uv[index].vector) for index in range(start, start + 4)]
             bounds = uv_bounds(coords)
-            self.assertAlmostEqual(bounds[1] - bounds[0], expected[0])
-            self.assertAlmostEqual(bounds[3] - bounds[2], expected[1])
+            scales.append((bounds[1] - bounds[0]) / expected[0])
+            self.assertAlmostEqual((bounds[3] - bounds[2]) / expected[1], scales[-1])
+        self.assertAlmostEqual(scales[0], scales[1])
 
         before_pack = tuple(tuple(item.vector) for item in layer.uv)
         self.assertEqual(bpy.ops.autoseamuv.pack_islands(), {"FINISHED"})
