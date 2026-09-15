@@ -345,3 +345,38 @@ spacing modes, explicit/existing/automatic seams, orientation, and optional
 Unsupported input (triangles, N-gons, poles, branches, disconnected or
 non-manifold components, ambiguous/revisited traversal, inconsistent grid
 dimensions, and incomplete requested seams) is rejected without UV edits.
+
+## Chart-Based Auto Seam (v0.7)
+
+The sidebar is organized by the production stages **Seam**, **Unwrap**,
+**Layout**, **Symmetry**, and **Validation**. The former compound Quick Actions
+are retained only as compatibility operators and are no longer the primary UI.
+
+**Chart-Based** replaces the former Advanced Paths workflow. **Analyze Seams**
+creates a face-adjacency graph, calculates low-is-easy edge cut costs, builds
+provisional charts, and evaluates them using Blender Unwrap on an isolated
+mesh/UV copy. It does not change the source mesh's seams, UV maps, topology,
+materials, or selection. **Generate Seams** reuses a valid cached analysis (or
+re-analyzes after topology changes) and commits the complete pending seam set in
+one transaction.
+
+Cut cost accounts for dihedral angle, sharp state, material boundaries,
+existing seams, open/non-manifold boundaries, convexity, and the canonical
+`autoseam_force` / `autoseam_protect` attributes. Force takes precedence if an
+edge has both tags. UV quality combines chart-normalized triangle area error
+with triangle-angle error. Only charts over **Max Chart Distortion** are refined;
+Dijkstra paths favor low cut cost and straight continuity, while Minimum Seam
+Spacing and Seam Count Penalty prevent dense wrinkles from producing excessive
+cuts. Refinement stops on acceptable quality, no progress, or the iteration
+limit.
+
+Preset behavior:
+
+- **Organic / Cloth** favors large charts, high spacing and seam penalty, and
+  Blender Angle Based unwrap.
+- **Hard Surface** strongly favors sharp, material, and dihedral boundaries and
+  Blender Conformal unwrap.
+- **Cylinder / Strip** favors continuous low-turn topology paths rather than a
+  bounding-box direction.
+- **Manual Assisted** minimizes automatic splitting and strongly respects
+  force, protect, and existing seams.
