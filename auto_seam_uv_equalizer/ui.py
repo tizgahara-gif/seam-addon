@@ -38,13 +38,14 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         weighted_box = layout.box()
         weighted_box.label(text="Weighted Island Layout")
+        weighted_box.prop(settings, "weighted_target_region")
         weighted_box.prop(settings, "weighted_density_influence")
         weighted_box.prop(settings, "weighted_scale_mode")
         weighted_box.prop(settings, "weighted_scope")
         weighted_box.prop(settings, "weighted_texture_size")
         weighted_box.prop(settings, "weighted_padding_pixels")
         weighted_box.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout", icon="UV")
-        weighted_box.label(text="Run before Exact Texture-X Symmetry", icon="INFO")
+        weighted_box.label(text="Match Target UV Region to Exact Texture-X Source Side", icon="INFO")
 
         packing_box = layout.box()
         packing_box.label(text="Packing")

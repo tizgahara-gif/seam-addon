@@ -429,7 +429,7 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
 
     bl_idname = "autoseamuv.weighted_island_layout"
     bl_label = "Weighted Island Layout"
-    bl_description = "Allocate more UV area to islands with larger surface area and higher polygon density; may break Exact Texture-X Symmetry"
+    bl_description = "Allocate UV area by importance and island aspect within the chosen target UV region"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -438,7 +438,7 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
             self, context, lambda obj, settings: reports.append(weighted_layout_object(
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
                 settings.weighted_texture_size, settings.weighted_padding_pixels,
-                settings.weighted_scope)), "Weighted Island Layout")
+                settings.weighted_scope, settings.weighted_target_region)), "Weighted Island Layout")
         if reports:
             self.report({"INFO"}, iface_(
                 "Weighted Island Layout: Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g.",
@@ -446,6 +446,8 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
                 min(item.minimum_weight for item in reports), max(item.maximum_weight for item in reports)))
             if any(item.globally_scaled for item in reports):
                 self.report({"WARNING"}, iface_("Preserve Texel Density required one global uniform scale to fit the UV space."))
+            if any(item.maximum_area_ratio_error > 0.15 for item in reports):
+                self.report({"WARNING"}, iface_("Weighted UV area differs from its target by more than 15%."))
         return result
 
 
