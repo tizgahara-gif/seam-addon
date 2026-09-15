@@ -176,63 +176,30 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=True,
     )
 
-    equal_region_pack: BoolProperty(
-        name="Equal Region Pack",
-        description="Place each seam-delimited UV island into its own equal 0-1 UV region instead of using Blender Pack Islands",
-        default=False,
+    weighted_density_influence: FloatProperty(
+        name="Density Influence", default=0.25, min=0.0, max=1.0,
+        description="Influence of median-normalized polygon density on island importance",
     )
-
-    equal_region_margin: FloatProperty(
-        name="Equal Region Margin",
-        description="Padding inside each equal UV region",
-        default=0.02,
-        min=0.0,
-        max=0.45,
-    )
-
-    equal_region_layout: EnumProperty(
-        name="Equal Region Layout",
-        description="Layout used when Equal Region Pack is enabled",
+    weighted_scale_mode: EnumProperty(
+        name="Scale Mode",
         items=(
-            ("SQUARE_GRID", "Square Grid", "Use a near-square grid such as 2x2 for four islands"),
-            ("HORIZONTAL_STRIP", "Horizontal Strip", "Place all islands in one horizontal row"),
-            ("VERTICAL_STRIP", "Vertical Strip", "Place all islands in one vertical column"),
+            ("PRESERVE_TEXEL_DENSITY", "Preserve Texel Density", "Keep existing island scales unless one global scale is required"),
+            ("ALLOCATE_BY_IMPORTANCE", "Allocate by Importance", "Uniformly fit each island into its weighted rectangle"),
         ),
-        default="SQUARE_GRID",
+        default="ALLOCATE_BY_IMPORTANCE",
     )
-
-
-    grid_fit_to_cell: BoolProperty(
-        name="Fit Islands to Grid Cells",
-        description="Legacy compatibility toggle superseded by Grid Scale",
-        default=False,
+    weighted_scope: EnumProperty(
+        name="Scope", items=(("SELECTED_FACES", "Selected Faces", "Only change selected faces"),
+                             ("WHOLE_OBJECT", "Whole Object", "Change all faces")),
+        default="WHOLE_OBJECT",
     )
-
-    grid_scale_mode: EnumProperty(
-        name="Grid Scale",
-        description="Control whether Grid Layout changes island scale",
-        items=(
-            ("PRESERVE_SCALE", "Preserve Scale", "Only translate islands; preserve relative texel density"),
-            ("FIT_OVERSIZED_ONLY", "Fit Oversized Only", "Shrink only islands too large for their cells"),
-            ("FIT_EACH_CELL", "Fit Each Cell", "Scale every island to fill its cell"),
-        ),
-        default="PRESERVE_SCALE",
+    weighted_texture_size: IntProperty(
+        name="Texture Size", default=2048, min=16, max=16384,
+        description="Texture size used to convert padding pixels to UV units",
     )
-
-    grid_cell_margin: FloatProperty(
-        name="Grid Cell Margin",
-        description="Margin inside each Grid Layout cell",
-        default=0.02,
-        min=0.0,
-        max=0.2,
-    )
-
-    grid_cell_fill_ratio: FloatProperty(
-        name="Grid Cell Fill Ratio",
-        description="Additional scale multiplier for islands fitted by Grid Layout",
-        default=1.0,
-        min=0.1,
-        max=1.0,
+    weighted_padding_pixels: IntProperty(
+        name="Padding Pixels", default=4, min=0, max=1024,
+        description="Padding inset on each weighted rectangle in pixels",
     )
 
 

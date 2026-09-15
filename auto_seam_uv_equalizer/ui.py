@@ -36,14 +36,15 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         uv_box.prop(settings, "average_islands")
         uv_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap", icon="UV")
 
-        grid_box = layout.box()
-        grid_box.label(text="Grid Layout")
-        grid_box.prop(settings, "equal_region_layout")
-        grid_box.prop(settings, "grid_scale_mode")
-        grid_box.prop(settings, "grid_cell_margin")
-        if settings.grid_scale_mode == "FIT_EACH_CELL":
-            grid_box.prop(settings, "grid_cell_fill_ratio")
-        grid_box.operator("autoseamuv.grid_layout", text="Grid Layout", icon="UV")
+        weighted_box = layout.box()
+        weighted_box.label(text="Weighted Island Layout")
+        weighted_box.prop(settings, "weighted_density_influence")
+        weighted_box.prop(settings, "weighted_scale_mode")
+        weighted_box.prop(settings, "weighted_scope")
+        weighted_box.prop(settings, "weighted_texture_size")
+        weighted_box.prop(settings, "weighted_padding_pixels")
+        weighted_box.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout", icon="UV")
+        weighted_box.label(text="Run before Exact Texture-X Symmetry", icon="INFO")
 
         packing_box = layout.box()
         packing_box.label(text="Packing")

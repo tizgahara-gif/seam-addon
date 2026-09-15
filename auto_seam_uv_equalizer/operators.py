@@ -13,7 +13,8 @@ from .seam_detection import (
     mark_longitudinal_seam_helper,
     mark_selected_region_boundary_seams,
 )
-from .uv_tools import ensure_uv_layer, grid_layout_object, pack_object, unwrap_object
+from .uv_tools import ensure_uv_layer, pack_object, unwrap_object
+from .weighted_layout import weighted_layout_object
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
@@ -338,7 +339,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
 
     bl_idname = "autoseamuv.unwrap_only"
     bl_label = "Auto Unwrap"
-    bl_description = "Unwrap using current seams without applying Grid Layout or Pack Islands"
+    bl_description = "Unwrap using current seams without applying Weighted Island Layout or Pack Islands"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -423,23 +424,29 @@ def _run_existing_uv_operation(operator, context, operation, action_label):
     return {"FINISHED"} if processed else {"CANCELLED"}
 
 
-class AUTOSEAMUV_OT_grid_layout(bpy.types.Operator):
-    """Arrange existing UV islands without unwrapping or packing."""
+class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
+    """Allocate UV space according to world surface area and polygon density."""
 
-    bl_idname = "autoseamuv.grid_layout"
-    bl_label = "Grid Layout"
-    bl_description = "Arrange existing active-map UV islands in equal grid regions"
+    bl_idname = "autoseamuv.weighted_island_layout"
+    bl_label = "Weighted Island Layout"
+    bl_description = "Allocate more UV area to islands with larger surface area and higher polygon density; may break Exact Texture-X Symmetry"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        return _run_existing_uv_operation(
-            self, context,
-            lambda obj, settings: grid_layout_object(
-                obj, settings.grid_cell_margin, settings.equal_region_layout,
-                settings.grid_scale_mode, settings.grid_cell_fill_ratio,
-            ),
-            "Grid Layout",
-        )
+        reports = []
+        result = _run_existing_uv_operation(
+            self, context, lambda obj, settings: reports.append(weighted_layout_object(
+                obj, settings.weighted_density_influence, settings.weighted_scale_mode,
+                settings.weighted_texture_size, settings.weighted_padding_pixels,
+                settings.weighted_scope)), "Weighted Island Layout")
+        if reports:
+            self.report({"INFO"}, iface_(
+                "Weighted Island Layout: Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g.",
+                sum(item.island_count for item in reports), sum(item.total_surface_area for item in reports),
+                min(item.minimum_weight for item in reports), max(item.maximum_weight for item in reports)))
+            if any(item.globally_scaled for item in reports):
+                self.report({"WARNING"}, iface_("Preserve Texel Density required one global uniform scale to fit the UV space."))
+        return result
 
 
 class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):
@@ -557,12 +564,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.circular_strip_min_faces,
                         settings.circular_strip_margin,
                     )
-                    if settings.equal_region_pack:
-                        grid_layout_object(
-                            obj, settings.equal_region_margin, settings.equal_region_layout,
-                            settings.grid_scale_mode, settings.grid_cell_fill_ratio,
-                        )
-                    elif settings.pack_islands:
+                    if settings.pack_islands:
                         pack_object(obj, settings)
                     processed += 1
                 except Exception as exc:
