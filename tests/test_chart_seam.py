@@ -161,6 +161,99 @@ def test_uv_chart_quality_executes_and_returns_finite_value():
     assert math.isfinite(uv_chart_quality(test_mesh, uv_layer, {0}))
 
 
+def test_collapsed_uv_triangles_increase_quality_error_without_nan():
+    test_mesh = SimpleNamespace(
+        vertices=[SimpleNamespace(co=Vector(0, 0, 0)),
+                  SimpleNamespace(co=Vector(1, 0, 0)),
+                  SimpleNamespace(co=Vector(0, 1, 0))],
+        loops=[SimpleNamespace(vertex_index=i) for i in range(3)],
+        loop_triangles=[SimpleNamespace(polygon_index=0, loops=(0, 1, 2))],
+        calc_loop_triangles=lambda: None,
+    )
+    regular = SimpleNamespace(uv=[SimpleNamespace(vector=Vector(0, 0)),
+                                  SimpleNamespace(vector=Vector(1, 0)),
+                                  SimpleNamespace(vector=Vector(0, 1))])
+    collapsed = SimpleNamespace(uv=[SimpleNamespace(vector=Vector(0, 0)) for _ in range(3)])
+    regular_quality = uv_chart_quality(test_mesh, regular, {0})
+    collapsed_quality = uv_chart_quality(test_mesh, collapsed, {0})
+    assert math.isfinite(collapsed_quality)
+    assert collapsed_quality > regular_quality
+    assert collapsed_quality >= chart_seam.COLLAPSE_WEIGHT
+
+
+def test_closed_chart_bootstrap_proposes_a_continuous_path():
+    test_mesh = SimpleNamespace(
+        vertices=[SimpleNamespace(co=Vector(i, 0, 0)) for i in range(4)],
+        edges=[SimpleNamespace(index=i, vertices=(i, i + 1), use_seam=False,
+                               use_edge_sharp=False, is_convex=True) for i in range(3)],
+        polygons=[SimpleNamespace(normal=Normal(), material_index=0) for _ in range(2)],
+    )
+    result = analyze(
+        test_mesh, {index: [0, 1] for index in range(3)}, [False] * 3, [False] * 3,
+        settings(seam_preset="HARD_SURFACE", chart_refinement_iterations=1),
+        lambda chart, _cuts: .8 if len(chart) > 1 else .05,
+    )
+    assert result.candidate_seams == {0, 1, 2}
+
+
+def test_one_refinement_round_can_improve_three_bad_charts():
+    test_mesh = SimpleNamespace(
+        vertices=[SimpleNamespace(co=Vector(i, 0)) for i in range(6)],
+        edges=[SimpleNamespace(index=i, vertices=(i * 2, i * 2 + 1), use_seam=False,
+                               use_edge_sharp=False, is_convex=True) for i in range(3)],
+        polygons=[SimpleNamespace(normal=Normal(), material_index=0) for _ in range(6)],
+    )
+    result = analyze(
+        test_mesh, {i: [i * 2, i * 2 + 1] for i in range(3)},
+        [False] * 3, [False] * 3,
+        settings(seam_preset="HARD_SURFACE", chart_refinement_iterations=1),
+        lambda chart, _cuts: .8 if len(chart) > 1 else .05,
+    )
+    assert result.candidate_seams == {0, 1, 2}
+
+
+def test_existing_seam_attraction_respects_preserve_setting():
+    test_mesh = mesh(seam=True)
+    edge = test_mesh.edges[0]
+    faces = [0, 1]
+    preset = chart_seam.PRESETS["ORGANIC"]
+    preserved = chart_seam.edge_cut_cost(
+        test_mesh, edge, faces, False, False, preset, settings())
+    ignored = chart_seam.edge_cut_cost(
+        test_mesh, edge, faces, False, False, preset,
+        settings(preserve_existing_seams=False))
+    assert ignored > preserved
+
+
+def test_uv_state_cache_unwraps_once_per_unique_cut_state():
+    calls = []
+    evaluate = chart_seam.cached_uv_quality_evaluator(
+        lambda cuts: calls.append(frozenset(cuts)) or tuple(cuts),
+        lambda snapshot, chart: len(snapshot) + len(chart),
+    )
+    for chart_index in range(10):
+        evaluate({chart_index}, {1, 2})
+    assert len(calls) == 1
+
+    for cuts in ({1}, {2}, {3}):
+        evaluate({0}, cuts)
+    assert len(calls) == 4  # The original state plus three new states.
+
+
+def test_performance_fixture_reuses_states_across_chart_candidates():
+    calls = []
+    evaluate = chart_seam.cached_uv_quality_evaluator(
+        lambda cuts: calls.append(frozenset(cuts)) or tuple(cuts),
+        lambda snapshot, chart: len(snapshot) + len(chart),
+    )
+    charts = [{index} for index in range(10)]
+    seam_states = [set(), *({candidate} for candidate in range(25))]
+    for cuts in seam_states:
+        for chart in charts:
+            evaluate(chart, cuts)
+    assert len(calls) == len(seam_states)
+
+
 def test_direction_aware_dijkstra_avoids_equal_cost_zigzag():
     positions = [Vector(0, 0), Vector(1, 0), Vector(2, 0),
                  Vector(1, 1), Vector(1, -1), Vector(99), Vector(3, 0)]
