@@ -28,6 +28,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     chart_refinement_iterations: IntProperty(name="Refinement Iterations", default=5, min=1, max=8)
     preserve_existing_seams: BoolProperty(name="Preserve Existing Seams", default=True)
     show_seam_advanced: BoolProperty(name="Advanced", default=False)
+    use_professional_garment_prior: BoolProperty(
+        name="Use Professional Garment Prior", default=True,
+        description="Rank garment seam candidates before trial unwrap; never forces acceptance")
+    character_front_axis: EnumProperty(
+        name="Character Front Axis",
+        items=(("+X", "+X", ""), ("-X", "-X", ""),
+               ("+Y", "+Y", ""), ("-Y", "-Y", "")), default="-Y")
     curvature_bias: FloatProperty(name="Curvature Bias", default=1.0, min=0.0, max=5.0)
     maintain_symmetry: BoolProperty(name="Maintain Symmetry", default=False)
     mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")

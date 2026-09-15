@@ -8,6 +8,7 @@ from typing import DefaultDict
 from .mesh_utils import build_edge_to_faces
 from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 from .chart_seam import analyze
+from .symmetry import mirror_edge_map
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import choose_seam
 
@@ -152,8 +153,16 @@ def analyze_chart_seams(obj, settings, quality_evaluator=None):
             preferred_paths = (grid.column_edges[choose_seam(mesh, grid, "AUTO")],)
         except TopologyError:
             pass  # Irregular cylinders deliberately fall back to chart analysis.
+    mirror_edges = None
+    if (getattr(settings, "use_professional_garment_prior", True) and
+            settings.seam_preset in {"ORGANIC", "CYLINDER"}):
+        mirror_edges, _ambiguous = mirror_edge_map(
+            [tuple(vertex.co) for vertex in mesh.vertices],
+            [tuple(edge.vertices) for edge in mesh.edges],
+            "XYZ".index(getattr(settings, "mirror_axis", "X")),
+            getattr(settings, "mirror_tolerance", 0.0001))
     result = analyze(mesh, edge_faces, force, protect, settings, quality_evaluator,
-                     preferred_paths)
+                     preferred_paths, mirror_edges)
     result.signature = analysis_signature(obj, settings)
     return result
 
@@ -168,6 +177,8 @@ def analysis_signature(obj, settings):
                      "preserve_existing_seams", "unwrap_method", "material_boundary",
                      "curvature_bias", "weight_material", "seam_search_radius",
                      "chart_refinement_iterations")
+    setting_names += ("character_front_axis", "use_professional_garment_prior",
+                      "mirror_axis", "mirror_tolerance")
     return (
         tuple(tuple(vertex.co) for vertex in mesh.vertices),
         tuple(tuple(edge.vertices) for edge in mesh.edges),
