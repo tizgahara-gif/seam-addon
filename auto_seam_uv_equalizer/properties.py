@@ -194,7 +194,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Scale Mode",
         items=(
             ("PRESERVE_TEXEL_DENSITY", "Preserve Texel Density", "Keep existing island scales unless one global scale is required"),
-            ("ALLOCATE_BY_IMPORTANCE", "Allocate by Importance", "Uniformly fit each island into its weighted rectangle"),
+            ("ALLOCATE_BY_IMPORTANCE", "Allocate by Importance", "Scale islands so their UV areas follow importance weights, then pack their aspect-preserving bounds efficiently into the target UV region"),
         ),
         default="ALLOCATE_BY_IMPORTANCE",
     )
@@ -209,7 +209,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
     weighted_padding_pixels: IntProperty(
         name="Padding Pixels", default=4, min=0, max=1024,
-        description="Padding inset on each weighted rectangle in pixels",
+        description="Padding reserved around each packed island bound in pixels",
     )
 
 

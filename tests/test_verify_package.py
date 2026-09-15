@@ -37,3 +37,31 @@ def test_classes_registry_ast_rejects_missing_definition(tmp_path):
     with zipfile.ZipFile(package) as archive:
         with pytest.raises(RuntimeError, match="ui.py has no module-level CLASSES"):
             verify_package._verify_classes_registries(archive)
+
+
+def test_weighted_layout_backend_ast_requires_current_call_chain():
+    source = """
+def calculate_weights(): pass
+def importance_boxes(): pass
+def _maxrects_pack(): pass
+def pack_importance_boxes():
+    importance_boxes()
+    _maxrects_pack()
+def weighted_layout_object():
+    calculate_weights()
+    pack_importance_boxes()
+"""
+    verify_package._verify_weighted_layout_backend(source)
+
+
+def test_weighted_layout_backend_ast_rejects_disconnected_packer():
+    source = """
+def calculate_weights(): pass
+def importance_boxes(): pass
+def _maxrects_pack(): pass
+def pack_importance_boxes(): pass
+def weighted_layout_object():
+    calculate_weights()
+"""
+    with pytest.raises(RuntimeError, match="does not call"):
+        verify_package._verify_weighted_layout_backend(source)

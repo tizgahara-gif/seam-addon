@@ -242,6 +242,8 @@ The completion report includes selected-face, boundary-edge, newly-marked-seam, 
 
 Weighted Island Layout computes importance from 3D surface area and polygon density, creates BBoxes whose UV areas are proportional to importance while preserving each island aspect ratio, and efficiently packs them into the selected **Target UV Region** (`Full 0-1`, `Left Half`, or `Right Half`). Each island weight is `world_surface_area × clamp(polygon_density / median_density, 0.25, 4.0) ^ Density Influence`, where polygon density is `face_count / world_surface_area`. Density Influence defaults to `0.25`; face count is never used directly as the weight.
 
+The layout pipeline is: **3D Surface Area + Polygon Density → Importance Weight → Weight-proportional BBox → Aspect-preserving rectangle packing → Target UV Region**.
+
 In **Allocate by Importance**, a deterministic, non-rotating MaxRects best-area-fit pass and a 28-step binary search find the largest common BBox scale. Islands are uniformly scaled and translated into those boxes without non-uniform scaling, shearing, or aspect changes. **Preserve Texel Density** continues to use only one shared scale and does not independently resize islands. Pixel padding is converted using Texture Size and reserved around every packed BBox.
 
 **Preserve Texel Density** translates islands without per-island scaling and applies one global uniform downscale only when necessary. Both modes retain island orientation and aspect ratio. **Padding Pixels / Texture Size** defines the UV inset. The operator edits only the active UV map and can process selected faces or the whole object.
