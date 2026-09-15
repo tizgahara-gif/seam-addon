@@ -8,6 +8,8 @@ from bpy.props import BoolProperty
 
 from .seam_detection import (
     clear_seams,
+    analyze_chart_seams,
+    apply_chart_seams,
     mark_auto_seams,
     mark_advanced_seams,
     mark_longitudinal_seam_helper,
@@ -19,10 +21,12 @@ from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
 from .translations import iface_
+from .chart_seam import PRESETS, uv_chart_quality
 
 
 REPORT_PREFIX = "Auto Seam UV"
 _EDIT_SELECTION_SNAPSHOTS = {}
+_CHART_ANALYSIS_CACHE = {}
 
 
 def _selected_visible_mesh_objects(context) -> list[bpy.types.Object]:
@@ -145,6 +149,106 @@ def _auto_mark(obj, settings) -> int:
 
 def _mesh_datablock_key(obj) -> int:
     return obj.data.as_pointer()
+
+
+def _topology_signature(obj):
+    mesh = obj.data
+    return len(mesh.vertices), len(mesh.edges), len(mesh.polygons)
+
+
+def _analyze_with_temporary_unwrap(obj, settings):
+    """Evaluate plans on an isolated mesh copy; the user's UV maps stay untouched."""
+    temp_mesh = obj.data.copy()
+    temp_obj = obj.copy()
+    temp_obj.data = temp_mesh
+    temp_obj.name = "__AutoSeamUV_ChartAnalysis__"
+    context = bpy.context
+    context.collection.objects.link(temp_obj)
+    cache = {}
+
+    def evaluate(chart, cuts):
+        key = frozenset(cuts)
+        if key not in cache:
+            for edge in temp_mesh.edges:
+                edge.use_seam = edge.index in key
+            method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
+            unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, 0.0,
+                          False, False, 3, 0.0)
+            cache[key] = temp_mesh.uv_layers.active
+        return uv_chart_quality(temp_mesh, cache[key], chart)
+
+    try:
+        return analyze_chart_seams(obj, settings, evaluate)
+    finally:
+        if temp_obj.name in context.view_layer.objects:
+            bpy.data.objects.remove(temp_obj, do_unlink=True)
+        bpy.data.meshes.remove(temp_mesh)
+
+
+class AUTOSEAMUV_OT_analyze_seams(bpy.types.Operator):
+    """Analyze provisional charts without changing seams, UVs, or selection."""
+
+    bl_idname = "autoseamuv.analyze_seams"
+    bl_label = "Analyze Seams"
+    bl_description = "Non-destructively analyze charts, distortion, and candidate seam cuts"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        objects = _selected_visible_mesh_objects(context)
+        if not objects:
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
+            return {"CANCELLED"}
+        settings = _get_settings(context)
+        active, selected, mode = _snapshot_context(context)
+        chart_count = problem_count = candidate_count = 0
+        try:
+            _ensure_object_mode()
+            for obj in objects:
+                result = _analyze_with_temporary_unwrap(obj, settings)
+                _CHART_ANALYSIS_CACHE[_mesh_datablock_key(obj)] = result
+                chart_count += len(result.charts)
+                problem_count += len(result.problem_charts)
+                candidate_count += len(result.candidate_seams)
+        finally:
+            _restore_context(context, active, selected, mode)
+        self.report({"INFO"}, iface_("Charts: %d; Problem Charts: %d; Candidate Seams: %d",
+                                     chart_count, problem_count, candidate_count))
+        return {"FINISHED"}
+
+
+class AUTOSEAMUV_OT_generate_seams(bpy.types.Operator):
+    """Commit a cached or freshly calculated chart seam plan transactionally."""
+
+    bl_idname = "autoseamuv.generate_seams"
+    bl_label = "Generate Seams"
+    bl_description = "Generate chart-based seams; stale analysis is recalculated automatically"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        objects = _selected_visible_mesh_objects(context)
+        if not objects:
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
+            return {"CANCELLED"}
+        settings = _get_settings(context)
+        active, selected, mode = _snapshot_context(context)
+        changed = processed = 0
+        try:
+            _ensure_object_mode()
+            for obj in objects:
+                key = _mesh_datablock_key(obj)
+                result = _CHART_ANALYSIS_CACHE.get(key)
+                if result is None or result.signature != _topology_signature(obj):
+                    result = _analyze_with_temporary_unwrap(obj, settings)
+                    _CHART_ANALYSIS_CACHE[key] = result
+                changed += apply_chart_seams(obj, result)
+                processed += 1
+        except Exception as exc:
+            self.report({"ERROR"}, iface_("Generate Seams failed: %s", exc))
+            return {"CANCELLED"}
+        finally:
+            _restore_context(context, active, selected, mode)
+        self.report({"INFO"}, iface_("Generated %d seam(s) on %d object(s).", changed, processed))
+        return {"FINISHED"}
 
 
 class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):

@@ -1,11 +1,9 @@
-"""Task-oriented Blender 5.1 sidebar UI."""
+"""UV-production-stage sidebar UI for Blender 5.1."""
 
 import bpy
 
 
 class AUTOSEAMUV_PT_panel(bpy.types.Panel):
-    """3D View sidebar panel for automatic seam and UV operations."""
-
     bl_idname = "AUTOSEAMUV_PT_panel"
     bl_label = "Auto Seam UV"
     bl_space_type = "VIEW_3D"
@@ -13,138 +11,73 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     bl_category = "Auto UV"
 
     def draw(self, context):
-        layout = self.layout
-        settings = context.scene.autoseamuv_settings
+        layout, settings = self.layout, context.scene.autoseamuv_settings
 
         seam_box = layout.box()
-        seam_box.label(text="Seam Detection")
+        seam_box.label(text="1. Seam", icon="MOD_UVPROJECT")
         seam_box.prop(settings, "seam_mode")
         if settings.seam_mode == "CLASSIC":
             seam_box.prop(settings, "angle_threshold")
             seam_box.prop(settings, "material_boundary")
             seam_box.prop(settings, "boundary_edges")
             seam_box.prop(settings, "non_manifold_edges")
-        seam_box.prop(settings, "clear_existing")
-        seam_box.prop(settings, "longitudinal_seam_helper")
+            seam_box.operator("autoseamuv.mark_only", text="Generate Seams")
+        else:
+            seam_box.prop(settings, "seam_preset", text="Preset")
+            row = seam_box.row(align=True)
+            row.operator("autoseamuv.analyze_seams", text="Analyze Seams", icon="VIEWZOOM")
+            row.operator("autoseamuv.generate_seams", text="Generate Seams", icon="MOD_UVPROJECT")
+            seam_box.prop(settings, "preserve_existing_seams")
+            seam_box.prop(settings, "show_seam_advanced", toggle=True)
+            if settings.show_seam_advanced:
+                advanced = seam_box.column(align=True)
+                advanced.prop(settings, "max_chart_distortion")
+                advanced.prop(settings, "seam_count_penalty")
+                advanced.prop(settings, "curvature_bias")
+                advanced.prop(settings, "weight_material")
+                advanced.prop(settings, "straightness_bias")
+                advanced.prop(settings, "seam_minimum_spacing")
+                advanced.prop(settings, "chart_refinement_iterations")
+        assist = seam_box.column(align=True)
+        assist.label(text="Assist")
+        boundary = assist.operator("autoseamuv.mark_selected_region_boundary", text="Selected Boundary", icon="EDGESEL")
+        boundary.include_open_boundaries = settings.include_open_boundaries
+        row = assist.row(align=True)
+        row.operator("autoseamuv.force_seam", text="Force")
+        row.operator("autoseamuv.protect_seam", text="Protect")
+        assist.operator("autoseamuv.mirror_seams", text="Mirror Seam")
 
-        uv_box = layout.box()
-        uv_box.label(text="UV")
-        uv_box.prop(settings, "uv_map_name")
-        uv_box.prop(settings, "create_uv_if_missing")
-        uv_box.prop(settings, "unwrap_method")
-        uv_box.prop(settings, "margin")
-        uv_box.prop(settings, "average_islands")
-        uv_box.operator("autoseamuv.unwrap_only", text="Auto Unwrap", icon="UV")
+        unwrap = layout.box()
+        unwrap.label(text="2. Unwrap", icon="UV")
+        unwrap.prop(settings, "unwrap_method", text="Method")
+        unwrap.prop(settings, "uv_map_name")
+        unwrap.operator("autoseamuv.unwrap_only", text="Unwrap Selected", icon="UV")
+        ring = unwrap.column(align=True)
+        ring.label(text="Ring / Strip")
+        ring.prop(settings, "ring_seam_mode")
+        row = ring.row(align=True)
+        row.operator("autoseamuv.detect_ring_strip", text="Detect")
+        row.operator("autoseamuv.unwrap_ring_strip", text="Unwrap")
+        unwrap.label(text=settings.report_summary, icon="INFO")
 
-        weighted_box = layout.box()
-        weighted_box.label(text="Weighted Island Layout")
-        weighted_box.prop(settings, "weighted_target_region")
-        weighted_box.prop(settings, "weighted_density_influence")
-        weighted_box.prop(settings, "weighted_scale_mode")
-        weighted_box.prop(settings, "weighted_scope")
-        weighted_box.prop(settings, "weighted_texture_size")
-        weighted_box.prop(settings, "weighted_padding_pixels")
-        weighted_box.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout", icon="UV")
-        weighted_box.label(text="Match Target UV Region to Exact Texture-X Source Side", icon="INFO")
+        layout_box = layout.box()
+        layout_box.label(text="3. Layout", icon="UV")
+        layout_box.prop(settings, "weighted_target_region", text="Target UV Region")
+        layout_box.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout")
+        layout_box.prop(settings, "margin")
+        layout_box.operator("autoseamuv.pack_islands", text="Pack Islands")
 
-        packing_box = layout.box()
-        packing_box.label(text="Packing")
-        packing_box.prop(settings, "margin")
-        packing_box.prop(settings, "pack_shape_method")
-        packing_box.prop(settings, "pack_rotation")
-        packing_box.prop(settings, "pack_margin_method")
-        packing_box.prop(settings, "lock_pinned_islands")
-        if settings.lock_pinned_islands:
-            packing_box.prop(settings, "pack_pin_method")
-        packing_box.prop(settings, "merge_overlapping")
-        packing_box.prop(settings, "pack_target")
-        packing_box.operator("autoseamuv.pack_islands", text="Pack Islands", icon="UV")
+        symmetry = layout.box()
+        symmetry.label(text="4. Symmetry")
+        symmetry.operator("autoseamuv.validate_symmetry", text="Validate Symmetry")
+        symmetry.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV")
+        symmetry.prop(settings, "texture_source_side", text="Texture Source")
+        symmetry.operator("autoseamuv.transfer_exact_texture_x_symmetry", text="Exact Texture-X Symmetry")
 
-        post_box = layout.box()
-        post_box.label(text="Post Process")
-        post_box.prop(settings, "straighten_circular_strip_islands")
-        if settings.straighten_circular_strip_islands:
-            post_box.prop(settings, "circular_strip_min_faces")
-            post_box.prop(settings, "circular_strip_margin")
-
-        ring_box = layout.box()
-        ring_box.label(text="Ring / Strip Unwrap")
-        ring_box.label(text="Topology:")
-        ring_box.prop(settings, "ring_auto_detect")
-        ring_box.prop(settings, "ring_layout")
-        ring_box.prop(settings, "ring_spacing")
-        ring_box.prop(settings, "ring_seam_mode")
-        ring_box.prop(settings, "ring_orientation")
-        ring_box.label(text="Options:")
-        ring_box.prop(settings, "ring_normalize")
-        row = ring_box.row(align=True)
-        row.operator("autoseamuv.detect_ring_strip", text="Detect Ring / Strip", icon="VIEWZOOM")
-        row.operator("autoseamuv.unwrap_ring_strip", text="Unwrap Ring / Strip", icon="UV")
-
-        symmetry_box = layout.box()
-        symmetry_box.label(text="Symmetric UV")
-
-        mesh_symmetry = symmetry_box.column(align=True)
-        mesh_symmetry.label(text="Mesh Symmetry")
-        mesh_symmetry.prop(settings, "symmetry_axis")
-        mesh_symmetry.prop(settings, "symmetry_direction")
-        mesh_symmetry.prop(settings, "symmetry_scope")
-        mesh_symmetry.prop(settings, "symmetry_tolerance")
-        symmetry_box.operator("autoseamuv.validate_symmetry", text="Validate Symmetry", icon="CHECKMARK")
-
-        standard_transfer = symmetry_box.column(align=True)
-        standard_transfer.label(text="Standard Symmetric Transfer")
-        standard_transfer.prop(settings, "symmetry_layout")
-        if settings.symmetry_layout == "SEPARATE_MIRRORED":
-            standard_transfer.prop(settings, "symmetry_island_gap")
-        symmetry_box.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV", icon="UV")
-
-        exact_transfer = symmetry_box.column(align=True)
-        exact_transfer.label(text="Exact Texture-X Transfer")
-        exact_transfer.prop(settings, "texture_source_side")
-        symmetry_box.operator("autoseamuv.transfer_exact_texture_x_symmetry",
-                              text="Transfer Exact Texture-X Symmetry", icon="UV")
-
-        processing_box = layout.box()
-        processing_box.label(text="Processing")
-        processing_box.prop(settings, "process_shared_mesh_once")
-
-        atlas_box = layout.box()
-        atlas_box.label(text="Atlas Pack")
-        atlas_box.prop(settings, "atlas_uv_source")
-        if settings.atlas_uv_source == "NAMED":
-            atlas_box.prop(settings, "uv_map_name")
-            atlas_box.prop(settings, "create_uv_if_missing")
-        atlas_box.prop(settings, "atlas_texture_size")
-        atlas_box.prop(settings, "atlas_pixel_margin")
-        atlas_box.prop(settings, "atlas_average_island_scale")
-        atlas_box.prop(settings, "atlas_pack_rotate")
-
-        validation_box = layout.box()
-        validation_box.label(text="Validation")
-        validation_box.prop(settings, "overlap_area_epsilon")
-        validation_box.prop(settings, "overlap_coord_epsilon")
-        validation_box.prop(settings, "check_overlap_across_objects")
-
-        actions_box = layout.box()
-        actions_box.label(text="Actions")
-        actions_box.prop(settings, "include_open_boundaries")
-        boundary_operator = actions_box.operator(
-            "autoseamuv.mark_selected_region_boundary",
-            text="Mark Selected Region Boundary as Seam",
-            icon="EDGESEL",
-        )
-        boundary_operator.include_open_boundaries = settings.include_open_boundaries
-        actions_box.operator("autoseamuv.mark_only", text="Auto Mark Seams Only", icon="MOD_UVPROJECT")
-        actions_box.label(text="Quick Actions")
-        actions_box.operator("autoseamuv.auto_unwrap_pack", text="Auto Unwrap + Pack", icon="UV")
-        actions_box.operator("autoseamuv.mark_and_unwrap", text="Auto Seam + Unwrap", icon="PLAY")
-        actions_box.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects", icon="UV")
-        actions_box.operator("autoseamuv.check_uv_overlap", text="Check UV Overlap", icon="VIEWZOOM")
-        actions_box.operator("autoseamuv.clear_uv_overlap_highlight", text="Clear UV Overlap Highlight", icon="BRUSH_DATA")
-        actions_box.operator("autoseamuv.clear_seams", text="Clear Seams", icon="X")
+        validation = layout.box()
+        validation.label(text="5. Validation", icon="CHECKMARK")
+        validation.operator("autoseamuv.check_uv_overlap", text="Check Overlap")
+        validation.operator("autoseamuv.validate_uv", text="Check Stretch")
 
 
-CLASSES = (
-    AUTOSEAMUV_PT_panel,
-)
+CLASSES = (AUTOSEAMUV_PT_panel,)
