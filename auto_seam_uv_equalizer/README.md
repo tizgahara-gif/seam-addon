@@ -1,413 +1,79 @@
-# Auto Seam UV Equalizer
+# Auto Seam UV Equalizer v0.7.x
 
-## Overview
+Blender 5.1向けに、ZBrush / GoZから来たメッシュのシーム作成、UV展開、配置、対称転送、検証を段階的に行うアドオンです。新しいサイドバーは複合的な Quick Actions ではなく、現在の工程と作用範囲が分かる5つのセクションで構成されています。
 
-ZBrushからGoZで転送されたSubTool MeshをBlender上でUV展開するためのAdd-on。
+## Installation
 
-It automatically marks seams from face-angle changes, material boundaries, open boundary edges, non-manifold edges, and an optional longitudinal helper for cylindrical or cable-like forms. It can then unwrap, average UV island scale, and pack islands into the 0-1 UV space. It does not guarantee final production-ready UV layouts.
+`auto_seam_uv_equalizer.zip` を **Edit > Preferences > Add-ons > Install...** からインストールし、3D Viewの **N > Auto UV** を開きます。GitHubのソースアーカイブではなく、リリース用zipを使用してください。
 
-## Example Applications
+## Five-stage panel
 
-- VRC accessories.
-- Hard-surface props, supports, and panels.
-- Pipes, cables, and mixed small parts.
+### 1. Seam
 
-## v0.6.0 Features
+**Classic** は角度、マテリアル境界、開放境界、非多様体の規則でシームを生成します。**Chart-Based** は Organic / Cloth、Hard Surface、Cylinder / Strip、Manual Assisted のプリセットとUV品質評価を使います。Analyze Seamsは診断のみ、Generate Seamsは適用です。
 
-- Longitudinal seam helper for cylinders, pipes, supports, and cable-like meshes.
-- Better error reporting during unwrap.
-- Shared mesh datablock processing option.
-- Weighted Island Layout allocates UV space using world-space surface area and polygon density.
-- Auto Unwrap + Pack for efficient Blender Pack Islands output in the 0-1 UV space.
-- Atlas Pack Selected Objects for packing active UV maps from multiple selected mesh objects into one 0-1 atlas without joining objects.
-- Straighten Circular Strip Islands for converting C-shaped, ring-like, or arc-like UV islands into horizontal strips before packing.
-- Clearer zip installation instructions.
-- Mark Selected Region Boundary as Seam for converting Edit Mode face-selection outlines into UV seams.
+Selected BoundaryとMirror Seamは常に利用できます。Force、Protect、Clear TagsおよびProfessional Garment PriorはChart-Based専用です。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
 
-## Exact Texture-X Symmetric UV Transfer
+### 2. Unwrap
 
-**Transfer Exact Texture-X Symmetry** reuses the mesh symmetry validation and
-loop pairing backend, then reflects destination UV loops around the fixed
-texture axis `U = 0.5`. Choose **Left Half** or **Right Half** independently of
-the 3D mesh source direction. The operation rejects source UVs outside the
-chosen half or the 0–1 UV square before making changes, does not pack or
-normalize the result, and rolls destination UVs back if exact post-validation
-fails.
+**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで展開します。Ring / StripではSeam、Layout、Spacing、Orientation、Normalizeを設定し、検出と展開を個別に実行できます。
 
-Treat Exact Texture-X Symmetry as the final UV placement step. Packing after
-this transfer can break the exact `U_source + U_destination = 1` relationship.
+### 3. Layout
 
-## Example Workflow
+**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。
+
+**Pack Islands** は別工程で、UV Margin、Rotation、Margin Methodを使用し、選択した各オブジェクトを個別にパックします。複数オブジェクトを一つの0–1共有領域へ置く場合は **Atlas Pack Selected Objects** を使用します。Atlas Packはオブジェクトを結合せず、テクスチャ画像やマテリアルも統合しません。
+
+### 4. Symmetry
+
+Mesh SymmetryのAxis、3D Mesh Source Side、Scope、Toleranceを共通にしてValidate Symmetryを実行します。Standard UV TransferはOverlapまたはSeparate Mirrored（Island Gap付き）を選択できます。
+
+Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。
+
+### 5. Validation
+
+**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。結果選択はEdit Modeへ戻った後も残ります。**Clear Overlap Selection** で解除します。**Check Stretch** の結果はLast Stretch Reportに表示します。
+
+## Recommended workflow
 
 ```text
 ZBrush
 ↓
-SubTool / PolyGroup整理
-↓
 GoZ
 ↓
-Blender
+Seam
 ↓
-Selected Region Boundary / Auto Seam
+Unwrap
 ↓
-Auto Unwrap または Ring / Strip Unwrap
+Weighted Layout / Pack
 ↓
-Weighted Island Layout
+Symmetry
 ↓
-Symmetric UV / Exact Texture-X Symmetry
+Validation
 ↓
-外部Texture Paint
+External Texture Paint
 ```
 
-## Installation
+通常はChart-Based + Organic / ClothからGenerate Seams、Unwrap Selected Objects、Weighted FULL、Pack、Validationへ進みます。
 
-Install the packaged add-on zip named `auto_seam_uv_equalizer.zip` in Blender:
-
-1. Open **Edit > Preferences > Add-ons > Install...**.
-2. Select `auto_seam_uv_equalizer.zip`.
-3. Enable **Auto Seam UV Equalizer**.
-4. Open the 3D View sidebar with **N**, then use the **Auto UV** tab.
-
-## Installation from GitHub
-
-Do not install the zip downloaded from GitHub's `Code > Download ZIP`.
-
-That source zip may contain an extra parent folder such as:
+Exact Texture-Xを使う場合は次の順序にします。
 
 ```text
-seam-addon-main.zip
-└─ seam-addon-main/
-   └─ auto_seam_uv_equalizer/
-      ├─ __init__.py
-      └─ ...
+Weighted LEFT_HALF または RIGHT_HALF
+↓
+Exact Texture-X（同じTexture Source Side）
 ```
 
-This structure may not be recognized correctly by Blender's add-on installer. Do not treat GitHub's source zip as the distribution zip.
+**この2工程の間やExact Texture-X後にPackを実行しないでください。** Packは厳密な `U_source + U_destination = 1` の関係を壊す可能性があります。
 
-Use the packaged add-on zip generated by GitHub Actions or Releases instead:
+## Compatibility
 
-```text
-auto_seam_uv_equalizer.zip
-└─ auto_seam_uv_equalizer/
-   ├─ __init__.py
-   ├─ properties.py
-   ├─ operators.py
-   ├─ ui.py
-   ├─ seam_detection.py
-   ├─ uv_tools.py
-   ├─ island_tools.py
-   └─ README.md
-```
+旧 **Auto Seam + Unwrap** と **Auto Unwrap + Pack** operator IDは`.blend`やスクリプト互換用backendとして残りますが、通常パネルには表示されません。アルゴリズム（Classic、Chart-Based、Professional Prior、Ring / Strip、Weighted BBox packing、Symmetry pairing、Exact Texture-X、Overlap detection）は変更していません。
 
-### How to download the packaged add-on zip
+## Known limitations
 
-1. Open the GitHub repository.
-2. Go to the `Actions` tab.
-3. Open the latest successful `Package Blender Add-on` workflow.
-4. Download the artifact named `auto_seam_uv_equalizer`.
-5. Extract the artifact if necessary.
-6. Install `auto_seam_uv_equalizer.zip` in Blender:
-
-   - **Edit > Preferences > Add-ons > Install...**
-   - Select `auto_seam_uv_equalizer.zip`.
-   - Enable the add-on.
-
-### Local packaging
-
-Blender should be given the `auto_seam_uv_equalizer.zip` generated by the package script or by the GitHub Actions artifact, not GitHub's source zip. Each package script removes any existing `auto_seam_uv_equalizer.zip` before creating a fresh distribution zip, then verifies the implementation tokens inside the zip so stale packages are caught.
-
-Windows PowerShell:
-
-```powershell
-./scripts/package.ps1
-```
-
-macOS/Linux:
-
-```bash
-bash ./scripts/package.sh
-```
-
-Both scripts run:
-
-```bash
-python scripts/verify_package.py auto_seam_uv_equalizer.zip
-```
-
-After creating the zip on macOS or Linux, you can also inspect the structure with:
-
-```bash
-unzip -l auto_seam_uv_equalizer.zip
-```
-
-Expected entries include:
-
-```text
-auto_seam_uv_equalizer/
-auto_seam_uv_equalizer/__init__.py
-auto_seam_uv_equalizer/properties.py
-auto_seam_uv_equalizer/operators.py
-auto_seam_uv_equalizer/ui.py
-auto_seam_uv_equalizer/seam_detection.py
-auto_seam_uv_equalizer/uv_tools.py
-auto_seam_uv_equalizer/island_tools.py
-auto_seam_uv_equalizer/README.md
-```
-
-### Distribution ZIP Acceptance Criteria
-
-1. The distribution zip file name is `auto_seam_uv_equalizer.zip`.
-2. The zip top level contains exactly one add-on folder: `auto_seam_uv_equalizer/`.
-3. `__init__.py` exists at `auto_seam_uv_equalizer/__init__.py` inside the zip.
-4. The zip must not contain an extra parent folder such as `seam-addon-main/`.
-5. This README documents that GitHub's `Code > Download ZIP` source archive should not be used as the add-on distribution.
-6. This README documents how to download the GitHub Actions artifact and how to run the Windows and macOS/Linux package scripts.
-7. `scripts/verify_package.py` must pass against the generated zip, confirming the zip itself contains required implementation tokens and the required weighted-layout implementation.
-
-## Usage
-
-1. Select one or more mesh objects to unwrap.
-2. Open the 3D View sidebar with **N**.
-3. Go to **Auto UV > Auto Seam UV**.
-4. Adjust **Angle Threshold (Degrees)**, **UV Margin**, seam detection options, and processing options.
-5. Click one of the action buttons:
-   - **Auto Mark Seams Only**: only marks automatic seams.
-   - **Auto Unwrap**: unwraps using current seams without weighted layout or packing.
-   - **Weighted Island Layout**: allocates the active UV map by world-space surface area and median-normalized polygon density.
-   - **Pack Islands**: packs existing active-map UV islands without unwrapping or changing seams.
-   - **Auto Unwrap + Pack**: unwraps using current seams and runs Blender Pack Islands for efficient 0-1 texture usage.
-   - **Auto Seam + Unwrap**: marks seams, optionally adds a longitudinal helper seam, unwraps, averages island scale, and optionally runs Blender Pack Islands.
-   - **Atlas Pack Selected Objects**: packs active UV maps from selected mesh objects into one 0-1 atlas without unwrapping or joining the objects.
-   - **Clear Seams**: removes seam marks from selected mesh objects.
-   - **Mark Selected Region Boundary as Seam**: in Edit Mode, adds seams only around the current face selection while preserving the selection and existing seams.
-
-## Settings
-
-### Seam Detection
-
-- **Include Open Boundaries**: Includes selected edges on the mesh's open boundary when using **Mark Selected Region Boundary as Seam**. Enabled by default.
-
-- **Angle Threshold (Degrees)**: Marks an edge as a seam when the angle between the two adjacent face normals is at least this many degrees. This value is stored and processed as degrees; the add-on converts it to radians internally for comparison.
-- **Clear Existing Seams**: Removes current seams before automatic seam detection.
-- **Mark Material Boundaries**: Marks edges between faces with different material indices.
-- **Mark Boundary Edges**: Marks open mesh boundary edges.
-- **Mark Non-Manifold Edges**: Marks edges connected to three or more faces.
-- **Mark Longitudinal Seam Helper**: Heuristically adds one lengthwise seam strip for cylinders, pipes, supports, and cable-like meshes where angle detection alone may only mark cap boundaries.
-
-### UV Settings
-
-- **UV Map Name**: Name of the UV map to use or create. The default is `UV_Auto`.
-- **Create UV If Missing**: Creates the named UV map when it does not exist.
-- **Unwrap Method**: Chooses Blender's `ANGLE_BASED` or `CONFORMAL` unwrap method.
-- **UV Margin**: Margin used by unwrap and pack operations. **Auto Unwrap + Pack** uses this value for `bpy.ops.uv.pack_islands()`.
-- **Average Island Scale**: Runs Blender's average island scale operation after unwrap.
-- **Straighten Circular Strip Islands**: Converts C-shaped, ring-like, or arc-like UV strip islands into horizontal rectangular strips after unwrap and before Average Island Scale / Pack Islands. This is off by default.
-- **Circular Strip Min Faces**: Minimum island face count needed before the circular strip detector will consider an island. The default is `6`.
-- **Circular Strip Margin**: Optional padding inside the straightened strip's original UV bbox. The default is `0.0`.
-- **Pack Islands**: Packs islands into the 0-1 UV space after unwrap.
-
-### Atlas Pack
-
-- **Atlas UV Source**: **Active** (default) packs each object's currently active UV map and skips/reports objects without one; it never creates a UV map. **Named** uses **UV Map Name** and follows **Create UV If Missing**.
-- **Atlas Texture Size**: Texture size used to convert the pixel margin into a UV margin. The default is `2048`.
-- **Atlas Pixel Margin**: Exact final-output padding fraction, calculated as `Atlas Pixel Margin / Atlas Texture Size` and passed to Pack Islands with `margin_method='FRACTION'`. The default is `1`.
-- **Average Island Scale Before Atlas Pack**: Runs Blender's average island scale operation before atlas packing.
-- **Allow Rotation**: Allows Blender Pack Islands to rotate UV islands during atlas packing.
-
-### Processing
-
-- **Process Shared Mesh Data Once**: When enabled, if multiple selected objects use the same mesh datablock, only the first object is processed and later shared users are skipped. The add-on reports skipped objects. When disabled, every selected object is processed, but shared mesh datablocks still produce a warning.
-
-## Recommended Settings
-
-- **Hard Surface**: Angle Threshold 45-55.
-- **Soft Surface**: Angle Threshold 60-75.
-- **Material ID workflow**: Keep **Mark Material Boundaries** enabled.
-- **Open meshes**: Keep **Mark Boundary Edges** enabled.
-- **Cylinders / Pipes / Cables**: Enable **Mark Longitudinal Seam Helper** when the side surface needs a lengthwise seam.
-- **Shared mesh users**: Keep **Process Shared Mesh Data Once** enabled unless you intentionally want to run operators once per object selection.
-- **Circular / arc strips**: Enable **Straighten Circular Strip Islands** only when C-shaped, ring-shaped, or arc-shaped UV islands should be normalized into horizontal strips before packing.
-- **Efficient texture output**: Use **Auto Unwrap + Pack** when UV space usage matters more than equal-region organization.
-- **Multi-object atlases**: Use **Atlas Pack Selected Objects** after objects already have UVs and you want all selected objects to share one 0-1 UV atlas while keeping the objects separate.
-
-## Selected Face Region Boundary
-
-In Mesh Edit Mode, select one or more face regions and click **Mark Selected Region Boundary as Seam**. An edge shared by exactly two faces is marked only when one face is selected and the other is not. An open edge belonging to a selected face is also marked when **Include Open Boundaries** is enabled.
-
-The operation adds seam flags without clearing existing seams. It does not alter the face selection, selection mode, UVs, topology, vertex groups, materials, sharp flags, or material indices. Edges linked to three or more faces are skipped and included in the completion report. Multiple disconnected selections are handled in the same pass.
-
-The completion report includes selected-face, boundary-edge, newly-marked-seam, open-boundary, and skipped-non-manifold counts.
-
-## Weighted Island Layout
-
-Weighted Island Layout computes importance from 3D surface area and polygon density, creates BBoxes whose UV areas are proportional to importance while preserving each island aspect ratio, and efficiently packs them into the selected **Target UV Region** (`Full 0-1`, `Left Half`, or `Right Half`). Each island weight is `world_surface_area × clamp(polygon_density / median_density, 0.25, 4.0) ^ Density Influence`, where polygon density is `face_count / world_surface_area`. Density Influence defaults to `0.25`; face count is never used directly as the weight.
-
-The layout pipeline is: **3D Surface Area + Polygon Density → Importance Weight → Weight-proportional BBox → Aspect-preserving rectangle packing → Target UV Region**.
-
-In **Allocate by Importance**, a deterministic, non-rotating MaxRects best-area-fit pass and a 28-step binary search find the largest common BBox scale. Islands are uniformly scaled and translated into those boxes without non-uniform scaling, shearing, or aspect changes. **Preserve Texel Density** continues to use only one shared scale and does not independently resize islands. Pixel padding is converted using Texture Size and reserved around every packed BBox.
-
-**Preserve Texel Density** translates islands without per-island scaling and applies one global uniform downscale only when necessary. Both modes retain island orientation and aspect ratio. **Padding Pixels / Texture Size** defines the UV inset. The operator edits only the active UV map and can process selected faces or the whole object.
-
-Run it before Exact Texture-X Symmetry: `Unwrap → (optional Pack Islands) → Weighted Island Layout → Exact Texture-X Symmetry`. Do not run Pack Islands between a Weighted Half layout and Exact Texture-X because packing can destroy the source-half placement. For a left-to-right transfer, choose Weighted Target UV Region **Left Half** and Exact Texture-X Source **Left Half**; choose **Right Half** for both settings for the reverse workflow. The properties are intentionally not changed automatically. Running Weighted Layout afterward is allowed but can break the exact `U_source + U_destination = 1` relationship. It never invokes symmetry or packing automatically.
-
-## Auto Unwrap + Pack
-
-Runs the independent Auto Unwrap backend and then packs UV islands efficiently into the 0-1 UV space with `bpy.ops.uv.pack_islands()`. Use this when you want better texture space usage for Substance Painter, Unity, or VRChat assets.
-
-Auto Unwrap + Pack is for texture space efficiency. It uses **UV Margin**, respects **Process Shared Mesh Data Once**, can run **Straighten Circular Strip Islands** before packing, and does not call Weighted Island Layout automatically.
-
-## Atlas Pack Selected Objects
-
-Packs all UV islands from the active UV maps of selected mesh objects into one shared 0-1 UV space. It can be run from Object Mode or Edit Mode, ignores non-mesh objects, skips meshes without faces, and does not join the objects.
-
-By default, **Atlas UV Source: Active** uses each object's active UV map, reports and skips objects without one, and never creates a UV map. Choose **Named** to use **UV Map Name**; in that mode **Create UV If Missing** retains its existing behavior.
-
-This is UV atlas packing only. It does not merge materials, does not combine texture image files, and does not bake textures. If you need a single Substance Painter Texture Set, you must also consolidate materials separately before export.
-
-Atlas Pack Selected Objects does not call `bpy.ops.uv.unwrap()`, does not auto-mark seams, does not run Straighten Circular Strip Islands, does not run Material UV Scale Rules, and does not depend on UV Editor selection state. It selects all faces of each valid selected mesh object, optionally averages island scale, then runs `bpy.ops.uv.pack_islands()` with `margin_method='FRACTION'`, using `Atlas Pixel Margin / Atlas Texture Size` as the final UV margin fraction.
-
-## Straighten Circular Strip Islands
-
-This optional post-process converts C-shaped, ring-like, or arc-like UV islands into horizontal strip rectangles.
-
-It runs inside the Auto Unwrap flow after `bpy.ops.uv.unwrap(...)` and before Average Island Scale and Pack Islands. It is disabled by default.
-
-Use it only when needed for circular trim, rings, pipes, cables, or arc-shaped UV strips. Complex UV islands or UVs that were already carefully adjusted by hand may be distorted by this heuristic and should usually leave this option off.
-
-The detector skips islands below **Circular Strip Min Faces**, islands without enough UV points, islands with too little radius variation, and islands that do not look sufficiently arc-like. If one island fails during this post-process, other islands continue processing.
-
-## Known Limitations
-
-- Longitudinal seam helper is heuristic, not a perfect cylinder detector.
-- Straighten Circular Strip Islands is a heuristic for circular or arc-like strips and can distort complex or hand-edited UVs.
-- Important faces may still require manual UV editing.
-- This add-on reduces UV setup labor but does not guarantee final production-ready UVs.
-- It does not choose aesthetically hidden seam locations for faces, characters, or hero surfaces.
-- It does not automatically detect every important panel or every cable; use manual cleanup where needed.
-- It does not rectangle-align islands, straighten strips, support UDIMs, export to Substance Painter, or perform texture-image baking.
-- Cylinders usually get seams around cap boundaries from angle detection, but a vertical side seam may not be created by angle alone. Enable **Mark Longitudinal Seam Helper** or add a side seam manually when the cylinder needs to unfold as a rectangular strip.
-- The add-on does not apply object scale. Non-uniform scale can affect perceived texel density, so review UVs manually when objects are scaled unevenly.
-- If multiple selected objects share the same mesh datablock, seam and UV changes affect all users of that mesh. The add-on can skip duplicate shared users, but it does not make single-user copies automatically.
-
-## Manual Adjustment Cases
-
-Manual cleanup is expected when the model has:
-
-- Hero faces or visible panels that need deliberately larger UV island area.
-- Character faces or surfaces where seams must be hidden from view.
-- Cylinders, cables, pipes, or straps requiring a specific longitudinal seam location.
-- Long strips that need straightening or rectangular alignment.
-- Material painting workflows that require specific island grouping or padding beyond a simple automatic pack.
-
-## Test Suggestions
-
-- **Cube**: Use the default 55 degree threshold. Edges should be marked as seams and the mesh should unwrap without crashing.
-- **Cylinder**: Compare with **Mark Longitudinal Seam Helper** off and on. With it on, the side should receive an additional lengthwise seam candidate.
-- **Cable-like converted mesh**: Enable the longitudinal helper and confirm it adds a limited lengthwise seam strip instead of cutting all edges.
-- **Material Split Cube**: Enable and disable **Mark Material Boundaries** and confirm material boundary seams change.
-- **Shared Mesh Data**: Select multiple objects that share one mesh datablock. With **Process Shared Mesh Data Once** on, only the first is processed and later users are reported as skipped.
-- **Selected Face Region Boundary**: In Edit Mode, select multiple disconnected face regions and verify only their outlines become seams. Repeat with a selection touching an open mesh edge and toggle **Include Open Boundaries**; existing seams and the original face selection must remain unchanged.
-- **Auto Unwrap + Pack**: Run **Auto Unwrap + Pack** and verify the islands are packed into the 0-1 UV space with Blender Pack Islands without invoking Weighted Island Layout.
-- **Atlas Pack Selected Objects**: Select multiple mesh objects that already have UVs, run **Atlas Pack Selected Objects**, and verify all selected objects share one 0-1 UV atlas while object meshes remain separate.
-- **Straighten Circular Strip Islands**: Use a C-shaped or ring-like UV strip with at least the configured minimum face count, enable the option, and verify it becomes a horizontal strip before final packing.
-
-## Example Workflow
-
-1. Finish the model in Blender.
-2. Assign color/material IDs if needed for a Substance Painter mask workflow.
-3. Enable **Mark Longitudinal Seam Helper** for pipes, supports, or cable-heavy meshes if needed.
-4. Optionally enable **Straighten Circular Strip Islands** for C-shaped, ring-like, or arc-like UV strips that should become horizontal strips before packing.
-5. Run **Weighted Island Layout** after unwrap when important islands should receive more texture area.
-6. Use **Atlas Pack Selected Objects** when several selected objects already have UVs and should share one 0-1 atlas without joining meshes.
-7. Use **Auto Seam + Unwrap** when you want seam detection and the currently configured unwrap/pack settings in one step.
-8. Open the UV Editor and manually adjust important islands.
-9. Repack or fine-tune islands as needed.
-10. Export to your target pipeline.
-
-## Check UV Overlap
-
-Detects UV faces that overlap in UV space.
-
-Detected faces are highlighted through face/UV selection. Validation never changes material slots or polygon material indices.
-
-Auto Unwrap + Pack is for texture-space efficiency.
-Atlas Pack Selected Objects is for multi-object UV atlas layout.
-# Ring / Strip Unwrap
-
-`Ring / Strip Unwrap` is an additional topology-driven workflow; the existing
-`Straighten Circular Strip Islands` option and operator IDs remain available.
-It validates a selected connected quad component, recovers its logical grid
-from opposite face edges, chooses a complete longitudinal seam, and only then
-writes UV loops.  Rectangular and circumference-preserving layouts, three
-spacing modes, explicit/existing/automatic seams, orientation, and optional
-0-1 normalization are exposed in the sidebar.
-
-Unsupported input (triangles, N-gons, poles, branches, disconnected or
-non-manifold components, ambiguous/revisited traversal, inconsistent grid
-dimensions, and incomplete requested seams) is rejected without UV edits.
-
-## Chart-Based Auto Seam (v0.7)
-
-The sidebar is organized by the production stages **Seam**, **Unwrap**,
-**Layout**, **Symmetry**, and **Validation**. The former compound Quick Actions
-are retained only as compatibility operators and are no longer the primary UI.
-
-**Chart-Based** replaces the former Advanced Paths workflow. **Analyze Seams**
-creates a face-adjacency graph, calculates low-is-easy edge cut costs, builds
-provisional charts, and evaluates them using Blender Unwrap on an isolated
-mesh/UV copy. It does not change the source mesh's seams, UV maps, topology,
-materials, or selection. **Generate Seams** reuses a valid cached analysis (or
-re-analyzes whenever geometry, seam/tag/sharp/material state, presets, or
-relevant settings change) and commits every selected object as one
-rollback-safe transaction.
-
-All production actions, including the compatibility **Auto Mark Seams Only**
-and **Auto Seam + Unwrap** operators, use this same temporary Blender Unwrap
-quality evaluator in Chart-Based mode. The curvature proxy remains available
-only to the pure-Python analysis backend and tests; it is not a production
-operator path.
-
-Cut cost accounts for dihedral angle, sharp state, material boundaries,
-existing seams, open/non-manifold boundaries, convexity, and the canonical
-`autoseam_force` / `autoseam_protect` attributes. Force takes precedence if an
-edge has both tags. UV quality combines chart-normalized triangle area error
-with triangle-angle error. Only charts over **Max Chart Distortion** are refined;
-Dijkstra paths favor low cut cost and straight continuity, while Minimum Seam
-Spacing and Seam Count Penalty prevent dense wrinkles from producing excessive
-cuts. Refinement stops on acceptable quality, no progress, or the iteration
-limit.
-
-Candidate cuts are accepted only when trial unwrapping produces a measurable
-quality improvement. At most five ranked candidates are tested per chart and
-only the best positive-benefit candidate is accepted before charts are rebuilt.
-**Professional Garment Prior v1** ranks likely candidates using structural
-material boundaries, compressed dihedral bands, existing symmetry mapping, and
-low-visibility regions in object-local space. Organic/Cloth and Cylinder presets
-also apply a soft garment seam-ratio penalty. These priors determine only which
-candidates are trial-unwrapped first: a high prior never overrides measured UV
-quality gain, and a mirror pair is trialled and rejected or accepted as one cut.
-
-**Professional Garment Prior v1（日本語）** は、マテリアル境界、曲率、既存の
-対称マッピング、オブジェクトローカル空間の見えにくい位置を使い、候補を試す
-順序だけを決めます。Organic/Cloth と Cylinder では衣装シーム密度への緩やかな
-ペナルティも適用します。Prior が高くても UV 品質の実測改善がなければ採用せず、
-左右ペアも一組として Temporary Unwrap で評価します。
-
-The preset participates in every candidate decision as a multiplier:
-`effective_edge_penalty = Seam Count Penalty * (1 + Preset Seam Penalty)`.
-Benefit is `before_quality - after_quality - new_edge_count *
-effective_edge_penalty`. Thus the shipped Hard Surface, Organic, Cylinder, and
-Manual presets multiply the user penalty by 1.18, 1.55, 1.42, and 1.80,
-respectively.
-
-Preset behavior:
-
-- **Organic / Cloth** favors large charts, high spacing and seam penalty, and
-  Blender Angle Based unwrap.
-- **Hard Surface** strongly favors sharp, material, and dihedral boundaries and
-  Blender Conformal unwrap.
-- **Cylinder / Strip** uses the existing topology-aware Ring / Strip grid
-  backend for longitudinal seam candidates and falls back to ordinary
-  Chart-Based analysis for unsupported topology.
-- **Manual Assisted** minimizes automatic splitting and strongly respects
-  force, protect, and existing seams.
+- Chart-Based候補は実測UV品質に基づくため、意図した見えない位置を常に選ぶとは限りません。
+- Ring / Stripは対応する連結quad topologyが必要です。
+- Exact Texture-Xは事前に片側halfへ収まったUVを必要とします。
+- Atlas Packはmaterial統合、texture bake、画像統合を行いません。
+- 非一様Object Scaleや複雑なhero assetは手動確認が必要です。
