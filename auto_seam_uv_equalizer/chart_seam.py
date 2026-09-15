@@ -39,6 +39,12 @@ SEED_POOL_LIMIT = 12
 QUALITY_EPSILON = 1.0e-7
 UV_EPSILON = 1.0e-12
 COLLAPSE_WEIGHT = 2.0
+PROFESSIONAL_PRESET_MULTIPLIER = {
+    "ORGANIC": 1.0,
+    "CYLINDER": 1.0,
+    "HARD_SURFACE": .25,
+    "MANUAL": .25,
+}
 
 
 def garment_sparsity_penalty(seam_ratio):
@@ -141,25 +147,23 @@ def topology_sleeve_visibility(mesh, path, rings, mirror_axis="X", front_axis="-
                                    centers[max(index - 1, 0)]))
         if radial is None or tangent is None:
             continue
-        projected_front = _normalized(tuple(front[i] - tangent[i] * _dot(front, tangent)
-                                            for i in range(3)))
+        centre_sign = center[mirror_component]
         centre_direction = [0.0, 0.0, 0.0]
-        centre_component = center[mirror_component]
-        if abs(centre_component) > UV_EPSILON:
-            centre_direction[mirror_component] = -1.0 if centre_component > 0.0 else 1.0
+        if abs(centre_sign) > UV_EPSILON:
+            centre_direction[mirror_component] = -1.0 if centre_sign > 0.0 else 1.0
         projected_medial = _normalized(tuple(
             centre_direction[i] - tangent[i] * _dot(centre_direction, tangent)
             for i in range(3)))
-
-        # Compare only directions which actually exist in the ring plane.  In
-        # particular, a straight sleeve parallel to the mirror axis has no
-        # meaningful inner/outer direction and must not fall back to "outer".
+        projected_front = _normalized(tuple(
+            front[i] - tangent[i] * _dot(front, tangent) for i in range(3)))
         medial_dot = _dot(radial, projected_medial) if projected_medial is not None else None
         front_dot = _dot(radial, projected_front) if projected_front is not None else None
         if medial_dot is not None and (front_dot is None or abs(medial_dot) >= abs(front_dot)):
             scores.append(.30 if medial_dot >= 0.0 else .10)
         elif front_dot is not None:
             scores.append(0.0 if front_dot >= 0.0 else .20)
+        else:
+            scores.append(0.0)
     return sum(scores) / len(scores) if scores else 0.0
 
 
@@ -175,7 +179,7 @@ def professional_edge_prior(mesh, edge_index, faces, settings, sleeve=False):
     midpoint = tuple((a + b) * .5 for a, b in zip(*endpoints))
     visibility = visibility_prior(midpoint, getattr(settings, "character_front_axis", "-Y"), sleeve)
     existing = 1.50 if (settings.preserve_existing_seams and edge.use_seam) else 0.0
-    multiplier = professional_prior_multiplier(settings.seam_preset)
+    multiplier = PROFESSIONAL_PRESET_MULTIPLIER.get(settings.seam_preset, .25)
     return multiplier * (material + dihedral + visibility + existing), \
         tuple(multiplier * value for value in (material, dihedral, visibility, existing))
 
@@ -433,12 +437,10 @@ def path_professional_prior(mesh, path, edge_faces, settings, visibility_overrid
     return sum(values) / len(values)
 
 
-def completed_path_rank(path, costs, path_prior=0.0, mirror_pair=False):
-    """Return the common final rank for any completed candidate path."""
-    if not path:
-        return float("inf")
-    path_base_cost = sum(costs.get(index, 1.0) for index in path) / len(path)
-    return path_base_cost - path_prior - (1.0 if mirror_pair else 0.0)
+def path_final_rank(path, costs, professional_prior):
+    """Rank every completed candidate on one scale; seed ranks are prefilter-only."""
+    return (sum(costs[index] for index in path) / len(path) - professional_prior
+            if path else float("inf"))
 
 
 def mirror_pair_path(path, mirror_edges, protect_set):
@@ -522,16 +524,18 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                         getattr(settings, "character_front_axis", "-Y")) if sleeve else None
                     score = path_professional_prior(
                         mesh, path, edge_faces, settings, visibility) if professional else 0.0
-                    professional_paths.append((completed_path_rank(path, costs, score),
-                                               min(path), path))
+                    rank = path_final_rank(path, costs, score)
+                    if path & force_set:
+                        rank -= 1.0
+                    professional_paths.append((rank, min(path), path))
             if professional:
                 for path in structural_candidate_paths(
                         mesh, chart, edge_faces, force_set, protect_set, settings,
                         max(2, min(3, settings.seam_minimum_spacing))):
                     if path - cuts:
                         score = path_professional_prior(mesh, path, edge_faces, settings)
-                        professional_paths.append((completed_path_rank(path, costs, score),
-                                                   min(path), set(path)))
+                        professional_paths.append((
+                            path_final_rank(path, costs, score), min(path), set(path)))
             for edge_index, faces in edge_faces.items():
                 if len(faces) != 2 or not set(faces).issubset(chart) or edge_index in cuts or edge_index in protect_set:
                     continue
@@ -557,7 +561,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     mesh, chart, edge_faces, vertex_graph, costs,
                     settings.seam_search_radius,
                     settings.straightness_bias * preset.straightness)
-            for _rank, chosen in sorted(ranked)[:SEED_POOL_LIMIT]:
+            for _seed_prefilter_rank, chosen in sorted(ranked)[:SEED_POOL_LIMIT]:
                 seed = mesh.edges[chosen]
                 path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
                                      lambda index: costs.get(index, 1.0), settings.seam_search_radius,
@@ -565,10 +569,8 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                                      settings.straightness_bias * preset.straightness)
                 split = {chosen, *path}
                 path_prior = path_professional_prior(mesh, split, edge_faces, settings) if professional else 0.0
-                # The seed rank has served its sole purpose once the pool is
-                # selected.  Final comparison uses the completed path only.
-                professional_paths.append((completed_path_rank(split, costs, path_prior),
-                                           chosen, split))
+                professional_paths.append((
+                    path_final_rank(split, costs, path_prior), chosen, split))
 
             if professional and mirror_edges is not None:
                 professional_paths = [
