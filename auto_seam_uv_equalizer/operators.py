@@ -441,9 +441,10 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
                 settings.weighted_scope, settings.weighted_target_region)), "Weighted Island Layout")
         if reports:
             self.report({"INFO"}, iface_(
-                "Weighted Island Layout: Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g.",
+                "Weighted Island Layout: Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV utilization %.1f%%.",
                 sum(item.island_count for item in reports), sum(item.total_surface_area for item in reports),
-                min(item.minimum_weight for item in reports), max(item.maximum_weight for item in reports)))
+                min(item.minimum_weight for item in reports), max(item.maximum_weight for item in reports),
+                100.0 * sum(item.uv_utilization for item in reports) / len(reports)))
             if any(item.globally_scaled for item in reports):
                 self.report({"WARNING"}, iface_("Preserve Texel Density required one global uniform scale to fit the UV space."))
             if any(item.maximum_area_ratio_error > 0.15 for item in reports):

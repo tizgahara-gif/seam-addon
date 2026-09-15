@@ -87,3 +87,48 @@ def test_target_region_rectangles_stay_inside_each_root():
         for x0, y0, x1, y1 in module.weighted_rectangles([4, 2, 1], root, [10, 1, 0.2]):
             assert expected[0] <= x0 < x1 <= expected[1]
             assert 0.0 <= y0 < y1 <= 1.0
+
+
+def _assert_packing(module, weights, aspects, root=(0.0, 0.0, 1.0, 1.0), padding=0.0):
+    rectangles, scale = module.pack_importance_boxes(weights, aspects, root, padding)
+    assert scale > 0.0 and math.isfinite(scale)
+    for index, (x0, y0, x1, y1) in enumerate(rectangles):
+        assert root[0] <= x0 < x1 <= root[2]
+        assert root[1] <= y0 < y1 <= root[3]
+        assert math.isclose((x1 - x0) / (y1 - y0), aspects[index], rel_tol=1e-9)
+        for other in rectangles[index + 1:]:
+            assert (x1 + padding <= other[0] - padding + 1e-9
+                    or other[2] + padding <= x0 - padding + 1e-9
+                    or y1 + padding <= other[1] - padding + 1e-9
+                    or other[3] + padding <= y0 - padding + 1e-9)
+    areas = [(rect[2] - rect[0]) * (rect[3] - rect[1]) for rect in rectangles]
+    for index in range(1, len(areas)):
+        assert math.isclose(areas[index] / areas[0], weights[index] / weights[0], rel_tol=1e-8)
+    return sum(areas) / ((root[2] - root[0]) * (root[3] - root[1]))
+
+
+def test_importance_packer_weight_ratio_strips_and_utilization():
+    module = _load_primitives()
+    assert _assert_packing(module, [4.0, 1.0], [1.0, 1.0]) > 0.55
+    # With rotation forbidden, a 10:1 rectangle carrying 80% of the weight has
+    # a theoretical utilization ceiling of 12.5% in a square.  The packer gets
+    # close to that bound rather than suffering the partition allocator's waste.
+    assert _assert_packing(module, [4.0, 1.0], [10.0, 1.0]) > 0.12
+    assert _assert_packing(module, [4.0, 1.0], [100.0, 1.0]) > 0.012
+
+
+def test_importance_packer_multiple_mixed_orientation_and_padding():
+    module = _load_primitives()
+    utilization = _assert_packing(
+        module, [5, 4, 3, 2, 1], [10, 8, 5, 0.2, 1], padding=1 / 1024)
+    assert utilization > 0.05
+
+
+def test_importance_packer_all_target_regions_and_determinism():
+    module = _load_primitives()
+    for region in ("FULL", "LEFT_HALF", "RIGHT_HALF"):
+        root = module.target_rectangle(region)
+        first = module.pack_importance_boxes([4, 2, 1], [6, 0.25, 1], root, 0.002)
+        second = module.pack_importance_boxes([4, 2, 1], [6, 0.25, 1], root, 0.002)
+        assert first == second
+        _assert_packing(module, [4, 2, 1], [6, 0.25, 1], root, 0.002)
