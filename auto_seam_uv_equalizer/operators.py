@@ -12,7 +12,6 @@ from .seam_detection import (
     apply_chart_seams,
     analysis_signature,
     mark_auto_seams,
-    mark_advanced_seams,
     mark_longitudinal_seam_helper,
     mark_selected_region_boundary_seams,
 )
@@ -138,7 +137,7 @@ def _get_settings(context):
 def _auto_mark(obj, settings) -> int:
     """Dispatch to the selected seam engine with its complete settings."""
     if settings.seam_mode == "ADVANCED":
-        return mark_advanced_seams(obj, settings)
+        return apply_chart_seams(obj, _analyze_with_temporary_unwrap(obj, settings))
     return mark_auto_seams(
         obj,
         settings.angle_threshold,

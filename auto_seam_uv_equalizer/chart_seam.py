@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from math import acos, pi
+from math import acos, log, pi
 from .seam_path import shortest_path
 
 
@@ -37,13 +37,11 @@ TRIAL_CANDIDATE_LIMIT = 5
 QUALITY_EPSILON = 1.0e-7
 
 
-def candidate_benefit(before, after, new_edge_count, seam_count_penalty,
-                      organic=False):
+def candidate_benefit(before, after, new_edge_count, effective_edge_penalty):
     """Return measured gain minus the price of newly added seam edges."""
     if after >= before - QUALITY_EPSILON:
         return None
-    multiplier = 1.5 if organic else 1.0
-    return before - after - new_edge_count * seam_count_penalty * multiplier
+    return before - after - new_edge_count * effective_edge_penalty
 
 
 @dataclass
@@ -176,6 +174,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
             preferred_paths=()):
     """Build/refine provisional charts and return seams without mutating *mesh*."""
     preset = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"])
+    effective_edge_penalty = settings.seam_count_penalty * (1.0 + preset.seam_penalty)
     graph = face_adjacency(mesh, edge_faces)
     vertex_graph = defaultdict(list)
     for edge in mesh.edges:
@@ -243,8 +242,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 descendants = [part for part in trial_charts if part.issubset(chart)]
                 after = max((evaluator(part, trial_cuts) for part in descendants), default=before)
                 benefit = candidate_benefit(
-                    before, after, len(new_edges), settings.seam_count_penalty,
-                    settings.seam_preset == "ORGANIC")
+                    before, after, len(new_edges), effective_edge_penalty)
                 if benefit is None or benefit <= QUALITY_EPSILON:
                     continue
                 candidate = (benefit, -len(new_edges), new_edges)

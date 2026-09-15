@@ -37,7 +37,6 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",
         "def mark_longitudinal_seam_helper",
-        "def mark_advanced_seams",
         "def analyze_chart_seams",
         "def apply_chart_seams",
     ),

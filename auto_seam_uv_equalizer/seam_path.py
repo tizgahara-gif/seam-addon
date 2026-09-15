@@ -49,4 +49,4 @@ def shortest_path(adjacency, starts, goals, edge_cost, max_hops=24, positions=No
 def continuity_penalty(previous_direction, direction, bias):
     if previous_direction is None: return 0.0
     dot = max(-1.0, min(1.0, sum(a*b for a,b in zip(previous_direction, direction))))
-    return bias * acos(abs(dot))
+    return bias * acos(dot)

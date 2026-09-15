@@ -1,4 +1,5 @@
 import importlib.util
+import math
 import sys
 import types
 from pathlib import Path
@@ -16,12 +17,23 @@ for name in ("seam_path", "chart_seam"):
 chart_seam = sys.modules["auto_seam_uv_equalizer.chart_seam"]
 analyze, face_adjacency, segment_faces = chart_seam.analyze, chart_seam.face_adjacency, chart_seam.segment_faces
 candidate_benefit = chart_seam.candidate_benefit
+uv_chart_quality = chart_seam.uv_chart_quality
 shortest_path = sys.modules["auto_seam_uv_equalizer.seam_path"].shortest_path
+continuity_penalty = sys.modules["auto_seam_uv_equalizer.seam_path"].continuity_penalty
 
 
 class Vector:
     def __init__(self, x, y=0.0, z=0.0): self.xyz = (x, y, z)
     def __sub__(self, other): return Vector(*(a - b for a, b in zip(self.xyz, other.xyz)))
+    def __iter__(self): return iter(self.xyz)
+    @property
+    def x(self): return self.xyz[0]
+    @property
+    def y(self): return self.xyz[1]
+    def dot(self, other): return sum(a * b for a, b in zip(self.xyz, other.xyz))
+    def cross(self, other):
+        ax, ay, az = self.xyz; bx, by, bz = other.xyz
+        return Vector(ay*bz-az*by, az*bx-ax*bz, ax*by-ay*bx)
     @property
     def length(self): return sum(value * value for value in self.xyz) ** .5
 
@@ -87,6 +99,24 @@ def test_bad_chart_refinement_improves_injected_uv_quality():
     assert result.iterations >= 1
 
 
+def test_refinement_can_improve_two_independent_bad_charts():
+    test_mesh = SimpleNamespace(
+        vertices=[SimpleNamespace(co=Vector(i % 2, i // 2)) for i in range(8)],
+        edges=[SimpleNamespace(index=i, vertices=(i * 2, i * 2 + 1), use_seam=False,
+                               use_edge_sharp=False, is_convex=True) for i in range(2)],
+        polygons=[SimpleNamespace(normal=Normal(), material_index=0) for _ in range(4)],
+    )
+    edge_faces = {0: [0, 1], 1: [2, 3]}
+    result = analyze(
+        test_mesh, edge_faces, [False] * 2, [False] * 2,
+        settings(seam_preset="HARD_SURFACE", chart_refinement_iterations=4),
+        lambda chart, _cuts: .8 if len(chart) > 1 else .05,
+    )
+    assert result.candidate_seams == {0, 1}
+    assert len(result.charts) == 4
+    assert max(result.quality.values()) < .2
+
+
 def test_candidate_without_measured_improvement_is_rejected():
     result = analyze(mesh(), {0: [0, 1]}, [False], [False],
                      settings(seam_preset="HARD_SURFACE"),
@@ -99,6 +129,36 @@ def test_actual_gain_must_exceed_new_edge_cost():
     assert candidate_benefit(.8, .4, 2, .1) == pytest.approx(.2)
     assert candidate_benefit(.8, .4, 20, .1) < 0.0
     assert candidate_benefit(1.0, 1.0, 1, 0.0) is None
+
+
+def test_preset_edge_penalties_reduce_benefit_in_declared_order():
+    base = .1
+    benefit = {
+        name: candidate_benefit(.8, .4, 2, base * (1 + chart_seam.PRESETS[name].seam_penalty))
+        for name in ("HARD_SURFACE", "ORGANIC", "MANUAL")
+    }
+    assert benefit["HARD_SURFACE"] > benefit["ORGANIC"] > benefit["MANUAL"]
+
+
+def test_continuity_penalty_distinguishes_straight_right_and_uturn():
+    assert continuity_penalty((1, 0, 0), (1, 0, 0), 1) == pytest.approx(0)
+    assert continuity_penalty((1, 0, 0), (0, 1, 0), 1) == pytest.approx(math.pi / 2)
+    assert continuity_penalty((1, 0, 0), (-1, 0, 0), 1) == pytest.approx(math.pi)
+
+
+def test_uv_chart_quality_executes_and_returns_finite_value():
+    test_mesh = SimpleNamespace(
+        vertices=[SimpleNamespace(co=Vector(0, 0, 0)),
+                  SimpleNamespace(co=Vector(1, 0, 0)),
+                  SimpleNamespace(co=Vector(0, 1, 0))],
+        loops=[SimpleNamespace(vertex_index=i) for i in range(3)],
+        loop_triangles=[SimpleNamespace(polygon_index=0, loops=(0, 1, 2))],
+        calc_loop_triangles=lambda: None,
+    )
+    uv_layer = SimpleNamespace(uv=[SimpleNamespace(vector=Vector(0, 0)),
+                                   SimpleNamespace(vector=Vector(1, 0)),
+                                   SimpleNamespace(vector=Vector(0, 1))])
+    assert math.isfinite(uv_chart_quality(test_mesh, uv_layer, {0}))
 
 
 def test_direction_aware_dijkstra_avoids_equal_cost_zigzag():
