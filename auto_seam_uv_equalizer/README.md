@@ -357,8 +357,9 @@ creates a face-adjacency graph, calculates low-is-easy edge cut costs, builds
 provisional charts, and evaluates them using Blender Unwrap on an isolated
 mesh/UV copy. It does not change the source mesh's seams, UV maps, topology,
 materials, or selection. **Generate Seams** reuses a valid cached analysis (or
-re-analyzes after topology changes) and commits the complete pending seam set in
-one transaction.
+re-analyzes whenever geometry, seam/tag/sharp/material state, presets, or
+relevant settings change) and commits every selected object as one
+rollback-safe transaction.
 
 Cut cost accounts for dihedral angle, sharp state, material boundaries,
 existing seams, open/non-manifold boundaries, convexity, and the canonical
@@ -370,13 +371,20 @@ Spacing and Seam Count Penalty prevent dense wrinkles from producing excessive
 cuts. Refinement stops on acceptable quality, no progress, or the iteration
 limit.
 
+Candidate cuts are accepted only when trial unwrapping produces a measurable
+quality improvement. At most five ranked candidates are tested per chart and
+only the best positive-benefit candidate is accepted before charts are rebuilt.
+Benefit is `before_quality - after_quality - new_edge_count *
+seam_count_penalty` (with a 1.5x Organic / Cloth edge penalty).
+
 Preset behavior:
 
 - **Organic / Cloth** favors large charts, high spacing and seam penalty, and
   Blender Angle Based unwrap.
 - **Hard Surface** strongly favors sharp, material, and dihedral boundaries and
   Blender Conformal unwrap.
-- **Cylinder / Strip** favors continuous low-turn topology paths rather than a
-  bounding-box direction.
+- **Cylinder / Strip** uses the existing topology-aware Ring / Strip grid
+  backend for longitudinal seam candidates and falls back to ordinary
+  Chart-Based analysis for unsupported topology.
 - **Manual Assisted** minimizes automatic splitting and strongly respects
   force, protect, and existing seams.

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from math import acos, log, pi
+from math import acos, pi
 from .seam_path import shortest_path
 
 
@@ -33,10 +33,22 @@ PRESETS = {
     "MANUAL": ChartPreset(.2, .4, .2, 3.0, .96, .8, 5, 1.0, 3, "ANGLE_BASED"),
 }
 
+TRIAL_CANDIDATE_LIMIT = 5
+QUALITY_EPSILON = 1.0e-7
+
+
+def candidate_benefit(before, after, new_edge_count, seam_count_penalty,
+                      organic=False):
+    """Return measured gain minus the price of newly added seam edges."""
+    if after >= before - QUALITY_EPSILON:
+        return None
+    multiplier = 1.5 if organic else 1.0
+    return before - after - new_edge_count * seam_count_penalty * multiplier
+
 
 @dataclass
 class ChartAnalysis:
-    signature: tuple[int, int, int]
+    signature: tuple
     charts: list[set[int]]
     problem_charts: list[set[int]]
     candidate_seams: set[int]
@@ -114,13 +126,12 @@ def proxy_chart_quality(mesh, chart, edge_faces):
 def uv_chart_quality(mesh, uv_layer, chart):
     """Measure scale-independent UV area and angular distortion for a chart."""
     samples = []
-    for face_index in chart:
-        polygon = mesh.polygons[face_index]
-        loops = list(polygon.loop_indices)
-        for offset in range(1, len(loops) - 1):
-            tri = (loops[0], loops[offset], loops[offset + 1])
+    mesh.calc_loop_triangles()
+    for triangle in mesh.loop_triangles:
+        if triangle.polygon_index in chart:
+            tri = triangle.loops
             points3 = [mesh.vertices[mesh.loops[index].vertex_index].co for index in tri]
-            points2 = [uv_layer.data[index].uv for index in tri]
+            points2 = [uv_layer.uv[index].vector for index in tri]
             area3 = (points3[1] - points3[0]).cross(points3[2] - points3[0]).length * .5
             u = points2[1] - points2[0]; v = points2[2] - points2[0]
             area2 = abs(u.x * v.y - u.y * v.x) * .5
@@ -161,7 +172,8 @@ def _edge_distance(graph, sources, limit):
     return face_distance
 
 
-def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None):
+def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
+            preferred_paths=()):
     """Build/refine provisional charts and return seams without mutating *mesh*."""
     preset = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"])
     graph = face_adjacency(mesh, edge_faces)
@@ -190,8 +202,17 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None):
             break
         progressed = False
         distance = _edge_distance(graph, cuts, max(settings.seam_minimum_spacing, preset.spacing))
-        for chart in bad:  # only bad charts are refined
-            eligible = []
+        # Only one cut is accepted from a state.  Charts and qualities are then
+        # regenerated before another candidate is considered.
+        best_trial = None
+        for chart in bad:
+            ranked = []
+            trial_paths = []
+            for path in preferred_paths:
+                path = set(path)
+                if path and path - cuts and all(
+                        set(edge_faces.get(index, ())).issubset(chart) for index in path):
+                    trial_paths.append((-1.0, min(path), path))
             for edge_index, faces in edge_faces.items():
                 if len(faces) != 2 or not set(faces).issubset(chart) or edge_index in cuts or edge_index in protect_set:
                     continue
@@ -199,25 +220,39 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None):
                     continue
                 edge = mesh.edges[edge_index]
                 length = (mesh.vertices[edge.vertices[0]].co - mesh.vertices[edge.vertices[1]].co).length
-                # Low cut cost plus length/continuity preference.  The latter
-                # formally connects straightness_bias to refinement path cost.
-                path_cost = costs[edge_index] + length * .01 / max(.05, settings.straightness_bias + preset.straightness)
-                eligible.append((path_cost, edge_index))
-            if not eligible:
-                continue
-            _path_cost, chosen = min(eligible)
-            improvement_estimate = qualities[min(chart)] / max(2.0, log(len(chart) + 1.0))
-            seam_cost = settings.seam_count_penalty + preset.seam_penalty
-            if improvement_estimate > seam_cost:
+                ranked.append((costs[edge_index] + length * .01, edge_index))
+            before = qualities[min(chart)]
+            for _rank, chosen in sorted(ranked)[:TRIAL_CANDIDATE_LIMIT]:
                 seed = mesh.edges[chosen]
                 anchors = {vertex for edge_index in cuts for vertex in mesh.edges[edge_index].vertices}
                 anchors.update(vertex for edge_index, faces in edge_faces.items() if len(faces) != 2
                                for vertex in mesh.edges[edge_index].vertices)
                 path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
-                                     lambda index: costs.get(index, 1.0), settings.seam_search_radius)
+                                     lambda index: costs.get(index, 1.0), settings.seam_search_radius,
+                                     [vertex.co for vertex in mesh.vertices],
+                                     settings.straightness_bias * preset.straightness)
                 split = {chosen, *path}
+                trial_paths.append((_rank, chosen, split))
+            for _rank, chosen, split in sorted(trial_paths, key=lambda item: item[:2])[:TRIAL_CANDIDATE_LIMIT]:
                 split.difference_update(protect_set)
-                cuts.update(split); candidates.update(split); progressed = bool(split)
+                new_edges = split - cuts
+                if not new_edges:
+                    continue
+                trial_cuts = cuts | new_edges
+                trial_charts = segment_faces(len(mesh.polygons), graph, trial_cuts)
+                descendants = [part for part in trial_charts if part.issubset(chart)]
+                after = max((evaluator(part, trial_cuts) for part in descendants), default=before)
+                benefit = candidate_benefit(
+                    before, after, len(new_edges), settings.seam_count_penalty,
+                    settings.seam_preset == "ORGANIC")
+                if benefit is None or benefit <= QUALITY_EPSILON:
+                    continue
+                candidate = (benefit, -len(new_edges), new_edges)
+                if best_trial is None or candidate[:2] > best_trial[:2]:
+                    best_trial = candidate
+        if best_trial is not None:
+            accepted = best_trial[2]
+            cuts.update(accepted); candidates.update(accepted); progressed = True
         completed_iterations += 1
         if not progressed:
             break

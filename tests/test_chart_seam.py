@@ -3,6 +3,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 
 ROOT = Path(__file__).parents[1] / "auto_seam_uv_equalizer"
 package = sys.modules.setdefault("auto_seam_uv_equalizer", types.ModuleType("auto_seam_uv_equalizer"))
@@ -14,6 +15,8 @@ for name in ("seam_path", "chart_seam"):
     spec.loader.exec_module(module)
 chart_seam = sys.modules["auto_seam_uv_equalizer.chart_seam"]
 analyze, face_adjacency, segment_faces = chart_seam.analyze, chart_seam.face_adjacency, chart_seam.segment_faces
+candidate_benefit = chart_seam.candidate_benefit
+shortest_path = sys.modules["auto_seam_uv_equalizer.seam_path"].shortest_path
 
 
 class Vector:
@@ -82,3 +85,29 @@ def test_bad_chart_refinement_improves_injected_uv_quality():
     assert result.candidate_seams == {0}
     assert max(result.quality.values()) < .2
     assert result.iterations >= 1
+
+
+def test_candidate_without_measured_improvement_is_rejected():
+    result = analyze(mesh(), {0: [0, 1]}, [False], [False],
+                     settings(seam_preset="HARD_SURFACE"),
+                     lambda _chart, _cuts: 1.0)
+    assert result.candidate_seams == set()
+    assert result.pending_seams == set()
+
+
+def test_actual_gain_must_exceed_new_edge_cost():
+    assert candidate_benefit(.8, .4, 2, .1) == pytest.approx(.2)
+    assert candidate_benefit(.8, .4, 20, .1) < 0.0
+    assert candidate_benefit(1.0, 1.0, 1, 0.0) is None
+
+
+def test_direction_aware_dijkstra_avoids_equal_cost_zigzag():
+    positions = [Vector(0, 0), Vector(1, 0), Vector(2, 0),
+                 Vector(1, 1), Vector(1, -1), Vector(99), Vector(3, 0)]
+    graph = {
+        0: [(1, 0), (3, 3)], 1: [(0, 0), (2, 1)],
+        2: [(1, 1), (6, 2)], 3: [(0, 3), (4, 4)],
+        4: [(3, 4), (6, 5)], 6: [(2, 2), (4, 5)],
+    }
+    assert shortest_path(graph, [0], [6], lambda _edge: 1.0, positions=positions,
+                         straightness_bias=2.0) == [0, 1, 2]
