@@ -89,6 +89,30 @@ def unwrap_object(
         raise RuntimeError(f"Failed to unwrap {obj.name}: {exc}") from exc
 
 
+def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
+    """Unwrap selected Edit Mode faces and leave every other UV loop exact."""
+    if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
+        raise RuntimeError("Edit Mode with selected faces is required")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
+        raise RuntimeError(f"UV map '{uv_map_name}' is unavailable")
+    layer = obj.data.uv_layers.active
+    selected = {face.index for face in obj.data.polygons if face.select}
+    if not selected:
+        bpy.ops.object.mode_set(mode="EDIT")
+        raise RuntimeError("no faces selected")
+    untouched = {loop: layer.uv[loop].vector.copy()
+                 for face in obj.data.polygons if face.index not in selected
+                 for loop in face.loop_indices}
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.uv.unwrap(method=method, margin=margin)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for loop, uv in untouched.items():
+        layer.uv[loop].vector = uv
+    obj.data.update()
+    bpy.ops.object.mode_set(mode="EDIT")
+
+
 
 def pack_object(obj, settings) -> None:
     """Pack existing islands on the active UV map with Blender's pack operator."""

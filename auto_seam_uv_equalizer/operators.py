@@ -10,12 +10,13 @@ from .seam_detection import (
     clear_seams,
     analyze_chart_seams,
     apply_chart_seams,
+    analysis_signature,
     mark_auto_seams,
     mark_advanced_seams,
     mark_longitudinal_seam_helper,
     mark_selected_region_boundary_seams,
 )
-from .uv_tools import ensure_uv_layer, pack_object, unwrap_object
+from .uv_tools import ensure_uv_layer, pack_object, unwrap_object, unwrap_selected_faces
 from .weighted_layout import weighted_layout_object
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
@@ -151,11 +152,6 @@ def _mesh_datablock_key(obj) -> int:
     return obj.data.as_pointer()
 
 
-def _topology_signature(obj):
-    mesh = obj.data
-    return len(mesh.vertices), len(mesh.edges), len(mesh.polygons)
-
-
 def _analyze_with_temporary_unwrap(obj, settings):
     """Evaluate plans on an isolated mesh copy; the user's UV maps stay untouched."""
     temp_mesh = obj.data.copy()
@@ -167,15 +163,15 @@ def _analyze_with_temporary_unwrap(obj, settings):
     cache = {}
 
     def evaluate(chart, cuts):
-        key = frozenset(cuts)
+        key = (frozenset(chart), frozenset(cuts))
         if key not in cache:
             for edge in temp_mesh.edges:
-                edge.use_seam = edge.index in key
+                edge.use_seam = edge.index in cuts
             method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
             unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, 0.0,
                           False, False, 3, 0.0)
-            cache[key] = temp_mesh.uv_layers.active
-        return uv_chart_quality(temp_mesh, cache[key], chart)
+            cache[key] = uv_chart_quality(temp_mesh, temp_mesh.uv_layers.active, chart)
+        return cache[key]
 
     try:
         return analyze_chart_seams(obj, settings, evaluate)
@@ -232,17 +228,28 @@ class AUTOSEAMUV_OT_generate_seams(bpy.types.Operator):
         settings = _get_settings(context)
         active, selected, mode = _snapshot_context(context)
         changed = processed = 0
+        originals = {obj.data.as_pointer(): (obj.data, [edge.use_seam for edge in obj.data.edges])
+                     for obj in objects}
         try:
             _ensure_object_mode()
+            plans = []
             for obj in objects:
                 key = _mesh_datablock_key(obj)
                 result = _CHART_ANALYSIS_CACHE.get(key)
-                if result is None or result.signature != _topology_signature(obj):
+                if result is None or result.signature != analysis_signature(obj, settings):
                     result = _analyze_with_temporary_unwrap(obj, settings)
                     _CHART_ANALYSIS_CACHE[key] = result
+                plans.append((obj, result))
+            # No source seam is touched until every object has analyzed and
+            # validated successfully.
+            for obj, result in plans:
                 changed += apply_chart_seams(obj, result)
                 processed += 1
         except Exception as exc:
+            for mesh, values in originals.values():
+                for edge, value in zip(mesh.edges, values):
+                    edge.use_seam = value
+                mesh.update()
             self.report({"ERROR"}, iface_("Generate Seams failed: %s", exc))
             return {"CANCELLED"}
         finally:
@@ -491,6 +498,30 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
             iface_("Auto Seam UV: unwrapped %d object(s), marked 0 seam(s), straightened %d circular strip island(s), skipped shared %d, failed %d.", processed, total_straightened, skipped_shared, failures),
         )
         return {"FINISHED"} if processed else {"CANCELLED"}
+
+
+class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
+    """Unwrap only the current Edit Mode face selection."""
+
+    bl_idname = "autoseamuv.unwrap_selected_faces"
+    bl_label = "Unwrap Selected Faces"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return (context.active_object is not None and
+                context.active_object.type == "MESH" and context.mode == "EDIT_MESH")
+
+    def execute(self, context):
+        obj, settings = context.active_object, _get_settings(context)
+        try:
+            unwrap_selected_faces(obj, settings.uv_map_name,
+                                  settings.create_uv_if_missing,
+                                  settings.unwrap_method, settings.margin)
+        except Exception as exc:
+            self.report({"ERROR"}, iface_("Unwrap Selected Faces failed: %s", exc))
+            return {"CANCELLED"}
+        return {"FINISHED"}
 
 
 def _run_existing_uv_operation(operator, context, operation, action_label):

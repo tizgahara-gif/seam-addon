@@ -147,6 +147,14 @@ FORBIDDEN_TOKENS = (
 )
 
 TEXT_EXTENSIONS = (".py", ".md", ".yml", ".yaml", ".ps1", ".sh")
+DEPRECATED_UV_PATTERNS = ("uv_layer.data[", ".uv_layers.active.data[")
+
+
+def _verify_modern_uv_api(sources: dict[str, str]) -> None:
+    for pattern in DEPRECATED_UV_PATTERNS:
+        hits = sorted(name for name, source in sources.items() if pattern in source)
+        if hits:
+            raise RuntimeError(f"Deprecated UV API pattern {pattern!r}: {hits}")
 
 
 def _read_zip_text(archive: zipfile.ZipFile, member_name: str) -> str:
@@ -275,6 +283,9 @@ def verify_package(zip_path: Path) -> None:
                 print(f"OK: {member_name} contains {token}")
 
         text_member_names = [name for name in names if name.endswith(TEXT_EXTENSIONS)]
+        addon_sources = {name: _read_zip_text(archive, name) for name in names
+                         if name.startswith("auto_seam_uv_equalizer/") and name.endswith(".py")}
+        _verify_modern_uv_api(addon_sources)
         for token in FORBIDDEN_TOKENS:
             hits = []
             for member_name in text_member_names:

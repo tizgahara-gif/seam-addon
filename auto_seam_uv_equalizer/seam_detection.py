@@ -8,6 +8,8 @@ from typing import DefaultDict
 from .mesh_utils import build_edge_to_faces
 from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 from .chart_seam import analyze
+from .ring_topology import TopologyError, analyze_ring_topology
+from .ring_uv import choose_seam
 
 
 MIN_MESH_FACE_COUNT = 1
@@ -143,14 +145,48 @@ def analyze_chart_seams(obj, settings, quality_evaluator=None):
     edge_faces = build_edge_to_faces(mesh)
     force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
     protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
-    return analyze(mesh, edge_faces, force, protect, settings, quality_evaluator)
+    preferred_paths = ()
+    if settings.seam_preset == "CYLINDER":
+        try:
+            grid = analyze_ring_topology(mesh)
+            preferred_paths = (grid.column_edges[choose_seam(mesh, grid, "AUTO")],)
+        except TopologyError:
+            pass  # Irregular cylinders deliberately fall back to chart analysis.
+    result = analyze(mesh, edge_faces, force, protect, settings, quality_evaluator,
+                     preferred_paths)
+    result.signature = analysis_signature(obj, settings)
+    return result
+
+
+def analysis_signature(obj, settings):
+    """Fingerprint every mesh state and setting that affects chart analysis."""
+    mesh = obj.data
+    force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
+    protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
+    setting_names = ("seam_preset", "max_chart_distortion", "seam_count_penalty",
+                     "seam_minimum_spacing", "straightness_bias",
+                     "preserve_existing_seams", "unwrap_method", "material_boundary",
+                     "curvature_bias", "weight_material", "seam_search_radius",
+                     "chart_refinement_iterations")
+    return (
+        tuple(tuple(vertex.co) for vertex in mesh.vertices),
+        tuple(tuple(edge.vertices) for edge in mesh.edges),
+        tuple(tuple(face.vertices) for face in mesh.polygons),
+        tuple(edge.use_seam for edge in mesh.edges), tuple(force), tuple(protect),
+        tuple(getattr(edge, "use_edge_sharp", False) for edge in mesh.edges),
+        tuple(face.material_index for face in mesh.polygons),
+        tuple((name, getattr(settings, name)) for name in setting_names),
+    )
 
 
 def apply_chart_seams(obj, result) -> int:
     """Validate and atomically commit a previously calculated seam plan."""
     mesh = obj.data
+    # The caller validates the full analysis signature before commit.  Keep a
+    # topology guard here so this lower-level API is safe in isolation too.
     signature = (len(mesh.vertices), len(mesh.edges), len(mesh.polygons))
-    if signature != result.signature:
+    result_topology = (len(result.signature[0]), len(result.signature[1]), len(result.signature[2]))
+    if signature != result_topology:
         raise ValueError("Mesh topology changed after seam analysis")
     original = [edge.use_seam for edge in mesh.edges]
     target = result.pending_seams

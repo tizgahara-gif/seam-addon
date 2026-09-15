@@ -51,14 +51,14 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         unwrap.label(text="2. Unwrap", icon="UV")
         unwrap.prop(settings, "unwrap_method", text="Method")
         unwrap.prop(settings, "uv_map_name")
-        unwrap.operator("autoseamuv.unwrap_only", text="Unwrap Selected", icon="UV")
+        unwrap.operator("autoseamuv.unwrap_selected_faces", text="Unwrap Selected Faces", icon="FACESEL")
+        unwrap.operator("autoseamuv.unwrap_only", text="Unwrap Whole Object", icon="UV")
         ring = unwrap.column(align=True)
         ring.label(text="Ring / Strip")
         ring.prop(settings, "ring_seam_mode")
         row = ring.row(align=True)
         row.operator("autoseamuv.detect_ring_strip", text="Detect")
         row.operator("autoseamuv.unwrap_ring_strip", text="Unwrap")
-        unwrap.label(text=settings.report_summary, icon="INFO")
 
         layout_box = layout.box()
         layout_box.label(text="3. Layout", icon="UV")
@@ -76,6 +76,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
         validation = layout.box()
         validation.label(text="5. Validation", icon="CHECKMARK")
+        validation.label(text=settings.report_summary, icon="INFO")
         validation.operator("autoseamuv.check_uv_overlap", text="Check Overlap")
         validation.operator("autoseamuv.validate_uv", text="Check Stretch")
 

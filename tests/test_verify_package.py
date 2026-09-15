@@ -65,3 +65,12 @@ def weighted_layout_object():
 """
     with pytest.raises(RuntimeError, match="does not call"):
         verify_package._verify_weighted_layout_backend(source)
+
+
+def test_deprecated_uv_api_is_rejected():
+    with pytest.raises(RuntimeError, match="Deprecated UV API"):
+        verify_package._verify_modern_uv_api({"addon/bad.py": "uv_layer.data[i].uv"})
+
+
+def test_blender_5_uv_api_is_accepted():
+    verify_package._verify_modern_uv_api({"addon/good.py": "uv_layer.uv[i].vector"})
