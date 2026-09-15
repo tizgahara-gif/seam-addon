@@ -12,27 +12,27 @@ Blender 5.1向けに、ZBrush / GoZから来たメッシュのシーム作成、
 
 **Classic** は角度、マテリアル境界、開放境界、非多様体の規則でシームを生成します。**Chart-Based** は Organic / Cloth、Hard Surface、Cylinder / Strip、Manual Assisted のプリセットとUV品質評価を使います。Analyze Seamsは診断のみ、Generate Seamsは適用です。
 
-Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Assist — Active Object** はアクティブオブジェクトだけに作用します。Force、Protect、Clear TagsおよびProfessional Garment PriorはChart-Based専用です。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
+Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Assist — Active Object** はアクティブオブジェクトだけに作用します。ForceとProtectはEdit Modeのアクティブオブジェクトで現在選択している辺だけが対象です（Clear Tagsはアクティブオブジェクトの全タグを消去します）。Selected BoundaryのInclude Open BoundariesはUIで確認できます。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
 
 ### 2. Unwrap
 
-**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで展開します。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripではSeam、Layout、Spacing、Orientation、Normalizeを設定し、検出と展開を個別に実行できます。
+**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームでUV展開します。自動的なAverage Island Scaleはなく、任意の後処理はPost-Unwrapに明示され、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
 
 ### 3. Layout
 
 **Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。
 
-**Pack Islands** は別工程で、Pack Margin、Rotation、Margin Methodを使用し、選択した各オブジェクトを個別にパックします。複数オブジェクトを一つの0–1共有領域へ置く場合は **Atlas Pack Selected Objects** を使用します。折りたたみ式Atlas SettingsからUV Source、Texture Size、Pixel Margin、Average Island Scale、Allow Rotationを設定できます。Atlas Packはオブジェクトを結合せず、テクスチャ画像やマテリアルも統合しません。
+**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認できます。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックします。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Process Shared Mesh Data Onceが有効ならlinked duplicateは固有Mesh datablockごとに1回だけ処理され、UIに固有数を表示します。
 
 ### 4. Symmetry
 
-**Mesh Symmetry Axis** はProfessional Garment Prior、Mirror Seam、Validate Symmetry、Standard UV Transfer、Exact Texture-Xのジオメトリ対応付けで共通です。Direction / Source Sideは用途別のままです。ScopeがSelected Facesの場合はEdit Modeが必須で、Object Modeでは3つの対称処理ボタンが無効になります。Standard UV TransferはOverlapまたはSeparate Mirrored（Island Gap付き）を選択できます。
+**Mesh Symmetry Axis** と **Mesh Symmetry Tolerance** はProfessional Garment Prior、Mirror Seam、Validate Symmetry、Standard UV Transfer、Exact Texture-Xのジオメトリ対応付けで共通です。Direction / Source Sideは用途別のままです。対称処理のTargetは常にActive Objectで、Scopeはそのオブジェクト内のSelected FacesまたはWhole Meshを意味します。Selected Facesの場合はEdit Modeが必須です。
 
 Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。「Layout settings match Exact Texture-X.」は設定値の一致だけを示し、UVや対称対応の検証成功を保証しません。本当の検証はOperator実行時に行います。
 
 ### 5. Validation
 
-**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。結果選択はEdit Modeへ戻った後も残ります。**Clear Overlap Selection** で解除します。**Check Stretch** の結果はLast Stretch Reportに表示します。
+**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、coverageなどを検査してLast Quality Reportへ表示し、flipped / zero-area面を結果として選択します。
 
 ## Recommended workflow
 

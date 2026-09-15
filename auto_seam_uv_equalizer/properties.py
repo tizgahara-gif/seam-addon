@@ -40,6 +40,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
     mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
     mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
+    mesh_symmetry_tolerance: FloatProperty(name="Mesh Symmetry Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
     # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
     symmetry_axis: EnumProperty(name="Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
@@ -123,7 +124,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     average_islands: BoolProperty(
         name="Average Island Scale",
         description="Normalize UV island texel density after unwrapping",
-        default=True,
+        default=False,
     )
 
     straighten_circular_strip_islands: BoolProperty(
@@ -133,6 +134,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
     show_ring_strip: BoolProperty(name="Ring / Strip", default=False)
+    show_unwrap_advanced: BoolProperty(name="Post-Unwrap", default=False)
+    show_pack_advanced: BoolProperty(name="Pack Advanced", default=False)
     ring_layout: EnumProperty(
         name="Layout",
         items=(("RECTANGULAR", "Rectangular", "Align all rows to one width"),
@@ -344,3 +347,8 @@ def migrate_legacy_settings(settings):
             settings.mesh_symmetry_axis = settings.symmetry_axis
         elif "mirror_axis" in keys:
             settings.mesh_symmetry_axis = settings.mirror_axis
+    if "mesh_symmetry_tolerance" not in keys:
+        if "symmetry_tolerance" in keys:
+            settings.mesh_symmetry_tolerance = settings.symmetry_tolerance
+        elif "mirror_tolerance" in keys:
+            settings.mesh_symmetry_tolerance = settings.mirror_tolerance

@@ -23,10 +23,16 @@ def _tag_selected(context,name,value=True):
     return count
 
 class _TagBase(bpy.types.Operator):
-    bl_options={'REGISTER','UNDO'}; attribute=''; bl_description='Applies to the active mesh object.'
+    bl_options={'REGISTER','UNDO'}; attribute=''; bl_description='Applies to selected edges of the active mesh object in Edit Mode.'
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return bool(obj and obj.type == 'MESH' and context.mode == 'EDIT_MESH')
     def execute(self,context):
         count=_tag_selected(context,self.attribute)
-        self.report({'INFO'}, iface_("Tagged %d edge(s)", count)); return {'FINISHED'} if count else {'CANCELLED'}
+        if not count:
+            self.report({'WARNING'}, iface_("No mesh edges are selected.")); return {'CANCELLED'}
+        self.report({'INFO'}, iface_("Tagged %d edge(s)", count)); return {'FINISHED'}
 class AUTOSEAMUV_OT_force_seam(_TagBase):
     bl_idname='autoseamuv.force_seam'; bl_label='Force Auto Seam'; attribute=FORCE_SEAM_ATTRIBUTE
 class AUTOSEAMUV_OT_protect_seam(_TagBase):
@@ -46,11 +52,12 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
         obj=_active_mesh(context); s=context.scene.autoseamuv_settings
         if not obj:return {'CANCELLED'}
         axis='XYZ'.index(s.mesh_symmetry_axis); mesh=obj.data
-        mapping,skipped=mirror_edge_map([tuple(v.co) for v in mesh.vertices],[tuple(e.vertices) for e in mesh.edges],axis,s.mirror_tolerance)
+        tolerance=s.mesh_symmetry_tolerance
+        mapping,skipped=mirror_edge_map([tuple(v.co) for v in mesh.vertices],[tuple(e.vertices) for e in mesh.edges],axis,tolerance)
         changed=0
         for source,target in mapping.items():
             mid=(mesh.vertices[mesh.edges[source].vertices[0]].co[axis]+mesh.vertices[mesh.edges[source].vertices[1]].co[axis])*.5
-            allowed=(s.mirror_direction=='SELECTED' and mesh.edges[source].select) or (s.mirror_direction=='POSITIVE' and mid>s.mirror_tolerance) or (s.mirror_direction=='NEGATIVE' and mid < -s.mirror_tolerance) or abs(mid)<=s.mirror_tolerance
+            allowed=(s.mirror_direction=='SELECTED' and mesh.edges[source].select) or (s.mirror_direction=='POSITIVE' and mid>tolerance) or (s.mirror_direction=='NEGATIVE' and mid < -tolerance) or abs(mid)<=tolerance
             if allowed and mesh.edges[source].use_seam and not mesh.edges[target].use_seam: mesh.edges[target].use_seam=True; changed+=1
         mesh.update(); self.report({'INFO'}, iface_("Mirrored %d; skipped %d ambiguous/unmatched edge(s)", changed, skipped)); return {'FINISHED'}
 class AUTOSEAMUV_OT_seams_from_sharp(bpy.types.Operator):

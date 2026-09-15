@@ -157,6 +157,58 @@ class IntegrationTests(unittest.TestCase):
             settings.pack_rotation = rotation
             self.assertEqual(bpy.ops.autoseamuv.pack_islands(), {"FINISHED"}, rotation)
 
+    def test_object_mode_layout_actions_restore_component_selection(self):
+        obj = mesh_object("ObjectSelection", [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+                                                (2,0,0),(3,0,0),(3,1,0),(2,1,0)],
+                          [(0,1,2,3), (4,5,6,7)])
+        obj.data.uv_layers.new(name="UVMap")
+        bpy.ops.object.mode_set(mode="OBJECT")
+        obj.data.vertices[1].select = True
+        obj.data.edges[2].select = True
+        obj.data.polygons[1].select = True
+        expected = ({1}, {2}, {1})
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.average_islands = False
+        settings.atlas_average_island_scale = False
+        for operation in (bpy.ops.autoseamuv.unwrap_only,
+                          bpy.ops.autoseamuv.pack_islands,
+                          bpy.ops.autoseamuv.atlas_pack_selected_objects):
+            self.assertEqual(operation(), {"FINISHED"})
+            self.assertEqual(expected, (
+                {v.index for v in obj.data.vertices if v.select},
+                {e.index for e in obj.data.edges if e.select},
+                {p.index for p in obj.data.polygons if p.select}))
+
+    def test_layout_preflight_rejects_missing_uv_without_partial_processing(self):
+        ready = mesh_object("ReadyUV", [(0,0,0),(1,0,0),(1,1,0),(0,1,0)],
+                            [(0,1,2,3)])
+        layer = ready.data.uv_layers.new(name="UVMap")
+        before = tuple(tuple(item.vector) for item in layer.uv)
+        missing = mesh_object("MissingUV", [(2,0,0),(3,0,0),(3,1,0),(2,1,0)],
+                              [(0,1,2,3)])
+        ready.select_set(True); missing.select_set(True)
+        bpy.context.view_layer.objects.active = ready
+        self.assertEqual(bpy.ops.autoseamuv.weighted_island_layout(), {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.pack_islands(), {"CANCELLED"})
+        self.assertEqual(before, tuple(tuple(item.vector) for item in layer.uv))
+
+    def test_force_and_protect_require_edit_mode_selected_edges(self):
+        obj = mesh_object("Tags", [(0,0,0),(1,0,0),(1,1,0)], [(0,1,2)])
+        self.assertFalse(bpy.ops.autoseamuv.force_seam.poll())
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        self.assertEqual(bpy.ops.autoseamuv.force_seam(), {"CANCELLED"})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        obj.data.edges[1].select = True
+        bpy.ops.object.mode_set(mode="EDIT")
+        self.assertEqual(bpy.ops.autoseamuv.force_seam(), {"FINISHED"})
+        self.assertEqual(bpy.ops.autoseamuv.protect_seam(), {"FINISHED"})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual([item.value for item in obj.data.attributes["autoseam_force"].data],
+                         [False, True, False])
+        self.assertEqual([item.value for item in obj.data.attributes["autoseam_protect"].data],
+                         [False, True, False])
+
     def test_selected_boundary_and_auto_seams(self):
         obj = mesh_object("Cube", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
                                     (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],
@@ -622,13 +674,13 @@ class IntegrationTests(unittest.TestCase):
             [tuple(edge.vertices) for edge in mesh.edges],
             [tuple(face.vertices) for face in mesh.polygons],
             [face for face in selected_faces
-             if all(mesh.vertices[vertex].co.x <= settings.symmetry_tolerance
+             if all(mesh.vertices[vertex].co.x <= settings.mesh_symmetry_tolerance
                     for vertex in mesh.polygons[face].vertices)
-             and any(mesh.vertices[vertex].co.x < -settings.symmetry_tolerance
+             and any(mesh.vertices[vertex].co.x < -settings.mesh_symmetry_tolerance
                      for vertex in mesh.polygons[face].vertices)],
             axis=0,
             source_sign=-1,
-            tolerance=settings.symmetry_tolerance,
+            tolerance=settings.mesh_symmetry_tolerance,
         )
         for source_loop, destination_loop in plan.loop_pairs:
             self.assertAlmostEqual(target.uv[source_loop].vector.x,

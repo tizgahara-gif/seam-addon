@@ -38,6 +38,43 @@ def _selected_visible_mesh_objects(context) -> list[bpy.types.Object]:
     ]
 
 
+def resolve_layout_targets(context, require_uv=True):
+    """Return the single source of truth used by layout UI and operators."""
+    objects = _selected_visible_mesh_objects(context)
+    ready = [obj for obj in objects if obj.data.polygons and
+             (not require_uv or obj.data.uv_layers.active is not None)]
+    missing_uv = [obj for obj in objects if not obj.data.polygons or
+                  (require_uv and obj.data.uv_layers.active is None)]
+    unique_mesh_count = len({_mesh_datablock_key(obj) for obj in objects})
+    return {
+        "objects": objects, "ready": ready, "missing_uv": missing_uv,
+        "target_count": len(objects), "valid_uv_count": len(ready),
+        "missing_uv_count": len(missing_uv), "unique_mesh_count": unique_mesh_count,
+        "all_ready": bool(objects) and len(ready) == len(objects),
+    }
+
+
+def resolve_atlas_targets(context, settings):
+    """Resolve atlas readiness without creating UV layers or changing state."""
+    result = resolve_layout_targets(context, require_uv=False)
+    missing = []
+    ready = []
+    for obj in result["objects"]:
+        if not obj.data.polygons:
+            missing.append(obj)
+            continue
+        if settings.atlas_uv_source == "ACTIVE":
+            has_uv = obj.data.uv_layers.active is not None
+        else:
+            has_uv = (obj.data.uv_layers.get(settings.uv_map_name) is not None or
+                      settings.create_uv_if_missing)
+        (ready if has_uv else missing).append(obj)
+    result.update(ready=ready, missing_uv=missing, valid_uv_count=len(ready),
+                  missing_uv_count=len(missing),
+                  all_ready=bool(result["objects"]) and len(ready) == len(result["objects"]))
+    return result
+
+
 def _snapshot_context(context) -> tuple[bpy.types.Object | None, list[bpy.types.Object], str | None]:
     active = context.view_layer.objects.active
     selected = list(context.selected_objects)
@@ -61,6 +98,22 @@ def _snapshot_context(context) -> tuple[bpy.types.Object | None, list[bpy.types.
                 {item.index for item in bm.verts if item.select},
                 {item.index for item in bm.edges if item.select},
                 {item.index for item in bm.faces if item.select},
+                select_mode,
+            )
+    else:
+        # Object Mode still stores component selection in each Mesh datablock.
+        # Operators that temporarily select all faces must not leak that state.
+        select_mode = tuple(context.tool_settings.mesh_select_mode)
+        for obj in _selected_visible_mesh_objects(context):
+            mesh_key = obj.data.as_pointer()
+            if mesh_key in _EDIT_SELECTION_SNAPSHOTS:
+                continue
+            mesh = obj.data
+            _EDIT_SELECTION_SNAPSHOTS[mesh_key] = (
+                mesh,
+                {item.index for item in mesh.vertices if item.select},
+                {item.index for item in mesh.edges if item.select},
+                {item.index for item in mesh.polygons if item.select},
                 select_mode,
             )
     return active, selected, mode
@@ -91,9 +144,9 @@ def _restore_context(context, active, selected: list[bpy.types.Object], mode: st
                 bpy.ops.object.mode_set(mode=mode)
         except Exception:
             pass
+    snapshots = list(_EDIT_SELECTION_SNAPSHOTS.values())
+    _EDIT_SELECTION_SNAPSHOTS.clear()
     if active is not None and mode == "EDIT" and active.type == "MESH":
-        snapshots = list(_EDIT_SELECTION_SNAPSHOTS.values())
-        _EDIT_SELECTION_SNAPSHOTS.clear()
         for mesh, vertices, edges, faces, select_mode in snapshots:
             context.tool_settings.mesh_select_mode = select_mode
             bm = bmesh.from_edit_mesh(mesh)
@@ -102,6 +155,13 @@ def _restore_context(context, active, selected: list[bpy.types.Object], mode: st
             for item in bm.edges: item.select = item.index in edges
             for item in bm.faces: item.select = item.index in faces
             bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+    else:
+        for mesh, vertices, edges, faces, select_mode in snapshots:
+            context.tool_settings.mesh_select_mode = select_mode
+            for item in mesh.vertices: item.select = item.index in vertices
+            for item in mesh.edges: item.select = item.index in edges
+            for item in mesh.polygons: item.select = item.index in faces
+            mesh.update()
 
 
 def _restore_validation_context(context, active, selected, mode):
@@ -552,9 +612,15 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
 
 def _run_existing_uv_operation(operator, context, operation, action_label):
     """Run a UV-only backend for selected objects and restore all selection state."""
-    selected_objects = _selected_visible_mesh_objects(context)
+    preflight = resolve_layout_targets(context)
+    selected_objects = preflight["objects"]
     if not selected_objects:
         operator.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
+        return {"CANCELLED"}
+    if not preflight["all_ready"]:
+        operator.report({"ERROR"}, iface_(
+            "%d selected mesh object(s) have no usable UV map.",
+            preflight["missing_uv_count"]))
         return {"CANCELLED"}
     settings = _get_settings(context)
     objects, skipped_shared = _objects_for_processing(
@@ -753,12 +819,17 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        settings = _get_settings(context)
+        preflight = resolve_atlas_targets(context, settings)
+        selected_objects = preflight["objects"]
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
-
-        settings = _get_settings(context)
+        if not preflight["all_ready"]:
+            self.report({"ERROR"}, iface_(
+                "%d selected mesh object(s) have no usable UV map.",
+                preflight["missing_uv_count"]))
+            return {"CANCELLED"}
         objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
         active, selected, mode = _snapshot_context(context)
         processed = 0
