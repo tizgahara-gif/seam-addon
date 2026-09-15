@@ -242,11 +242,13 @@ The completion report includes selected-face, boundary-edge, newly-marked-seam, 
 
 ## Weighted Island Layout
 
-Weighted Island Layout partitions the 0–1 space into weighted rectangles. Each island weight is `world_surface_area × clamp(polygon_density / median_density, 0.25, 4.0) ^ Density Influence`, where polygon density is `face_count / world_surface_area`. Density Influence defaults to `0.25`; face count is never used directly as the weight.
+Weighted Island Layout partitions the selected **Target UV Region** (`Full 0-1`, `Left Half`, or `Right Half`) into weighted rectangles. Each island weight is `world_surface_area × clamp(polygon_density / median_density, 0.25, 4.0) ^ Density Influence`, where polygon density is `face_count / world_surface_area`. Density Influence defaults to `0.25`; face count is never used directly as the weight. The allocator evaluates horizontal and vertical splits with `abs(log(rectangle_aspect / island_aspect))`, favoring strip-shaped rectangles for strip-shaped islands.
 
-**Allocate by Importance** uniformly scales each island to the largest size that fits its rectangle. **Preserve Texel Density** translates islands without per-island scaling and applies one global uniform downscale only when necessary. Both modes retain island orientation and aspect ratio. **Padding Pixels / Texture Size** defines the UV inset. The operator edits only the active UV map and can process selected faces or the whole object.
+In **Allocate by Importance**, islands are scaled uniformly inside their rectangles using one shared area-per-weight factor. This makes final polygon UV area ratios follow weight ratios without non-uniform scaling, shearing, or aspect changes. **Preserve Texel Density** continues to use only one shared scale and does not independently resize islands. Pixel padding is converted using Texture Size and inset inside the selected target region.
 
-Run it before Exact Texture-X Symmetry: `Unwrap → Weighted Island Layout → Exact Texture-X Symmetry`. Running it afterward is allowed but can break the exact `U_source + U_destination = 1` relationship. It never invokes symmetry or packing automatically.
+**Preserve Texel Density** translates islands without per-island scaling and applies one global uniform downscale only when necessary. Both modes retain island orientation and aspect ratio. **Padding Pixels / Texture Size** defines the UV inset. The operator edits only the active UV map and can process selected faces or the whole object.
+
+Run it before Exact Texture-X Symmetry: `Unwrap → Weighted Island Layout → Exact Texture-X Symmetry`. For a left-to-right transfer, choose Weighted Target UV Region **Left Half** and Exact Texture-X Source **Left Half**; choose **Right Half** for both settings for the reverse workflow. The properties are intentionally not changed automatically. Running Weighted Layout afterward is allowed but can break the exact `U_source + U_destination = 1` relationship. It never invokes symmetry or packing automatically.
 
 ## Auto Unwrap + Pack
 

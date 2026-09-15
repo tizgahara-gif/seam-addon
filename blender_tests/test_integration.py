@@ -344,6 +344,40 @@ class IntegrationTests(unittest.TestCase):
             self.assertAlmostEqual(layer.uv[destination_loop].vector.y,
                                    source[source_loop][1])
 
+    def test_weighted_target_half_then_exact_texture_x_both_directions(self):
+        for target, source_side, source in (
+            ("LEFT_HALF", "LEFT_HALF", ((2,2),(4,2),(4,3),(2,3))),
+            ("RIGHT_HALF", "RIGHT_HALF", ((-2,-2),(0,-2),(0,-1),(-2,-1))),
+        ):
+            with self.subTest(target=target):
+                _obj, layer, settings, initial, select_mode = self._prepare_exact_texture_transfer(source)
+                settings.weighted_target_region = target
+                settings.weighted_scope = "SELECTED_FACES"
+                settings.weighted_scale_mode = "ALLOCATE_BY_IMPORTANCE"
+                settings.weighted_padding_pixels = 4
+                self.assertEqual(bpy.ops.autoseamuv.weighted_island_layout(), {"FINISHED"})
+                minimum = 0.0 if target == "LEFT_HALF" else 0.5
+                maximum = 0.5 if target == "LEFT_HALF" else 1.0
+                for index in range(4):
+                    uv = layer.uv[index].vector
+                    self.assertGreaterEqual(uv.x, minimum - 1e-7)
+                    self.assertLessEqual(uv.x, maximum + 1e-7)
+                    self.assertGreaterEqual(uv.y, -1e-7)
+                    self.assertLessEqual(uv.y, 1.0 + 1e-7)
+                settings.texture_source_side = source_side
+                self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(), {"FINISHED"})
+                for source_loop, destination_loop in ((0,4),(1,7),(2,6),(3,5)):
+                    self.assertAlmostEqual(layer.uv[source_loop].vector.x
+                                           + layer.uv[destination_loop].vector.x, 1.0)
+                    self.assertAlmostEqual(layer.uv[source_loop].vector.y,
+                                           layer.uv[destination_loop].vector.y)
+                self.assertEqual(tuple(tuple(layer.uv[index].vector) for index in range(8, 12)),
+                                 initial[8:12])
+                self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode), select_mode)
+                bpy.ops.object.mode_set(mode="OBJECT")
+                bpy.ops.object.select_all(action="SELECT")
+                bpy.ops.object.delete(use_global=False)
+
     def test_exact_texture_x_rejections_do_not_modify_uvs(self):
         for source in (
             ((0.30,0.20),(0.70,0.20),(0.70,0.80),(0.30,0.80)),

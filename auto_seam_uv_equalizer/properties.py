@@ -180,6 +180,16 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Density Influence", default=0.25, min=0.0, max=1.0,
         description="Influence of median-normalized polygon density on island importance",
     )
+    weighted_target_region: EnumProperty(
+        name="Target UV Region",
+        description="Choose which part of the 0-1 UV space the weighted layout may use.",
+        items=(
+            ("FULL", "Full 0-1", "Use the full 0-1 UV space"),
+            ("LEFT_HALF", "Left Half", "Use U 0.0 through 0.5"),
+            ("RIGHT_HALF", "Right Half", "Use U 0.5 through 1.0"),
+        ),
+        default="FULL",
+    )
     weighted_scale_mode: EnumProperty(
         name="Scale Mode",
         items=(
