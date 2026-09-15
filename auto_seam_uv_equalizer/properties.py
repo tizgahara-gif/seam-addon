@@ -17,8 +17,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         max=179.0,
     )
 
-    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Fast, predictable independent edge rules"), ("ADVANCED", "Chart-Based", "Evaluate provisional UV charts and add only quality-improving cuts")), default="CLASSIC")
-    seam_preset: EnumProperty(name="Seam Strategy", items=(("HARD_SURFACE", "Hard Surface", "Angle, sharp and material boundaries"), ("ORGANIC", "Organic / Cloth", "Long continuous low-noise cuts"), ("CYLINDER", "Cylinder / Cable", "End-to-end longitudinal path"), ("MANUAL", "Manual Assisted", "Force, protect and existing seams first")), default="HARD_SURFACE")
+    seam_mode: EnumProperty(name="Detection Mode", items=(("CLASSIC", "Classic", "Fast, predictable independent edge rules"), ("ADVANCED", "Chart-Based", "Evaluate provisional UV charts and add only quality-improving cuts")), default="ADVANCED")
+    seam_preset: EnumProperty(name="Seam Strategy", items=(("HARD_SURFACE", "Hard Surface", "Angle, sharp and material boundaries"), ("ORGANIC", "Organic / Cloth", "Long continuous low-noise cuts"), ("CYLINDER", "Cylinder / Cable", "End-to-end longitudinal path"), ("MANUAL", "Manual Assisted", "Force, protect and existing seams first")), default="ORGANIC")
     weight_material: FloatProperty(name="Material Weight", default=1.5, min=0.0, max=10.0)
     seam_search_radius: IntProperty(name="Seam Search Radius", default=24, min=2, max=512)
     seam_minimum_spacing: IntProperty(name="Seam Minimum Spacing", default=3, min=0, max=128)
@@ -30,13 +30,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     show_seam_advanced: BoolProperty(name="Advanced", default=False)
     use_professional_garment_prior: BoolProperty(
         name="Use Professional Garment Prior", default=True,
-        description="Rank garment seam candidates before trial unwrap; never forces acceptance")
+        description="Ranks likely garment seam positions before trial unwrap. It never forces a seam; final acceptance is based on measured UV quality")
     character_front_axis: EnumProperty(
         name="Character Front Axis",
         items=(("+X", "+X", ""), ("-X", "-X", ""),
                ("+Y", "+Y", ""), ("-Y", "-Y", "")), default="-Y")
     curvature_bias: FloatProperty(name="Curvature Bias", default=1.0, min=0.0, max=5.0)
-    maintain_symmetry: BoolProperty(name="Maintain Symmetry", default=False)
     mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
     mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
@@ -121,11 +120,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=False,
     )
 
-    ring_auto_detect: BoolProperty(
-        name="Auto Detect",
-        description="Recover the ring or strip grid from selected quad faces",
-        default=True,
-    )
+    show_ring_strip: BoolProperty(name="Ring / Strip", default=False)
     ring_layout: EnumProperty(
         name="Layout",
         items=(("RECTANGULAR", "Rectangular", "Align all rows to one width"),
@@ -287,11 +282,6 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default=True,
     )
 
-    assign_overlap_debug_material: BoolProperty(
-        name="Assign Overlap Debug Material",
-        description="Legacy compatibility option; overlap highlighting is now non-destructive face selection",
-        default=False,
-    )
 
     texture_width: IntProperty(name="Texture Width", default=2048, min=1, max=65536)
     texture_height: IntProperty(name="Texture Height", default=2048, min=1, max=65536)
@@ -301,10 +291,6 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     uv_zero_tolerance: FloatProperty(name="Zero Area Tolerance", default=1e-10, min=0.0, max=0.01, precision=10)
     stretch_warning_threshold: FloatProperty(name="Stretch Warning Threshold", default=2.0, min=1.0, max=100.0)
     report_summary: StringProperty(name="Last Quality Report", default="No report yet")
-    relax_after_unwrap: BoolProperty(name="Relax After Unwrap", default=False)
-    relax_iterations: IntProperty(name="Relax Iterations", default=3, min=1, max=100)
-    preserve_boundary: BoolProperty(name="Preserve Boundary", default=True)
-    respect_pins: BoolProperty(name="Respect Pins", default=True)
     pack_shape_method: EnumProperty(name="Shape Method", items=(("CONCAVE", "Exact", ""), ("CONVEX", "Convex", ""), ("AABB", "Bounding Box", "")), default="CONCAVE")
     pack_rotation: EnumProperty(name="Rotation", items=(("OFF", "Off", ""), ("ANY", "Any", ""), ("CARDINAL", "Cardinal", ""), ("AXIS_ALIGNED", "Axis Aligned", "")), default="ANY")
     pack_margin_method: EnumProperty(name="Margin Method", items=(("SCALED", "Scaled", ""), ("ADD", "Add", ""), ("FRACTION", "Fraction", "")), default="SCALED")
