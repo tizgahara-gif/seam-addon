@@ -23,7 +23,8 @@ class AUTOSEAMUV_OT_set_texel_density(bpy.types.Operator):
             obj.data.update()
         return {'FINISHED'}
 class AUTOSEAMUV_OT_validate_uv(bpy.types.Operator):
-    bl_idname='autoseamuv.validate_uv';bl_label='Run Quality Analysis';bl_options={'REGISTER','UNDO'}
+    bl_idname='autoseamuv.validate_uv';bl_label='Run UV Quality Check';bl_options={'REGISTER','UNDO'}
+    bl_description='Checks UV stretch, flipped faces, zero-area faces, coverage, and related statistics. Problem faces may be selected in Edit Mode.'
     def execute(self,c):
         s=c.scene.autoseamuv_settings; summaries=[]
         for obj in _objects(c):

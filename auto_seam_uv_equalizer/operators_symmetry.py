@@ -45,12 +45,12 @@ def _plan(context, require_uv):
         raise SymmetryError("no faces selected")
     axis = "XYZ".index(settings.mesh_symmetry_axis)
     sign = -1 if settings.symmetry_direction == "NEGATIVE_TO_POSITIVE" else 1
-    sources = _source_faces(mesh, candidates, axis, sign, settings.symmetry_tolerance)
+    sources = _source_faces(mesh, candidates, axis, sign, settings.mesh_symmetry_tolerance)
     plan = build_symmetry_plan(
         [tuple(vertex.co) for vertex in mesh.vertices],
         [tuple(edge.vertices) for edge in mesh.edges],
         [tuple(face.vertices) for face in mesh.polygons], sources,
-        axis, sign, settings.symmetry_tolerance,
+        axis, sign, settings.mesh_symmetry_tolerance,
     )
     return obj, layer, plan
 
