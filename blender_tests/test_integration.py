@@ -11,6 +11,7 @@ import bmesh
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
 from auto_seam_uv_equalizer.symmetry import build_symmetry_plan
+from auto_seam_uv_equalizer.weighted_layout import pack_importance_boxes
 
 
 def uv_bounds(uvs):
@@ -77,6 +78,18 @@ class IntegrationTests(unittest.TestCase):
                      "validate_symmetry", "transfer_symmetric_uv",
                      "transfer_exact_texture_x_symmetry"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
+
+    def test_weighted_maxrects_headless_regressions(self):
+        """Blender 5.1.2 headless coverage for weighted packing primitives."""
+        self.assertGreaterEqual(bpy.app.version, (5, 1, 2))
+        for aspects, minimum_utilization in (([10.0, 1.0], 0.12),
+                                              ([100.0, 1.0], 0.012)):
+            rectangles, scale = pack_importance_boxes([4.0, 1.0], aspects)
+            self.assertTrue(math.isfinite(scale) and scale > 0.0)
+            areas = [(x1 - x0) * (y1 - y0) for x0, y0, x1, y1 in rectangles]
+            self.assertAlmostEqual(areas[0] / areas[1], 4.0, places=6)
+            self.assertGreater(sum(areas), minimum_utilization)
+            self.assertLessEqual(rectangles[0][2], rectangles[1][0] + 1e-9)
 
     def test_weighted_layout_and_pack_preserve_mesh_and_edit_selection(self):
         obj = mesh_object(
