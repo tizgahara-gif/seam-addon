@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from heapq import heappop, heappush
 from math import acos, log, pi
 from .seam_path import shortest_path
 
@@ -35,6 +36,8 @@ PRESETS = {
 
 TRIAL_CANDIDATE_LIMIT = 5
 QUALITY_EPSILON = 1.0e-7
+UV_EPSILON = 1.0e-12
+COLLAPSE_WEIGHT = 2.0
 
 
 def candidate_benefit(before, after, new_edge_count, effective_edge_penalty):
@@ -81,7 +84,8 @@ def edge_cut_cost(mesh, edge, faces, force, protect, preset, settings):
     angle = min(pi, a.normal.angle(b.normal)) / pi
     material = float(a.material_index != b.material_index and settings.material_boundary)
     sharp = float(getattr(edge, "use_edge_sharp", False))
-    existing = float(getattr(edge, "use_seam", False))
+    existing = (float(getattr(edge, "use_seam", False))
+                if settings.preserve_existing_seams else 0.0)
     concavity = .12 if getattr(edge, "is_convex", True) is False else 0.0
     desirability = (preset.dihedral * settings.curvature_bias * angle +
                     preset.material * settings.weight_material * material +
@@ -121,26 +125,32 @@ def proxy_chart_quality(mesh, chart, edge_faces):
     return min(2.0, .55 * mean + .45 * accumulated)
 
 
-def uv_chart_quality(mesh, uv_layer, chart):
-    """Measure scale-independent UV area and angular distortion for a chart."""
+def uv_chart_quality_from_snapshot(mesh, uv_vectors, chart):
+    """Measure chart distortion from a sequence indexed by mesh-loop index."""
     samples = []
     mesh.calc_loop_triangles()
     for triangle in mesh.loop_triangles:
         if triangle.polygon_index in chart:
             tri = triangle.loops
             points3 = [mesh.vertices[mesh.loops[index].vertex_index].co for index in tri]
-            points2 = [uv_layer.uv[index].vector for index in tri]
+            points2 = [uv_vectors[index] for index in tri]
             area3 = (points3[1] - points3[0]).cross(points3[2] - points3[0]).length * .5
             u = points2[1] - points2[0]; v = points2[2] - points2[0]
             area2 = abs(u.x * v.y - u.y * v.x) * .5
-            if area3 > 1e-12 and area2 > 1e-12:
+            if area3 > UV_EPSILON:
                 samples.append((area3, area2, points3, points2))
     if not samples:
         return 2.0
-    scale = sum(item[1] for item in samples) / sum(item[0] for item in samples)
-    area_error = sum(abs(log(max(1e-12, item[1] / item[0] / scale))) for item in samples) / len(samples)
-    angular = 0.0
+    scale = max(UV_EPSILON, sum(max(item[1], UV_EPSILON) for item in samples) /
+                sum(item[0] for item in samples))
+    area_error = sum(abs(log(max(item[1], UV_EPSILON) / item[0] / scale))
+                     for item in samples) / len(samples)
+    angular = 0.0; angular_count = 0; collapsed = 0
     for _a3, _a2, p3, p2 in samples:
+        uv_edges = [(p2[(vertex + 1) % 3] - p2[vertex]).length for vertex in range(3)]
+        if _a2 <= UV_EPSILON or min(uv_edges) <= UV_EPSILON:
+            collapsed += 1
+            continue
         errors = []
         for vertex in range(3):
             a3, b3 = p3[(vertex + 1) % 3] - p3[vertex], p3[(vertex + 2) % 3] - p3[vertex]
@@ -149,10 +159,70 @@ def uv_chart_quality(mesh, uv_layer, chart):
             c2 = max(-1., min(1., a2.dot(b2) / max(1e-12, a2.length * b2.length)))
             errors.append(abs(acos(c3) - acos(c2)) / pi)
         angular += sum(errors) / 3.0
-    angular /= len(samples)
-    # Area and angle are both dimensionless; max-area contribution catches a
-    # locally collapsed triangle without making chart scale affect the result.
-    return .55 * angular + .35 * area_error + .10 * min(2.0, area_error * area_error)
+        angular_count += 1
+    angular = angular / angular_count if angular_count else 0.0
+    # Area and angle are dimensionless; collapse is an explicit strong penalty.
+    collapse_ratio = collapsed / len(samples)
+    return (.55 * angular + .35 * area_error +
+            .10 * min(2.0, area_error * area_error) + COLLAPSE_WEIGHT * collapse_ratio)
+
+
+def uv_chart_quality(mesh, uv_layer, chart):
+    """Measure chart quality directly from a Blender UV layer."""
+    return uv_chart_quality_from_snapshot(
+        mesh, [item.vector for item in uv_layer.uv], chart)
+
+
+def cached_uv_quality_evaluator(unwrap_snapshot, quality_from_snapshot):
+    """Cache unwrap snapshots per cut state and qualities per chart/state pair."""
+    uv_state_cache, quality_cache = {}, {}
+
+    def evaluate(chart, cuts):
+        cuts_key = frozenset(cuts)
+        if cuts_key not in uv_state_cache:
+            uv_state_cache[cuts_key] = unwrap_snapshot(cuts)
+        key = (frozenset(chart), cuts_key)
+        if key not in quality_cache:
+            quality_cache[key] = quality_from_snapshot(
+                uv_state_cache[cuts_key], chart)
+        return quality_cache[key]
+
+    return evaluate
+
+
+def _geodesic_farthest(vertex_graph, positions, start, allowed_edges):
+    """Return the farthest reachable vertex using 3D edge lengths."""
+    distances, heap = {start: 0.0}, [(0.0, start)]
+    while heap:
+        distance, vertex = heappop(heap)
+        if distance != distances.get(vertex):
+            continue
+        for neighbour, edge_index in vertex_graph.get(vertex, ()):
+            if edge_index not in allowed_edges:
+                continue
+            length = (positions[vertex] - positions[neighbour]).length
+            new_distance = distance + max(UV_EPSILON, length)
+            if new_distance < distances.get(neighbour, float("inf")):
+                distances[neighbour] = new_distance
+                heappush(heap, (new_distance, neighbour))
+    return max(distances, key=lambda vertex: (distances[vertex], -vertex))
+
+
+def closed_chart_bootstrap_path(mesh, chart, edge_faces, vertex_graph, costs,
+                                max_hops, straightness_bias):
+    """Build a double-sweep geodesic seam path for a chart without anchors."""
+    allowed = {index for index, faces in edge_faces.items()
+               if faces and set(faces).issubset(chart) and costs.get(index) != float("inf")}
+    vertices = {vertex for index in allowed for vertex in mesh.edges[index].vertices}
+    if not vertices:
+        return set()
+    positions = [vertex.co for vertex in mesh.vertices]
+    first = _geodesic_farthest(vertex_graph, positions, min(vertices), allowed)
+    second = _geodesic_farthest(vertex_graph, positions, first, allowed)
+    return set(shortest_path(
+        vertex_graph, [first], [second],
+        lambda index: costs.get(index, float("inf")) if index in allowed else float("inf"),
+        max_hops, positions, straightness_bias))
 
 
 def _edge_distance(graph, sources, limit):
@@ -201,10 +271,10 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
             break
         progressed = False
         distance = _edge_distance(graph, cuts, max(settings.seam_minimum_spacing, preset.spacing))
-        # Only one cut is accepted from a state.  Charts and qualities are then
-        # regenerated before another candidate is considered.
-        best_trial = None
+        # Every disjoint bad chart may contribute one candidate to this round.
+        accepted_this_round = []
         for chart in bad:
+            best_trial = None
             ranked = []
             trial_paths = []
             for path in preferred_paths:
@@ -221,11 +291,22 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 length = (mesh.vertices[edge.vertices[0]].co - mesh.vertices[edge.vertices[1]].co).length
                 ranked.append((costs[edge_index] + length * .01, edge_index))
             before = qualities[min(chart)]
+            anchors = {vertex for edge_index in cuts for vertex in mesh.edges[edge_index].vertices}
+            anchors.update(vertex for edge_index, faces in edge_faces.items() if len(faces) != 2
+                           for vertex in mesh.edges[edge_index].vertices)
+            chart_anchors = {vertex for vertex in anchors if any(
+                edge_index in {index for index, faces in edge_faces.items()
+                               if set(faces).issubset(chart)}
+                for _other, edge_index in vertex_graph.get(vertex, ()))}
+            if not chart_anchors:
+                bootstrap = closed_chart_bootstrap_path(
+                    mesh, chart, edge_faces, vertex_graph, costs,
+                    settings.seam_search_radius,
+                    settings.straightness_bias * preset.straightness)
+                if bootstrap - cuts:
+                    trial_paths.append((-2.0, min(bootstrap), bootstrap))
             for _rank, chosen in sorted(ranked)[:TRIAL_CANDIDATE_LIMIT]:
                 seed = mesh.edges[chosen]
-                anchors = {vertex for edge_index in cuts for vertex in mesh.edges[edge_index].vertices}
-                anchors.update(vertex for edge_index, faces in edge_faces.items() if len(faces) != 2
-                               for vertex in mesh.edges[edge_index].vertices)
                 path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
                                      lambda index: costs.get(index, 1.0), settings.seam_search_radius,
                                      [vertex.co for vertex in mesh.vertices],
@@ -248,8 +329,9 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 candidate = (benefit, -len(new_edges), new_edges)
                 if best_trial is None or candidate[:2] > best_trial[:2]:
                     best_trial = candidate
-        if best_trial is not None:
-            accepted = best_trial[2]
+            if best_trial is not None:
+                accepted_this_round.append(best_trial[2])
+        for accepted in accepted_this_round:
             cuts.update(accepted); candidates.update(accepted); progressed = True
         completed_iterations += 1
         if not progressed:

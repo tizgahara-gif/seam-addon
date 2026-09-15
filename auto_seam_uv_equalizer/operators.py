@@ -21,7 +21,8 @@ from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
 from .translations import iface_
-from .chart_seam import PRESETS, uv_chart_quality
+from .chart_seam import (PRESETS, cached_uv_quality_evaluator,
+                         uv_chart_quality_from_snapshot)
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -159,18 +160,19 @@ def _analyze_with_temporary_unwrap(obj, settings):
     temp_obj.name = "__AutoSeamUV_ChartAnalysis__"
     context = bpy.context
     context.collection.objects.link(temp_obj)
-    cache = {}
+    def unwrap_snapshot(cuts):
+        for edge in temp_mesh.edges:
+            edge.use_seam = edge.index in cuts
+        method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
+        unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, 0.0,
+                      False, False, 3, 0.0)
+        return tuple(item.vector.copy() for item in temp_mesh.uv_layers.active.uv)
 
-    def evaluate(chart, cuts):
-        key = (frozenset(chart), frozenset(cuts))
-        if key not in cache:
-            for edge in temp_mesh.edges:
-                edge.use_seam = edge.index in cuts
-            method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
-            unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, 0.0,
-                          False, False, 3, 0.0)
-            cache[key] = uv_chart_quality(temp_mesh, temp_mesh.uv_layers.active, chart)
-        return cache[key]
+    evaluate = cached_uv_quality_evaluator(
+        unwrap_snapshot,
+        lambda snapshot, chart: uv_chart_quality_from_snapshot(
+            temp_mesh, snapshot, chart),
+    )
 
     try:
         return analyze_chart_seams(obj, settings, evaluate)
@@ -428,7 +430,7 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
                     if settings.clear_existing:
                         total_cleared += clear_seams(obj.data)
                     total_marked += _auto_mark(obj, settings)
-                    if settings.longitudinal_seam_helper:
+                    if settings.seam_mode == "CLASSIC" and settings.longitudinal_seam_helper:
                         total_longitudinal += mark_longitudinal_seam_helper(obj)
                     processed += 1
                 except Exception as exc:
@@ -688,7 +690,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                     if settings.clear_existing:
                         total_cleared += clear_seams(obj.data)
                     total_marked += _auto_mark(obj, settings)
-                    if settings.longitudinal_seam_helper:
+                    if settings.seam_mode == "CLASSIC" and settings.longitudinal_seam_helper:
                         total_longitudinal += mark_longitudinal_seam_helper(obj)
                     total_straightened += unwrap_object(
                         obj,
