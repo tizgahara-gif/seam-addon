@@ -13,7 +13,6 @@ from .mesh_utils import build_mesh_topology
 EPSILON = 1.0e-12
 DENSITY_MIN = 0.25
 DENSITY_MAX = 4.0
-MIN_WEIGHT_FRACTION = 1.0e-6
 
 
 @dataclass
@@ -27,7 +26,7 @@ class IslandLayout:
     weight: float = 0.0
     uv_aspect: float = 1.0
     uv_area: float = 0.0
-    allocated_rect: tuple[float, float, float, float] | None = None
+    packed_rect: tuple[float, float, float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -63,65 +62,6 @@ def calculate_weights(areas, face_counts, density_influence: float):
                   for value in normalized]
     weights = [area * (density ** influence) for area, density in zip(areas, normalized)]
     return densities, normalized, weights
-
-
-def weighted_rectangles(weights, rect=(0.0, 0.0, 1.0, 1.0), aspects=None):
-    """Partition *rect* by weight, choosing splits using preferred UV aspects.
-
-    The partition remains proportional to weight.  At every binary node both
-    split directions are scored with a scale-independent log aspect error.
-    Sorting once by preferred aspect and halving recursively keeps the work
-    O(N log N), while tending to give strips strip-shaped rectangles.
-    """
-    if not weights:
-        return []
-    safe = [value if math.isfinite(value) and value > EPSILON else EPSILON for value in weights]
-    floor = max(sum(safe) * MIN_WEIGHT_FRACTION, EPSILON)
-    safe = [max(value, floor) for value in safe]
-    if aspects is None:
-        aspects = [1.0] * len(safe)
-    if len(aspects) != len(safe):
-        raise ValueError("weights and aspects must have the same length")
-    preferred = [value if math.isfinite(value) and value > EPSILON else 1.0
-                 for value in aspects]
-    result = [None] * len(safe)
-
-    def group_aspect(indices):
-        total = sum(safe[index] for index in indices)
-        return math.exp(sum(safe[index] * math.log(preferred[index]) for index in indices) / total)
-
-    def aspect_cost(indices, bounds):
-        width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
-        return sum(safe[index] for index in indices) * abs(
-            math.log((width / height) / group_aspect(indices)))
-
-    def partition(indices, bounds):
-        x0, y0, x1, y1 = bounds
-        if len(indices) == 1:
-            result[indices[0]] = bounds
-            return
-        total = sum(safe[index] for index in indices)
-        target = total * 0.5
-        running = 0.0
-        split = 1
-        for position, index in enumerate(indices[:-1], 1):
-            running += safe[index]
-            split = position
-            if running >= target:
-                break
-        first, second = indices[:split], indices[split:]
-        ratio = sum(safe[index] for index in first) / total
-        vertical_cut = x0 + (x1 - x0) * ratio
-        vertical = ((x0, y0, vertical_cut, y1), (vertical_cut, y0, x1, y1))
-        horizontal_cut = y0 + (y1 - y0) * ratio
-        horizontal = ((x0, y0, x1, horizontal_cut), (x0, horizontal_cut, x1, y1))
-        candidates = (vertical, horizontal)
-        chosen = min(candidates, key=lambda pair:
-                     aspect_cost(first, pair[0]) + aspect_cost(second, pair[1]))
-        partition(first, chosen[0]); partition(second, chosen[1])
-
-    partition(sorted(range(len(safe)), key=lambda index: math.log(preferred[index]), reverse=True), rect)
-    return result
 
 
 def importance_boxes(weights, aspects):
@@ -221,19 +161,6 @@ def target_rectangle(target_region):
         raise ValueError(f"unknown target UV region: {target_region}") from exc
 
 
-def importance_scales(source_areas, weights, fit_scales):
-    """Return uniform scales whose resulting area ratios match *weights*.
-
-    A shared area-per-weight constant is lowered until every island fits.  This
-    never distorts an island and never exceeds the rectangle fit scale.
-    """
-    if not (len(source_areas) == len(weights) == len(fit_scales)) or not weights:
-        raise ValueError("source areas, weights, and fit scales must have equal non-zero length")
-    constant = min(fit * fit * area / weight
-                   for area, weight, fit in zip(source_areas, weights, fit_scales))
-    return [math.sqrt(constant * weight / area) for area, weight in zip(source_areas, weights)]
-
-
 def _world_polygon_area(obj, polygon):
     points = [obj.matrix_world @ obj.data.vertices[index].co for index in polygon.vertices]
     if len(points) < 3:
@@ -293,16 +220,16 @@ def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
     packing_weights = ([weight * bbox_area / island.uv_area
                         for weight, bbox_area, island in zip(weights, bbox_areas, islands)]
                        if scale_mode == "ALLOCATE_BY_IMPORTANCE" else bbox_areas)
-    rectangles, packed_global_scale = pack_importance_boxes(
+    rectangles, _packed_global_scale = pack_importance_boxes(
         packing_weights, [island.uv_aspect for island in islands], root, padding)
     for island, density, norm, weight, rectangle in zip(islands, densities, normalized, weights, rectangles):
         island.polygon_density = density; island.normalized_density = norm
-        island.weight = weight; island.allocated_rect = rectangle
+        island.weight = weight; island.packed_rect = rectangle
 
     prepared = []
     global_scale = 1.0
     for island, bounds in zip(islands, bounds_by_island):
-        x0, y0, x1, y1 = island.allocated_rect
+        x0, y0, x1, y1 = island.packed_rect
         usable = (x0, y0, x1, y1)
         width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
         fit = min((usable[2] - usable[0]) / width, (usable[3] - usable[1]) / height)
@@ -311,18 +238,18 @@ def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
         prepared.append((island, usable, bounds, fit))
 
     globally_scaled = scale_mode == "PRESERVE_TEXEL_DENSITY" and global_scale < 1.0
-    importance_scales_by_island = None
+    packed_scales_by_island = None
     if scale_mode == "ALLOCATE_BY_IMPORTANCE":
         # The largest common constant that lets every final polygon area equal
-        # ``constant * weight`` without enlarging beyond its allocated rectangle.
+        # ``constant * weight`` while exactly matching its packed BBox.
         # Every packed body box is its source BBox times one uniform island
-        # scale; all ideal boxes received the same packed_global_scale.
-        importance_scales_by_island = [
+        # scale; all ideal boxes received the same global packing scale.
+        packed_scales_by_island = [
             (item[1][2] - item[1][0]) / (item[2][2] - item[2][0]) for item in prepared]
     actual_areas = []
     for prepared_index, (island, usable, bounds, fit) in enumerate(prepared):
-        scale = (importance_scales_by_island[prepared_index]
-                 if importance_scales_by_island is not None else min(1.0, global_scale))
+        scale = (packed_scales_by_island[prepared_index]
+                 if packed_scales_by_island is not None else min(1.0, global_scale))
         source_center = ((bounds[0] + bounds[2]) * 0.5, (bounds[1] + bounds[3]) * 0.5)
         target_center = ((usable[0] + usable[2]) * 0.5, (usable[1] + usable[3]) * 0.5)
         pending = []
@@ -343,7 +270,7 @@ def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
             uv_layer.uv[index].vector = (u, v)
     mesh.update()
     maximum_error = 0.0
-    if importance_scales_by_island is not None:
+    if packed_scales_by_island is not None:
         actual_total, weight_total = sum(actual_areas), sum(weights)
         maximum_error = max(abs((area / actual_total) / (weight / weight_total) - 1.0)
                             for area, weight in zip(actual_areas, weights))

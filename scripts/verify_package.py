@@ -51,7 +51,8 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "blender_pack",
     ),
     "auto_seam_uv_equalizer/weighted_layout.py": (
-        "def calculate_weights", "def weighted_rectangles", "def weighted_layout_object",
+        "def calculate_weights", "def importance_boxes", "def pack_importance_boxes",
+        "def _maxrects_pack", "def weighted_layout_object",
         "DENSITY_MIN = 0.25", "DENSITY_MAX = 4.0", "find_uv_islands",
     ),
     "auto_seam_uv_equalizer/operators.py": (
@@ -149,6 +150,8 @@ FORBIDDEN_TOKENS = (
     "def compute" + "_grid_cells",
     "def fit_uv" + "_island_to_cell",
     "def " + "arrange" + "_selected_uv_islands_to_grid",
+    "def weighted_rectangles",
+    "def importance_scales",
 )
 
 TEXT_EXTENSIONS = (".py", ".md", ".yml", ".yaml", ".ps1", ".sh")
@@ -193,6 +196,48 @@ def _defines_classes(module_source: str, filename: str) -> bool:
     return False
 
 
+def _function_calls(module_source: str, filename: str) -> dict[str, set[str]]:
+    """Return direct named calls made by each top-level function."""
+    tree = ast.parse(module_source, filename=filename)
+    calls = {}
+    for statement in tree.body:
+        if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        calls[statement.name] = {
+            node.func.id
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+    return calls
+
+
+def _verify_weighted_layout_backend(module_source: str) -> None:
+    """Require the production call chain for importance BBox packing."""
+    filename = "auto_seam_uv_equalizer/weighted_layout.py"
+    calls = _function_calls(module_source, filename)
+    required = {
+        "calculate_weights", "importance_boxes", "pack_importance_boxes",
+        "_maxrects_pack", "weighted_layout_object",
+    }
+    missing = sorted(required - calls.keys())
+    if missing:
+        raise RuntimeError(f"Weighted Layout backend functions missing: {missing}")
+    required_edges = {
+        "weighted_layout_object": {"calculate_weights", "pack_importance_boxes"},
+        "pack_importance_boxes": {"importance_boxes", "_maxrects_pack"},
+    }
+    for caller, callees in required_edges.items():
+        missing_calls = sorted(callees - calls[caller])
+        if missing_calls:
+            raise RuntimeError(
+                f"Weighted Layout backend {caller} does not call: {missing_calls}"
+            )
+    legacy = sorted({"weighted_rectangles", "importance_scales"} & calls.keys())
+    if legacy:
+        raise RuntimeError(f"Legacy Weighted Layout functions present: {legacy}")
+    print("OK: Weighted Layout uses the importance BBox MaxRects backend")
+
+
 def _verify_classes_registries(archive: zipfile.ZipFile) -> None:
     init_name = "auto_seam_uv_equalizer/__init__.py"
     init_source = _read_zip_text(archive, init_name)
@@ -224,6 +269,11 @@ def verify_package(zip_path: Path) -> None:
             raise RuntimeError("Zip contains an extra seam-addon-main/ parent folder")
 
         _verify_classes_registries(archive)
+
+        weighted_source = _read_zip_text(
+            archive, "auto_seam_uv_equalizer/weighted_layout.py"
+        )
+        _verify_weighted_layout_backend(weighted_source)
 
         for member_name, tokens in REQUIRED_TOKENS.items():
             text = _read_zip_text(archive, member_name)
