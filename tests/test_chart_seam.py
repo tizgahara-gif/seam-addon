@@ -276,3 +276,123 @@ def test_direction_aware_dijkstra_avoids_equal_cost_zigzag():
     }
     assert shortest_path(graph, [0], [6], lambda _edge: 1.0, positions=positions,
                          straightness_bias=2.0) == [0, 1, 2]
+
+
+def _edge_mesh(vertex_coordinates, edge_vertices, face_count=2):
+    return SimpleNamespace(
+        vertices=[SimpleNamespace(co=Vector(*co)) for co in vertex_coordinates],
+        edges=[SimpleNamespace(index=i, vertices=edge, use_seam=False,
+                               use_edge_sharp=False, is_convex=True)
+               for i, edge in enumerate(edge_vertices)],
+        polygons=[SimpleNamespace(normal=Normal(), material_index=0)
+                  for _ in range(face_count)],
+    )
+
+
+def test_professional_rejection_does_not_starve_geodesic_fallback():
+    test_mesh = _edge_mesh([(i, 0, 0) for i in range(7)],
+                           [(i, i + 1) for i in range(6)])
+    edge_faces = {i: [0, 1] for i in range(6)}
+    tried = []
+
+    def quality(_chart, cuts):
+        tried.append(frozenset(cuts))
+        return .2 if len(cuts) >= 3 else 1.0
+
+    result = analyze(
+        test_mesh, edge_faces, [False] * 6, [False] * 6,
+        settings(seam_preset="HARD_SURFACE", chart_refinement_iterations=1), quality,
+        preferred_paths=tuple({i} for i in range(5)),
+    )
+    assert len(result.candidate_seams) >= 3
+    assert any(len(cuts) >= 3 for cuts in tried)
+
+
+def test_completed_path_prior_beats_high_seed_low_path(monkeypatch):
+    test_mesh = _edge_mesh([(i, 0, 0) for i in range(5)],
+                           [(i, i + 1) for i in range(4)])
+    priorities = {0: 10.0, 1: 0.0, 2: 6.0, 3: 6.0}
+    monkeypatch.setattr(chart_seam, "professional_edge_prior",
+                        lambda _m, index, _f, _s, sleeve=False:
+                        (priorities[index], (0.0, 0.0, 0.0, 0.0)))
+    high_seed = chart_seam.path_professional_prior(test_mesh, {0, 1}, {}, settings())
+    consistent = chart_seam.path_professional_prior(test_mesh, {2, 3}, {}, settings())
+    assert consistent > high_seed
+
+
+def test_material_boundary_closed_loop_is_one_structural_candidate():
+    test_mesh = _edge_mesh([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
+                           [(0, 1), (1, 2), (2, 3), (3, 0)])
+    test_mesh.polygons[1].material_index = 1
+    paths = chart_seam.structural_candidate_paths(
+        test_mesh, {0, 1}, {i: [0, 1] for i in range(4)}, set(), set(), settings())
+    assert paths == (frozenset({0, 1, 2, 3}),)
+    result = analyze(test_mesh, {i: [0, 1] for i in range(4)}, [False] * 4,
+                     [False] * 4, settings(chart_refinement_iterations=1),
+                     lambda _chart, _cuts: 1.0)
+    assert result.candidate_seams == set()
+
+
+def test_sleeve_visibility_uses_topology_local_frame():
+    centers = [(0, 2, 0), (1, 2, .1), (2, 2, .4)]
+    offsets = [(0, -1, 0), (0, 0, 1), (0, 1, 0), (0, 0, -1)]
+    coordinates = [tuple(c[i] + offset[i] for i in range(3))
+                   for c in centers for offset in offsets]
+    rings = tuple(tuple(range(r * 4, r * 4 + 4)) for r in range(3))
+    edge_vertices = [(rings[r][column], rings[r + 1][column])
+                     for column in range(4) for r in range(2)]
+    test_mesh = _edge_mesh(coordinates, edge_vertices)
+    scores = [chart_seam.topology_sleeve_visibility(
+        test_mesh, {column * 2, column * 2 + 1}, rings, "Y", "+Z")
+        for column in range(4)]
+    assert scores[0] > scores[3] > scores[2] > scores[1]
+
+
+def test_all_cylinder_columns_reach_professional_ranking(monkeypatch):
+    test_mesh = _edge_mesh([(i, 0, 0) for i in range(16)],
+                           [(i * 2, i * 2 + 1) for i in range(8)])
+    edge_faces = {i: [0, 1] for i in range(8)}
+    seen = []
+    original = chart_seam.path_professional_prior
+
+    def record(mesh_value, path, faces, setting_value, visibility_override=None):
+        seen.append(frozenset(path))
+        return original(mesh_value, path, faces, setting_value, visibility_override)
+
+    monkeypatch.setattr(chart_seam, "path_professional_prior", record)
+    analyze(test_mesh, edge_faces, [False] * 8, [False] * 8,
+            settings(seam_preset="CYLINDER", chart_refinement_iterations=1),
+            lambda _chart, _cuts: 1.0, preferred_paths=tuple({i} for i in range(8)))
+    assert {frozenset({i}) for i in range(8)}.issubset(set(seen))
+
+
+def test_mirror_centerline_and_protected_counterpart_are_not_pairs():
+    assert chart_seam.mirror_pair_path({0}, {0: 0}, set()) == ({0}, False)
+    assert chart_seam.mirror_pair_path({0}, {0: 1}, {1}) == ({0}, False)
+    assert chart_seam.mirror_pair_path({0}, {0: 1}, set()) == ({0, 1}, True)
+
+
+def test_mirror_pair_quality_rejects_when_either_side_worsens():
+    graph = {0: [(1, 0)], 1: [(0, 0)], 2: [(3, 1)], 3: [(2, 1)]}
+    charts = [{0, 1}, {2, 3}]
+    edge_faces = {0: [0, 1], 1: [2, 3]}
+
+    def quality(chart, cuts):
+        if not cuts:
+            return 1.0
+        return .5 if chart <= {0, 1} else 1.2
+
+    _affected, _before, _after, worsened = chart_seam.affected_chart_quality(
+        charts, {0, 1}, edge_faces, set(), quality, graph, 4)
+    assert worsened
+
+
+def test_object_level_sparsity_and_manual_prior_multiplier(monkeypatch):
+    # One cut in a 100-edge garment is 1%, regardless of the current chart size.
+    assert chart_seam.garment_sparsity_penalty(1 / 100) == 0.0
+    test_mesh = mesh()
+    monkeypatch.setattr(chart_seam, "visibility_prior", lambda *_args, **_kwargs: .3)
+    organic = chart_seam.professional_edge_prior(test_mesh, 0, [0, 1], settings())[0]
+    manual = chart_seam.professional_edge_prior(
+        test_mesh, 0, [0, 1], settings(seam_preset="MANUAL"))[0]
+    assert manual == pytest.approx(organic * .25)
