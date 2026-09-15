@@ -131,6 +131,18 @@ def test_actual_gain_must_exceed_new_edge_cost():
     assert candidate_benefit(1.0, 1.0, 1, 0.0) is None
 
 
+def test_professional_prior_weight_tables_and_sparsity_are_monotonic():
+    assert chart_seam.dihedral_prior(60) > chart_seam.dihedral_prior(30) > chart_seam.dihedral_prior(5)
+    penalties = [chart_seam.garment_sparsity_penalty(value) for value in (.01, .03, .05)]
+    assert penalties[0] < penalties[1] < penalties[2]
+
+
+def test_professional_visibility_ordering():
+    assert chart_seam.visibility_prior((1, 0, 0), "-Y") > chart_seam.visibility_prior((0, 1, 0), "-Y")
+    assert chart_seam.visibility_prior((0, 1, 0), "-Y") > chart_seam.visibility_prior((0, -1, 0), "-Y")
+    assert chart_seam.visibility_prior((0, .1, 0), "-Y", True) > chart_seam.visibility_prior((1, 0, 0), "-Y", True)
+
+
 def test_preset_edge_penalties_reduce_benefit_in_declared_order():
     base = .1
     benefit = {

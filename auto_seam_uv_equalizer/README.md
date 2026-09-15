@@ -380,6 +380,19 @@ limit.
 Candidate cuts are accepted only when trial unwrapping produces a measurable
 quality improvement. At most five ranked candidates are tested per chart and
 only the best positive-benefit candidate is accepted before charts are rebuilt.
+**Professional Garment Prior v1** ranks likely candidates using structural
+material boundaries, compressed dihedral bands, existing symmetry mapping, and
+low-visibility regions in object-local space. Organic/Cloth and Cylinder presets
+also apply a soft garment seam-ratio penalty. These priors determine only which
+candidates are trial-unwrapped first: a high prior never overrides measured UV
+quality gain, and a mirror pair is trialled and rejected or accepted as one cut.
+
+**Professional Garment Prior v1（日本語）** は、マテリアル境界、曲率、既存の
+対称マッピング、オブジェクトローカル空間の見えにくい位置を使い、候補を試す
+順序だけを決めます。Organic/Cloth と Cylinder では衣装シーム密度への緩やかな
+ペナルティも適用します。Prior が高くても UV 品質の実測改善がなければ採用せず、
+左右ペアも一組として Temporary Unwrap で評価します。
+
 The preset participates in every candidate decision as a multiplier:
 `effective_edge_penalty = Seam Count Penalty * (1 + Preset Seam Penalty)`.
 Benefit is `before_quality - after_quality - new_edge_count *

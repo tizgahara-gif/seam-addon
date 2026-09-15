@@ -31,6 +31,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             seam_box.prop(settings, "show_seam_advanced", toggle=True)
             if settings.show_seam_advanced:
                 advanced = seam_box.column(align=True)
+                advanced.prop(settings, "use_professional_garment_prior")
+                advanced.prop(settings, "character_front_axis")
                 advanced.prop(settings, "max_chart_distortion")
                 advanced.prop(settings, "seam_count_penalty")
                 advanced.prop(settings, "curvature_bias")

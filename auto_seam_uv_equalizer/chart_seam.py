@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from heapq import heappop, heappush
-from math import acos, log, pi
+from math import acos, degrees, log, pi
 from .seam_path import shortest_path
 
 
@@ -40,11 +40,76 @@ UV_EPSILON = 1.0e-12
 COLLAPSE_WEIGHT = 2.0
 
 
-def candidate_benefit(before, after, new_edge_count, effective_edge_penalty):
+def garment_sparsity_penalty(seam_ratio):
+    """Soft v1 garment prior: free to 2%, gradual to 4%, then steep."""
+    if seam_ratio <= .02:
+        return 0.0
+    if seam_ratio <= .04:
+        return .5 * (seam_ratio - .02) / .02
+    return .5 + (seam_ratio - .04) * 10.0
+
+
+def dihedral_prior(angle_degrees):
+    """Compressed, deliberately bounded Professional Garment Prior odds."""
+    if angle_degrees < 5.0:
+        return 0.0
+    if angle_degrees < 15.0:
+        return .60
+    if angle_degrees < 30.0:
+        return .65
+    if angle_degrees < 60.0:
+        return 1.40
+    return 2.0
+
+
+def candidate_benefit(before, after, new_edge_count, effective_edge_penalty,
+                      sparsity_penalty=0.0):
     """Return measured gain minus the price of newly added seam edges."""
     if after >= before - QUALITY_EPSILON:
         return None
-    return before - after - new_edge_count * effective_edge_penalty
+    return before - after - new_edge_count * effective_edge_penalty - sparsity_penalty
+
+
+def _front_components(co, front_axis):
+    axis = front_axis[-1]
+    sign = 1.0 if front_axis[0] == "+" else -1.0
+    values = tuple(co)
+    x, y = values[:2]
+    front = sign * (x if axis == "X" else y)
+    side = y if axis == "X" else x
+    return front, side
+
+
+def visibility_prior(co, front_axis="-Y", sleeve=False):
+    """Classify an object-local candidate midpoint without a world BBox."""
+    front, side = _front_components(co, front_axis)
+    if sleeve:
+        # Near the bilateral centre is inner; lateral-facing is outer.
+        if abs(side) < abs(front):
+            return .30 if abs(side) <= abs(front) * .5 else .10
+        return .20 if front < 0.0 else 0.0
+    if abs(side) >= abs(front):
+        return .35
+    return .30 if front < 0.0 else 0.0
+
+
+def professional_edge_prior(mesh, edge_index, faces, settings, sleeve=False):
+    """Return ranking-only prior components for one manifold edge."""
+    edge = mesh.edges[edge_index]
+    polygons = [mesh.polygons[index] for index in faces]
+    material = 2.20 if (len(polygons) == 2 and settings.material_boundary and
+                        polygons[0].material_index != polygons[1].material_index) else 0.0
+    angle = degrees(polygons[0].normal.angle(polygons[1].normal)) if len(polygons) == 2 else 0.0
+    dihedral = dihedral_prior(angle)
+    endpoints = [tuple(mesh.vertices[index].co) for index in edge.vertices]
+    midpoint = tuple((a + b) * .5 for a, b in zip(*endpoints))
+    visibility = visibility_prior(midpoint, getattr(settings, "character_front_axis", "-Y"), sleeve)
+    if settings.seam_preset == "HARD_SURFACE":
+        visibility *= .1
+    elif settings.seam_preset == "MANUAL":
+        visibility *= .25
+    existing = 1.50 if (settings.preserve_existing_seams and edge.use_seam) else 0.0
+    return material + dihedral + visibility + existing, (material, dihedral, visibility, existing)
 
 
 @dataclass
@@ -241,7 +306,7 @@ def _edge_distance(graph, sources, limit):
 
 
 def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
-            preferred_paths=()):
+            preferred_paths=(), mirror_edges=None):
     """Build/refine provisional charts and return seams without mutating *mesh*."""
     preset = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"])
     effective_edge_penalty = settings.seam_count_penalty * (1.0 + preset.seam_penalty)
@@ -277,11 +342,15 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
             best_trial = None
             ranked = []
             trial_paths = []
+            professional = getattr(settings, "use_professional_garment_prior", True)
+            sleeve = settings.seam_preset == "CYLINDER" and bool(preferred_paths)
             for path in preferred_paths:
                 path = set(path)
                 if path and path - cuts and all(
                         set(edge_faces.get(index, ())).issubset(chart) for index in path):
-                    trial_paths.append((-1.0, min(path), path))
+                    score = sum(professional_edge_prior(mesh, i, edge_faces.get(i, ()), settings, sleeve)[0]
+                                for i in path) / len(path) if professional else 0.0
+                    trial_paths.append((-score, min(path), path))
             for edge_index, faces in edge_faces.items():
                 if len(faces) != 2 or not set(faces).issubset(chart) or edge_index in cuts or edge_index in protect_set:
                     continue
@@ -289,7 +358,8 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     continue
                 edge = mesh.edges[edge_index]
                 length = (mesh.vertices[edge.vertices[0]].co - mesh.vertices[edge.vertices[1]].co).length
-                ranked.append((costs[edge_index] + length * .01, edge_index))
+                prior = professional_edge_prior(mesh, edge_index, faces, settings, sleeve)[0] if professional else 0.0
+                ranked.append((costs[edge_index] + length * .01 - prior, edge_index))
             before = qualities[min(chart)]
             anchors = {vertex for edge_index in cuts for vertex in mesh.edges[edge_index].vertices}
             anchors.update(vertex for edge_index, faces in edge_faces.items() if len(faces) != 2
@@ -298,13 +368,17 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 edge_index in {index for index, faces in edge_faces.items()
                                if set(faces).issubset(chart)}
                 for _other, edge_index in vertex_graph.get(vertex, ()))}
+            # Professional candidates are tried before the generic closed-chart
+            # geodesic, which fills only spare space in the five-trial budget.
             if not chart_anchors:
                 bootstrap = closed_chart_bootstrap_path(
                     mesh, chart, edge_faces, vertex_graph, costs,
                     settings.seam_search_radius,
                     settings.straightness_bias * preset.straightness)
                 if bootstrap - cuts:
-                    trial_paths.append((-2.0, min(bootstrap), bootstrap))
+                    # Sort after all professional seeds; it enters the five-cut
+                    # budget only when those candidates are insufficient.
+                    trial_paths.append((float("inf"), min(bootstrap), bootstrap))
             for _rank, chosen in sorted(ranked)[:TRIAL_CANDIDATE_LIMIT]:
                 seed = mesh.edges[chosen]
                 path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
@@ -313,7 +387,20 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                                      settings.straightness_bias * preset.straightness)
                 split = {chosen, *path}
                 trial_paths.append((_rank, chosen, split))
+            if professional and mirror_edges is not None:
+                trial_paths = [
+                    (rank - (1.0 if split and all(index in mirror_edges for index in split) else 0.0),
+                     chosen, split)
+                    for rank, chosen, split in trial_paths
+                ]
             for _rank, chosen, split in sorted(trial_paths, key=lambda item: item[:2])[:TRIAL_CANDIDATE_LIMIT]:
+                # Reuse the canonical symmetry backend's unambiguous edge map.
+                # Full mappings become one atomic trial; partial mappings fall
+                # back to the original candidate without forced symmetry.
+                if professional and mirror_edges is not None:
+                    mirrored = {mirror_edges[index] for index in split if index in mirror_edges}
+                    if len(mirrored) == len(split):
+                        split = split | mirrored
                 split.difference_update(protect_set)
                 new_edges = split - cuts
                 if not new_edges:
@@ -322,8 +409,13 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 trial_charts = segment_faces(len(mesh.polygons), graph, trial_cuts)
                 descendants = [part for part in trial_charts if part.issubset(chart)]
                 after = max((evaluator(part, trial_cuts) for part in descendants), default=before)
+                eligible_edges = {index for index, faces in edge_faces.items()
+                                  if len(faces) == 2 and set(faces).issubset(chart)}
+                seam_ratio = len((cuts | new_edges) & eligible_edges) / max(1, len(eligible_edges))
+                sparse = (garment_sparsity_penalty(seam_ratio)
+                          if professional and settings.seam_preset in {"ORGANIC", "CYLINDER"} else 0.0)
                 benefit = candidate_benefit(
-                    before, after, len(new_edges), effective_edge_penalty)
+                    before, after, len(new_edges), effective_edge_penalty, sparse)
                 if benefit is None or benefit <= QUALITY_EPSILON:
                     continue
                 candidate = (benefit, -len(new_edges), new_edges)
