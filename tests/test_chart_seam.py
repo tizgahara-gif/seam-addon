@@ -320,6 +320,26 @@ def test_completed_path_prior_beats_high_seed_low_path(monkeypatch):
     assert consistent > high_seed
 
 
+def test_seed_prefilter_does_not_leak_into_completed_path_rank():
+    costs = {0: .4, 1: .4, 2: .4, 3: .4}
+    # A may win a seed prefilter (3.0 versus 1.5), but only the full-path
+    # priors participate after path construction.
+    candidate_a = chart_seam.completed_path_rank({0, 1}, costs, .5)
+    candidate_b = chart_seam.completed_path_rank({2, 3}, costs, 2.0)
+    assert candidate_b < candidate_a
+
+
+def test_generic_structural_and_ring_candidates_share_final_rank_scale():
+    costs = {index: value for index, value in enumerate((.2, .6, .3, .5, .4, .4))}
+    generic = chart_seam.completed_path_rank({0, 1}, costs, .7)
+    structural = chart_seam.completed_path_rank({2, 3}, costs, .7)
+    ring_column = chart_seam.completed_path_rank({4, 5}, costs, .7)
+    assert generic == pytest.approx(structural)
+    assert structural == pytest.approx(ring_column)
+    assert chart_seam.completed_path_rank({4, 5}, costs, .7, True) == pytest.approx(
+        ring_column - 1.0)
+
+
 def test_material_boundary_closed_loop_is_one_structural_candidate():
     test_mesh = _edge_mesh([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
                            [(0, 1), (1, 2), (2, 3), (3, 0)])
@@ -346,6 +366,36 @@ def test_sleeve_visibility_uses_topology_local_frame():
         test_mesh, {column * 2, column * 2 + 1}, rings, "Y", "+Z")
         for column in range(4)]
     assert scores[0] > scores[3] > scores[2] > scores[1]
+
+
+def test_straight_sleeve_parallel_to_mirror_axis_has_no_outer_fallback():
+    centers = [(2, 0, 0), (3, 0, 0), (4, 0, 0)]
+    coordinates = [(center[0], 0, radial_z)
+                   for center in centers for radial_z in (1, -1)]
+    rings = tuple((index * 2, index * 2 + 1) for index in range(3))
+    edge_vertices = [(rings[index][column], rings[index + 1][column])
+                     for column in range(2) for index in range(2)]
+    test_mesh = _edge_mesh(coordinates, edge_vertices)
+    scores = [chart_seam.topology_sleeve_visibility(
+        test_mesh, {column * 2, column * 2 + 1}, rings, "X", "+X")
+        for column in range(2)]
+    assert scores == [0.0, 0.0]
+
+
+def test_bent_sleeve_inner_beats_outer_and_back_beats_front():
+    centers = [(2, 0, 0), (2, 1, 0), (2, 2, 0)]
+    offsets = [(-1, 0, 0), (1, 0, 0), (0, 0, 1), (0, 0, -1)]
+    coordinates = [tuple(center[axis] + offset[axis] for axis in range(3))
+                   for center in centers for offset in offsets]
+    rings = tuple(tuple(range(index * 4, index * 4 + 4)) for index in range(3))
+    edge_vertices = [(rings[index][column], rings[index + 1][column])
+                     for column in range(4) for index in range(2)]
+    test_mesh = _edge_mesh(coordinates, edge_vertices)
+    scores = [chart_seam.topology_sleeve_visibility(
+        test_mesh, {column * 2, column * 2 + 1}, rings, "X", "+Z")
+        for column in range(4)]
+    assert scores[0] > scores[1]
+    assert scores[3] > scores[2]
 
 
 def test_all_cylinder_columns_reach_professional_ranking(monkeypatch):
@@ -396,3 +446,17 @@ def test_object_level_sparsity_and_manual_prior_multiplier(monkeypatch):
     manual = chart_seam.professional_edge_prior(
         test_mesh, 0, [0, 1], settings(seam_preset="MANUAL"))[0]
     assert manual == pytest.approx(organic * .25)
+
+
+def test_hard_surface_scales_complete_professional_prior():
+    test_mesh = mesh()
+    test_mesh.polygons[1].material_index = 1
+    test_mesh.polygons[1].normal = Normal(math.radians(60))
+    organic = chart_seam.professional_edge_prior(test_mesh, 0, [0, 1], settings())[0]
+    hard_surface = chart_seam.professional_edge_prior(
+        test_mesh, 0, [0, 1], settings(seam_preset="HARD_SURFACE"))[0]
+    assert organic == pytest.approx(2.20 + 2.00 + .35)
+    assert hard_surface == pytest.approx(organic * .25)
+    assert chart_seam.edge_cut_cost(
+        test_mesh, test_mesh.edges[0], [0, 1], False, False,
+        chart_seam.PRESETS["HARD_SURFACE"], settings(seam_preset="HARD_SURFACE")) < .25
