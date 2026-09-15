@@ -58,6 +58,8 @@ def garment_sparsity_penalty(seam_ratio):
 
 def dihedral_prior(angle_degrees):
     """Compressed, deliberately bounded Professional Garment Prior odds."""
+    # Blender supplies radians; tolerate conversion noise at the declared bands.
+    angle_degrees += 1.0e-9
     if angle_degrees < 5.0:
         return 0.0
     if angle_degrees < 15.0:
@@ -180,6 +182,11 @@ def professional_edge_prior(mesh, edge_index, faces, settings, sleeve=False):
     multiplier = PROFESSIONAL_PRESET_MULTIPLIER.get(settings.seam_preset, .25)
     return multiplier * (material + dihedral + visibility + existing), \
         tuple(multiplier * value for value in (material, dihedral, visibility, existing))
+
+
+def professional_prior_multiplier(seam_preset):
+    """Scale the complete prior so presets do not selectively double-count features."""
+    return {"HARD_SURFACE": .25, "MANUAL": .25}.get(seam_preset, 1.0)
 
 
 @dataclass
@@ -424,7 +431,8 @@ def path_professional_prior(mesh, path, edge_faces, settings, visibility_overrid
         # Replace the ordinary object-axis visibility component with the tube-frame score.
         ordinary = [professional_edge_prior(mesh, index, edge_faces.get(index, ()), settings)[1][2]
                     for index in path]
-        values = [value - visibility + visibility_override
+        override = professional_prior_multiplier(settings.seam_preset) * visibility_override
+        values = [value - visibility + override
                   for value, visibility in zip(values, ordinary)]
     return sum(values) / len(values)
 

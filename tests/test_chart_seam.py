@@ -333,6 +333,26 @@ def test_analyze_discards_seed_prior_when_ranking_completed_paths(monkeypatch):
     assert trials[:2] == [frozenset({1}), frozenset({0})]
 
 
+def test_seed_prefilter_does_not_leak_into_completed_path_rank():
+    costs = {0: .4, 1: .4, 2: .4, 3: .4}
+    # A may win a seed prefilter (3.0 versus 1.5), but only the full-path
+    # priors participate after path construction.
+    candidate_a = chart_seam.completed_path_rank({0, 1}, costs, .5)
+    candidate_b = chart_seam.completed_path_rank({2, 3}, costs, 2.0)
+    assert candidate_b < candidate_a
+
+
+def test_generic_structural_and_ring_candidates_share_final_rank_scale():
+    costs = {index: value for index, value in enumerate((.2, .6, .3, .5, .4, .4))}
+    generic = chart_seam.completed_path_rank({0, 1}, costs, .7)
+    structural = chart_seam.completed_path_rank({2, 3}, costs, .7)
+    ring_column = chart_seam.completed_path_rank({4, 5}, costs, .7)
+    assert generic == pytest.approx(structural)
+    assert structural == pytest.approx(ring_column)
+    assert chart_seam.completed_path_rank({4, 5}, costs, .7, True) == pytest.approx(
+        ring_column - 1.0)
+
+
 def test_material_boundary_closed_loop_is_one_structural_candidate():
     test_mesh = _edge_mesh([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
                            [(0, 1), (1, 2), (2, 3), (3, 0)])
