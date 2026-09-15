@@ -361,6 +361,12 @@ re-analyzes whenever geometry, seam/tag/sharp/material state, presets, or
 relevant settings change) and commits every selected object as one
 rollback-safe transaction.
 
+All production actions, including the compatibility **Auto Mark Seams Only**
+and **Auto Seam + Unwrap** operators, use this same temporary Blender Unwrap
+quality evaluator in Chart-Based mode. The curvature proxy remains available
+only to the pure-Python analysis backend and tests; it is not a production
+operator path.
+
 Cut cost accounts for dihedral angle, sharp state, material boundaries,
 existing seams, open/non-manifold boundaries, convexity, and the canonical
 `autoseam_force` / `autoseam_protect` attributes. Force takes precedence if an
@@ -374,8 +380,12 @@ limit.
 Candidate cuts are accepted only when trial unwrapping produces a measurable
 quality improvement. At most five ranked candidates are tested per chart and
 only the best positive-benefit candidate is accepted before charts are rebuilt.
+The preset participates in every candidate decision as a multiplier:
+`effective_edge_penalty = Seam Count Penalty * (1 + Preset Seam Penalty)`.
 Benefit is `before_quality - after_quality - new_edge_count *
-seam_count_penalty` (with a 1.5x Organic / Cloth edge penalty).
+effective_edge_penalty`. Thus the shipped Hard Surface, Organic, Cylinder, and
+Manual presets multiply the user penalty by 1.18, 1.55, 1.42, and 1.80,
+respectively.
 
 Preset behavior:
 

@@ -203,11 +203,6 @@ def apply_chart_seams(obj, result) -> int:
     return max(0, sum(edge.use_seam for edge in mesh.edges) - before)
 
 
-def mark_advanced_seams(obj, settings) -> int:
-    """Compatibility entry point: Chart-Based analysis plus transactional apply."""
-    return apply_chart_seams(obj, analyze_chart_seams(obj, settings))
-
-
 def _longest_bbox_axis(mesh) -> tuple[int, list[float], list[float]] | None:
     if not mesh.vertices:
         return None

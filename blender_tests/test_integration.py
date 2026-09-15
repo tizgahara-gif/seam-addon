@@ -10,6 +10,7 @@ import bmesh
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
+from auto_seam_uv_equalizer import operators
 from auto_seam_uv_equalizer.symmetry import build_symmetry_plan
 from auto_seam_uv_equalizer.weighted_layout import pack_importance_boxes
 
@@ -169,6 +170,59 @@ class IntegrationTests(unittest.TestCase):
             bpy.context.scene.autoseamuv_settings.seam_mode = mode
             self.assertEqual(bpy.ops.autoseamuv.mark_only(), {"FINISHED"})
             self.assertEqual({p.index for p in obj.data.polygons if p.select}, original)
+
+    def test_chart_production_actions_use_temporary_unwrap(self):
+        obj = mesh_object("ChartCube", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
+                                         (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],
+                          [(0,1,2,3),(4,7,6,5),(0,4,5,1),(1,5,6,2),
+                           (2,6,7,3),(4,0,3,7)])
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.seam_mode = "ADVANCED"
+        settings.seam_count_penalty = 0.0
+        for preset in ("ORGANIC", "CYLINDER"):
+            settings.seam_preset = preset
+            self.assertEqual(bpy.ops.autoseamuv.analyze_seams(), {"FINISHED"})
+            self.assertEqual(bpy.ops.autoseamuv.generate_seams(), {"FINISHED"})
+
+        for edge in obj.data.edges:
+            edge.use_seam = False
+        self.assertEqual(bpy.ops.autoseamuv.generate_seams(), {"FINISHED"})
+        generated = {edge.index for edge in obj.data.edges if edge.use_seam}
+        for edge in obj.data.edges:
+            edge.use_seam = False
+        self.assertEqual(bpy.ops.autoseamuv.mark_only(), {"FINISHED"})
+        self.assertEqual({edge.index for edge in obj.data.edges if edge.use_seam}, generated)
+
+        for polygon in obj.data.polygons:
+            polygon.select = polygon.index in {0, 2}
+        bpy.ops.object.mode_set(mode="EDIT")
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_selected_faces(), {"FINISHED"})
+
+    def test_generate_seams_rolls_back_all_objects_on_apply_failure(self):
+        first = mesh_object("RollbackA", [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)])
+        second = mesh_object("RollbackB", [(2,0,0),(3,0,0),(2,1,0)], [(0,1,2)])
+        first.data.edges[0].use_seam = True
+        before = {obj.name: tuple(edge.use_seam for edge in obj.data.edges)
+                  for obj in (first, second)}
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.seam_mode = "ADVANCED"
+        original_apply = operators.apply_chart_seams
+        calls = 0
+
+        def fail_second(obj, result):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("intentional rollback fixture")
+            return original_apply(obj, result)
+
+        operators.apply_chart_seams = fail_second
+        try:
+            self.assertEqual(bpy.ops.autoseamuv.generate_seams(), {"CANCELLED"})
+        finally:
+            operators.apply_chart_seams = original_apply
+        self.assertEqual(before, {obj.name: tuple(edge.use_seam for edge in obj.data.edges)
+                                  for obj in (first, second)})
 
     def test_auto_unwrap_pack_restores_edit_face_selection_and_select_mode(self):
         obj = mesh_object("PackSelection", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
