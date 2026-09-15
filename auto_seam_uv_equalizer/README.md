@@ -12,23 +12,23 @@ Blender 5.1向けに、ZBrush / GoZから来たメッシュのシーム作成、
 
 **Classic** は角度、マテリアル境界、開放境界、非多様体の規則でシームを生成します。**Chart-Based** は Organic / Cloth、Hard Surface、Cylinder / Strip、Manual Assisted のプリセットとUV品質評価を使います。Analyze Seamsは診断のみ、Generate Seamsは適用です。
 
-Selected BoundaryとMirror Seamは常に利用できます。Force、Protect、Clear TagsおよびProfessional Garment PriorはChart-Based専用です。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
+Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Assist — Active Object** はアクティブオブジェクトだけに作用します。Force、Protect、Clear TagsおよびProfessional Garment PriorはChart-Based専用です。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
 
 ### 2. Unwrap
 
-**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで展開します。Ring / StripではSeam、Layout、Spacing、Orientation、Normalizeを設定し、検出と展開を個別に実行できます。
+**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで展開します。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripではSeam、Layout、Spacing、Orientation、Normalizeを設定し、検出と展開を個別に実行できます。
 
 ### 3. Layout
 
 **Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。
 
-**Pack Islands** は別工程で、UV Margin、Rotation、Margin Methodを使用し、選択した各オブジェクトを個別にパックします。複数オブジェクトを一つの0–1共有領域へ置く場合は **Atlas Pack Selected Objects** を使用します。Atlas Packはオブジェクトを結合せず、テクスチャ画像やマテリアルも統合しません。
+**Pack Islands** は別工程で、Pack Margin、Rotation、Margin Methodを使用し、選択した各オブジェクトを個別にパックします。複数オブジェクトを一つの0–1共有領域へ置く場合は **Atlas Pack Selected Objects** を使用します。折りたたみ式Atlas SettingsからUV Source、Texture Size、Pixel Margin、Average Island Scale、Allow Rotationを設定できます。Atlas Packはオブジェクトを結合せず、テクスチャ画像やマテリアルも統合しません。
 
 ### 4. Symmetry
 
-Mesh SymmetryのAxis、3D Mesh Source Side、Scope、Toleranceを共通にしてValidate Symmetryを実行します。Standard UV TransferはOverlapまたはSeparate Mirrored（Island Gap付き）を選択できます。
+**Mesh Symmetry Axis** はProfessional Garment Prior、Mirror Seam、Validate Symmetry、Standard UV Transfer、Exact Texture-Xのジオメトリ対応付けで共通です。Direction / Source Sideは用途別のままです。ScopeがSelected Facesの場合はEdit Modeが必須で、Object Modeでは3つの対称処理ボタンが無効になります。Standard UV TransferはOverlapまたはSeparate Mirrored（Island Gap付き）を選択できます。
 
-Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。
+Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。「Layout settings match Exact Texture-X.」は設定値の一致だけを示し、UVや対称対応の検証成功を保証しません。本当の検証はOperator実行時に行います。
 
 ### 5. Validation
 

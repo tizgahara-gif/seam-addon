@@ -3,7 +3,7 @@
 
 def pack(bpy, settings, margin=None):
     kwargs = {
-        "margin": settings.margin if margin is None else margin,
+        "margin": settings.pack_margin if margin is None else margin,
         "shape_method": settings.pack_shape_method,
         "rotate": settings.pack_rotation != "OFF",
         "margin_method": settings.pack_margin_method,

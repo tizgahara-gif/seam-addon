@@ -23,7 +23,7 @@ def _tag_selected(context,name,value=True):
     return count
 
 class _TagBase(bpy.types.Operator):
-    bl_options={'REGISTER','UNDO'}; attribute=''
+    bl_options={'REGISTER','UNDO'}; attribute=''; bl_description='Applies to the active mesh object.'
     def execute(self,context):
         count=_tag_selected(context,self.attribute)
         self.report({'INFO'}, iface_("Tagged %d edge(s)", count)); return {'FINISHED'} if count else {'CANCELLED'}
@@ -32,7 +32,7 @@ class AUTOSEAMUV_OT_force_seam(_TagBase):
 class AUTOSEAMUV_OT_protect_seam(_TagBase):
     bl_idname='autoseamuv.protect_seam'; bl_label='Protect From Auto Seam'; attribute=PROTECT_SEAM_ATTRIBUTE
 class AUTOSEAMUV_OT_clear_edge_tags(bpy.types.Operator):
-    bl_idname='autoseamuv.clear_edge_tags'; bl_label='Clear Auto Seam Tags'; bl_options={'REGISTER','UNDO'}
+    bl_idname='autoseamuv.clear_edge_tags'; bl_label='Clear Auto Seam Tags'; bl_options={'REGISTER','UNDO'}; bl_description='Applies to the active mesh object.'
     def execute(self,context):
         obj=_active_mesh(context)
         if not obj:return {'CANCELLED'}
@@ -41,11 +41,11 @@ class AUTOSEAMUV_OT_clear_edge_tags(bpy.types.Operator):
             if attr: obj.data.attributes.remove(attr)
         return {'FINISHED'}
 class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
-    bl_idname='autoseamuv.mirror_seams'; bl_label='Mirror Seams'; bl_options={'REGISTER','UNDO'}
+    bl_idname='autoseamuv.mirror_seams'; bl_label='Mirror Seams'; bl_options={'REGISTER','UNDO'}; bl_description='Applies to the active mesh object.'
     def execute(self,context):
         obj=_active_mesh(context); s=context.scene.autoseamuv_settings
         if not obj:return {'CANCELLED'}
-        axis='XYZ'.index(s.mirror_axis); mesh=obj.data
+        axis='XYZ'.index(s.mesh_symmetry_axis); mesh=obj.data
         mapping,skipped=mirror_edge_map([tuple(v.co) for v in mesh.vertices],[tuple(e.vertices) for e in mesh.edges],axis,s.mirror_tolerance)
         changed=0
         for source,target in mapping.items():

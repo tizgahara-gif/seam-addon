@@ -36,9 +36,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         items=(("+X", "+X", ""), ("-X", "-X", ""),
                ("+Y", "+Y", ""), ("-Y", "-Y", "")), default="-Y")
     curvature_bias: FloatProperty(name="Curvature Bias", default=1.0, min=0.0, max=5.0)
+    mesh_symmetry_axis: EnumProperty(name="Mesh Symmetry Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
+    # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
     mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
     mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
+    # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
     symmetry_axis: EnumProperty(name="Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
     symmetry_direction: EnumProperty(name="Source Side", items=(("NEGATIVE_TO_POSITIVE", "Negative to Positive", ""), ("POSITIVE_TO_NEGATIVE", "Positive to Negative", "")), default="NEGATIVE_TO_POSITIVE")
     symmetry_scope: EnumProperty(name="Scope", items=(("SELECTED", "Selected Faces", ""), ("WHOLE", "Whole Mesh", "")), default="SELECTED")
@@ -52,6 +55,15 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default="LEFT_HALF",
     )
 
+    unwrap_margin: FloatProperty(
+        name="Unwrap Margin", description="Island margin used by UV unwrap operations",
+        default=0.015, min=0.0, max=0.2,
+    )
+    pack_margin: FloatProperty(
+        name="Pack Margin", description="Island margin used by Pack Islands",
+        default=0.015, min=0.0, max=0.2,
+    )
+    # Legacy compatibility only. New backend code uses the two margins above.
     margin: FloatProperty(
         name="UV Margin",
         description="Island margin used for unwrap and pack operations",
@@ -250,6 +262,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         description="Allow UV island rotation during atlas packing",
         default=True,
     )
+    show_atlas_settings: BoolProperty(name="Atlas Settings", default=False)
 
     overlap_epsilon: FloatProperty(
         name="Legacy Overlap Epsilon",
@@ -316,3 +329,18 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         ),
         default="ANGLE_BASED",
     )
+
+
+def migrate_legacy_settings(settings):
+    """Copy stored v0.7 values once; untouched defaults remain independent."""
+    keys = set(settings.keys())
+    if "margin" in keys:
+        if "unwrap_margin" not in keys:
+            settings.unwrap_margin = settings.margin
+        if "pack_margin" not in keys:
+            settings.pack_margin = settings.margin
+    if "mesh_symmetry_axis" not in keys:
+        if "symmetry_axis" in keys:
+            settings.mesh_symmetry_axis = settings.symmetry_axis
+        elif "mirror_axis" in keys:
+            settings.mesh_symmetry_axis = settings.mirror_axis

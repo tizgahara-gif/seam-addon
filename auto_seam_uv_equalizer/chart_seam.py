@@ -522,7 +522,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 if path and not path & protect_set and path - cuts and all(
                         set(edge_faces.get(index, ())).issubset(chart) for index in path):
                     visibility = topology_sleeve_visibility(
-                        mesh, path, topology_rings, getattr(settings, "mirror_axis", "X"),
+                        mesh, path, topology_rings, getattr(settings, "mesh_symmetry_axis", "X"),
                         getattr(settings, "character_front_axis", "-Y")) if sleeve else None
                     score = path_professional_prior(
                         mesh, path, edge_faces, settings, visibility) if professional else 0.0
