@@ -10,7 +10,6 @@ from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 from .chart_seam import analyze
 from .symmetry import mirror_edge_map
 from .ring_topology import TopologyError, analyze_ring_topology
-from .ring_uv import choose_seam
 
 
 MIN_MESH_FACE_COUNT = 1
@@ -146,11 +145,14 @@ def analyze_chart_seams(obj, settings, quality_evaluator=None):
     edge_faces = build_edge_to_faces(mesh)
     force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
     protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
-    preferred_paths = ()
+    preferred_paths, topology_rings = (), ()
     if settings.seam_preset == "CYLINDER":
         try:
             grid = analyze_ring_topology(mesh)
-            preferred_paths = (grid.column_edges[choose_seam(mesh, grid, "AUTO")],)
+            # Chart-Based compares every longitudinal column.  The dedicated
+            # Ring / Strip operator retains its single choose_seam() workflow.
+            preferred_paths = tuple(grid.column_edges)
+            topology_rings = tuple(grid.rings)
         except TopologyError:
             pass  # Irregular cylinders deliberately fall back to chart analysis.
     mirror_edges = None
@@ -162,7 +164,7 @@ def analyze_chart_seams(obj, settings, quality_evaluator=None):
             "XYZ".index(getattr(settings, "mirror_axis", "X")),
             getattr(settings, "mirror_tolerance", 0.0001))
     result = analyze(mesh, edge_faces, force, protect, settings, quality_evaluator,
-                     preferred_paths, mirror_edges)
+                     preferred_paths, mirror_edges, topology_rings)
     result.signature = analysis_signature(obj, settings)
     return result
 
