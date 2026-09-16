@@ -20,6 +20,30 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 ### 3. Layout
 
+#### UV保護
+
+日本語UIでは、保護機能の名称を次のように統一しています（括弧内は英語UI名です）。
+
+| 英語UI名 | 日本語UI名 |
+|---|---|
+| UV Protection | UV保護 |
+| Finished | 完成済み |
+| Layout Lock | レイアウト固定 |
+| Pack Selected Into Free Space | 選択UVアイランドを空き領域へ配置 |
+
+**完成済み**
+
+UVアイランドを完成済みとして設定すると、自動シーム、アンラップ、レイアウトなどの自動処理から保護されます。現在のシーム状態とUV座標は維持されます。
+
+**レイアウト固定**
+
+レイアウト固定されたUVアイランドは、Weighted LayoutやShared Weighted Atlas実行時にも現在の位置・回転・スケールを維持します。シーム生成やアンラップは保護しません。
+
+| 機能 | シーム保護 | アンラップ保護 | 位置 | 回転 | スケール |
+|---|---|---|---|---|---|
+| 完成済み | ○ | ○ | ○ | ○ | ○ |
+| レイアウト固定 | × | × | ○ | ○ | ○ |
+
 **Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Paddingを使用します。テクスチャ解像度はWeighted LayoutのUV面積配分には影響しません。ピクセル単位で余白を指定する場合のみ、UV空間への換算に使用します。Paddingの **Relative UV** は解像度非依存のUV空間マージンを直接指定し、**Pixels** は選択したTexture Resolutionでピクセル余白を換算します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
 
 **Allow 90° Island Rotation**（**90°アイランド回転を許可**）を有効にすると、Weighted MaxRects packerは配置効率が向上する場合に個々のUVアイランドを90°回転できます。回転はアイランドの重要度、UV面積配分、相対スケールを変更しません。布目、ヘアフローなどUV方向を維持する必要がある場合は無効にしてください。この設定は既存結果との互換性を保つため既定で無効で、Per-Object Weighted LayoutとShared Weighted Atlasの両方に適用されます。
