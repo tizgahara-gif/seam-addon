@@ -109,6 +109,8 @@ _JA_JP = {
     "Force": "強制",
     "Protect": "保護",
     "Mirror Seam": "シームを対称化",
+    "Mirror Seam State": "シーム状態を対称化",
+    "Copies the seam ON/OFF state from the chosen source side to its mirrored counterpart. Selected edges are the source; selected edges with Seam OFF clear the mirrored seam.": "指定した側のシームON/OFF状態を反対側へコピーします。選択辺方式では、シームOFFの選択辺は反対側のシームを解除します。",
     "2. Unwrap": "2. UV展開",
     "Method": "方式",
     "Detect": "検出",
@@ -308,7 +310,7 @@ _JA_JP = {
     # Runtime report templates. Translate the template before interpolation.
     "Tagged %d edge(s)": "%d本の辺をタグ付けしました",
     "Selected Face Count: %d; Boundary Edge Count: %d; Newly Marked Seam Count: %d; Open Boundary Count: %d; Skipped Non-Manifold Edge Count: %d.": "選択面数: %d、境界辺数: %d、新規シーム設定数: %d、開いた境界数: %d、スキップした非多様体辺数: %d。",
-    "Mirrored %d; skipped %d ambiguous/unmatched edge(s)": "%d本を対称化し、曖昧または不一致の辺%d本をスキップしました",
+    "Synchronized %d seam edge(s); skipped %d ambiguous/unmatched edge(s); skipped %d conflicting selected mirror pair(s).": "%d辺のシーム状態を同期し、曖昧または不一致の辺%d本と、左右で異なるシーム状態を持つ選択ペア%d件をスキップしました。",
     "Seam group not found": "シームグループが見つかりません",
     "Texel density: %.3f %s": "テクセル密度: %.3f %s",
     "No UV meshes selected": "UVを持つメッシュが選択されていません",

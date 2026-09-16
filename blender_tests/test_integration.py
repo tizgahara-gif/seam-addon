@@ -193,8 +193,27 @@ class IntegrationTests(unittest.TestCase):
         bm = bmesh.from_edit_mesh(obj.data); bm.edges.ensure_lookup_table()
         self.assertTrue(bm.edges[target.index].seam)
         self.assertEqual({edge.index for edge in bm.edges if edge.select}, selected)
+
+        # A selected edge with Seam OFF is still an authoritative source.
+        bm.edges[source.index].seam = False
+        bm.edges[target.index].seam = True
+        bmesh.update_edit_mesh(obj.data)
+        self.assertEqual(bpy.ops.autoseamuv.mirror_seams(), {"FINISHED"})
+        bm = bmesh.from_edit_mesh(obj.data); bm.edges.ensure_lookup_table()
+        self.assertFalse(bm.edges[target.index].seam)
+        self.assertEqual({edge.index for edge in bm.edges if edge.select}, selected)
+
+        # Differing states on two selected counterparts are conflict-skipped.
+        bm.edges[source.index].seam = True
+        bm.edges[target.index].seam = False
+        bm.edges[target.index].select = True
+        bmesh.update_edit_mesh(obj.data)
+        self.assertEqual(bpy.ops.autoseamuv.mirror_seams(), {"FINISHED"})
+        bm = bmesh.from_edit_mesh(obj.data); bm.edges.ensure_lookup_table()
+        self.assertTrue(bm.edges[source.index].seam)
+        self.assertFalse(bm.edges[target.index].seam)
         bpy.ops.object.mode_set(mode="OBJECT")
-        self.assertTrue(obj.data.edges[target.index].use_seam)
+        self.assertFalse(obj.data.edges[target.index].use_seam)
 
     def test_uv_quality_edit_mode_replaces_problem_face_selection(self):
         obj = mesh_object("Quality", [(0,0,0),(1,0,0),(1,1,0),(0,1,0),

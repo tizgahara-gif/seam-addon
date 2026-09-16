@@ -109,7 +109,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         boundary.include_open_boundaries = settings.include_open_boundaries
         mirror_action = row.row()
         mirror_action.enabled = not (settings.mirror_direction == "SELECTED" and not edit_mode)
-        mirror_action.operator("autoseamuv.mirror_seams", text="Mirror Seam")
+        mirror_action.operator("autoseamuv.mirror_seams", text="Mirror Seam State")
         mirror = assist.row(align=True)
         mirror.prop(settings, "mesh_symmetry_axis", text="Mesh Symmetry Axis")
         mirror.prop(settings, "mesh_symmetry_tolerance", text="Tolerance")

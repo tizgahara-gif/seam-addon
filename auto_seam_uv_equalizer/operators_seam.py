@@ -6,6 +6,7 @@ from .symmetry import mirror_edge_map
 from .seam_groups import save, apply, delete
 from .translations import iface_
 from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
+from .seam_mirror import seam_state_assignments
 
 def _active_mesh(context):
     obj=context.active_object
@@ -48,7 +49,7 @@ class AUTOSEAMUV_OT_clear_edge_tags(bpy.types.Operator):
             if attr: obj.data.attributes.remove(attr)
         return {'FINISHED'}
 class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
-    bl_idname='autoseamuv.mirror_seams'; bl_label='Mirror Seams'; bl_options={'REGISTER','UNDO'}; bl_description='Applies to the active mesh object.'
+    bl_idname='autoseamuv.mirror_seams'; bl_label='Mirror Seam State'; bl_options={'REGISTER','UNDO'}; bl_description='Copies the seam ON/OFF state from the chosen source side to its mirrored counterpart. Selected edges are the source; selected edges with Seam OFF clear the mirrored seam.'
     def execute(self,context):
         obj=_active_mesh(context); s=context.scene.autoseamuv_settings
         if not obj:return {'CANCELLED'}
@@ -72,20 +73,31 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
             coordinates = [tuple(v.co) for v in vertices]
             edge_vertices = [tuple(e.vertices) for e in edges]
         mapping,skipped=mirror_edge_map(coordinates,edge_vertices,axis,tolerance)
+        source_states = {
+            edge.index: bool(edge.seam if edit_mode else edge.use_seam)
+            for edge in edges
+        }
+        selected = {edge.index for edge in edges if edit_mode and edge.select}
+        midpoints = {}
+        for edge in edges:
+            if edit_mode:
+                midpoints[edge.index] = sum(vertex.co[axis] for vertex in edge.verts) * .5
+            else:
+                midpoints[edge.index] = sum(vertices[index].co[axis] for index in edge.vertices) * .5
+        assignments, conflicts = seam_state_assignments(
+            mapping, source_states, midpoints, s.mirror_direction, tolerance, selected,
+        )
         changed=0
-        for source,target in mapping.items():
-            edge = edges[source]; target_edge = edges[target]
-            mid=(edge.verts[0].co[axis]+edge.verts[1].co[axis])*.5 if edit_mode else (vertices[edge.vertices[0]].co[axis]+vertices[edge.vertices[1]].co[axis])*.5
-            allowed=(s.mirror_direction=='SELECTED' and edge.select) or (s.mirror_direction=='POSITIVE' and mid>tolerance) or (s.mirror_direction=='NEGATIVE' and mid < -tolerance) or abs(mid)<=tolerance
-            source_seam = edge.seam if edit_mode else edge.use_seam
-            target_seam = target_edge.seam if edit_mode else target_edge.use_seam
-            if allowed and source_seam and not target_seam:
-                if edit_mode: target_edge.seam=True
-                else: target_edge.use_seam=True
-                changed+=1
+        for target, source_state in assignments.items():
+            target_edge = edges[target]
+            if source_states[target] == source_state:
+                continue
+            if edit_mode: target_edge.seam=source_state
+            else: target_edge.use_seam=source_state
+            changed+=1
         if edit_mode: bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
         else: mesh.update()
-        self.report({'INFO'}, iface_("Mirrored %d; skipped %d ambiguous/unmatched edge(s)", changed, skipped)); return {'FINISHED'}
+        self.report({'INFO'}, iface_("Synchronized %d seam edge(s); skipped %d ambiguous/unmatched edge(s); skipped %d conflicting selected mirror pair(s).", changed, skipped, conflicts)); return {'FINISHED'}
 class AUTOSEAMUV_OT_seams_from_sharp(bpy.types.Operator):
     bl_idname='autoseamuv.seams_from_sharp'; bl_label='Mark Seams From Sharp'; bl_options={'REGISTER','UNDO'}
     def execute(self,context):
