@@ -30,6 +30,8 @@ _JA_JP = {
     "Atlas Pack preserves existing island scaling unless its options change it.": "アトラスパックはオプションで変更しない限り既存のアイランド縮尺を維持します。",
     "Distortion-Guided Candidates": "歪みガイド候補",
     "Uses distortion from the current temporary unwrap to choose which candidate seam paths to trial first. Final seam acceptance still requires measured UV quality improvement": "現在の一時UV展開の歪みを使って試行する候補シームパスを選びます。最終採用には実測UV品質の改善が必要です",
+    "Follow Clean Edge Loops": "自然なエッジループを追従",
+    "Extends eligible seam candidates along clean topological edge loops to natural endpoints before trialing them. The original shorter candidate is also kept. Final acceptance still requires measured UV quality improvement": "適格なシーム候補が自然なエッジループ上にある場合、自然な終端までループを追従した候補を追加します。元の短い候補も保持され、最終採用は実際のUV品質改善によって決まります",
     "Shared Weighted Atlas requires at least two unique mesh targets.": "共有ウェイトアトラスには2つ以上の固有メッシュ対象が必要です。",
     "Shared Weighted Atlas cannot independently place objects that share the same Mesh datablock. Enable Process Shared Mesh Data Once or make the mesh data single-user.": "同じメッシュデータブロックを共有するオブジェクトは個別配置できません。「共有メッシュデータを1回処理」を有効にするか、メッシュをシングルユーザー化してください。",
     "Shared Weighted Atlas failed: %s": "共有ウェイトアトラスに失敗しました: %s",

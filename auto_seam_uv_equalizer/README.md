@@ -34,6 +34,12 @@ linked objectはProcess Shared Mesh Data Onceが有効ならMesh datablockごと
 
 Chart-BasedのAdvancedにある **Distortion-Guided Candidates** は、current temporary unwrapのface distortionからlocalized hotspotを見つけ、先に試行する候補を最大2枠確保します。quality評価と同じcut-state UV snapshot cacheを共有するため追加unwrapは行いません。歪みguidanceは候補の試行順だけを決め、シームを強制せず、distortion scoreをfinal benefitへ加算しません。最終採用は従来どおりtemporary Blender unwrap後に実測したUV quality improvement、seam cost、sparsity、Protect、Mirror Pair規則で決まります。OFFでは従来のprofessional candidate選択へ戻ります。
 
+#### Follow Clean Edge Loops
+
+Chart-BasedのAdvancedにある **Follow Clean Edge Loops** は、シーム候補全体がcleanなtopological edge loop上にある場合、quad face内のopposite edge continuityを双方向へ追跡し、自然な終端まで完成させた候補も試行します。元の短い候補は保持されます。Loop completionはシームを強制せず、完成候補もtemporary Blender unwrapによる実測UV品質改善と既存のseam cost、sparsity、Protect、Mirror Pair規則を満たす必要があります。
+
+追跡はmesh boundary、existing seam、current chart cut、protected edge、pole、triangle、n-gon、chart boundary、または曖昧なtopologyで停止します。閉じたring loopは安全なtrial candidateとして扱います。袖、円筒状の衣服、脚、pipeなどquad主体のtubular meshで特に有効です。OFFにするとloop completion expansionを行わず、従来のcandidate poolへ戻ります。
+
 Distortion guidance refines anchored charts. Anchorless closed charts still bootstrap using the existing geodesic path.
 
 ### 4. Symmetry

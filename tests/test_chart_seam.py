@@ -62,6 +62,134 @@ def settings(**overrides):
     return SimpleNamespace(**values)
 
 
+def quad_strip(columns=5, closed=False):
+    """Return a strip whose vertical rungs form one opposite-edge loop."""
+    count = columns if closed else columns + 1
+    vertices = [SimpleNamespace(co=Vector(i % count, i // count))
+                for i in range(count * 2)]
+    edge_keys = []
+    for i in range(count):
+        edge_keys.append((i, i + count))
+    for row in range(2):
+        for i in range(columns):
+            edge_keys.append((row * count + i,
+                              row * count + ((i + 1) % count)))
+    edges = [SimpleNamespace(index=i, vertices=key, use_seam=False,
+                             use_edge_sharp=False, is_convex=True)
+             for i, key in enumerate(edge_keys)]
+    polygons = []
+    for i in range(columns):
+        nxt = (i + 1) % count
+        polygons.append(SimpleNamespace(
+            vertices=(i, nxt, nxt + count, i + count),
+            normal=Normal(), material_index=0))
+    test_mesh = SimpleNamespace(vertices=vertices, edges=edges, polygons=polygons)
+    edge_faces = {i: [] for i in range(len(edges))}
+    by_key = {frozenset(edge.vertices): edge.index for edge in edges}
+    for face_index, polygon in enumerate(polygons):
+        for i, vertex in enumerate(polygon.vertices):
+            edge_faces[by_key[frozenset((vertex, polygon.vertices[(i + 1) % 4]))]].append(face_index)
+    return test_mesh, edge_faces
+
+
+def test_quad_opposite_lookup_and_bidirectional_open_trace():
+    test_mesh, edge_faces = quad_strip(5)
+    topology = chart_seam.build_edge_loop_topology(test_mesh, edge_faces)
+    assert chart_seam.quad_opposite_edge(topology, 2, 2) == 3
+    trace = chart_seam.trace_clean_edge_loop(2, set(range(5)), topology)
+    assert set(trace.edges) == set(range(6))
+    assert not trace.closed_loop
+    assert trace.termination_a == chart_seam.LoopTermination.BOUNDARY
+    assert trace.termination_b == chart_seam.LoopTermination.BOUNDARY
+
+
+def test_closed_ring_trace_detects_closure_deterministically():
+    test_mesh, edge_faces = quad_strip(6, closed=True)
+    topology = chart_seam.build_edge_loop_topology(test_mesh, edge_faces)
+    first = chart_seam.trace_clean_edge_loop(2, set(range(6)), topology)
+    second = chart_seam.trace_clean_edge_loop(2, set(range(6)), topology)
+    assert first == second
+    assert first.closed_loop
+    assert set(first.edges) == set(range(6))
+
+
+def test_completion_requires_whole_candidate_on_one_loop_and_preserves_source():
+    test_mesh, edge_faces = quad_strip(5)
+    topology = chart_seam.build_edge_loop_topology(test_mesh, edge_faces)
+    completion = chart_seam.complete_candidate_along_edge_loop(
+        {2, 3}, set(range(5)), topology)
+    assert completion is not None
+    assert completion[0] == set(range(6))
+    original = [(0.0, 2, {2, 3})]
+    expanded, generated, visited = chart_seam.expand_edge_loop_candidates(
+        original, test_mesh, set(range(5)), topology, set(), set(), set(),
+        set(), edge_faces, {i: 1.0 for i in edge_faces}, settings(), False)
+    assert {frozenset(item[2]) for item in expanded} == {
+        frozenset({2, 3}), frozenset(range(6))}
+    assert generated == 1 and visited == 6
+    # A turn onto a horizontal edge is not a single opposite-edge loop.
+    assert chart_seam.complete_candidate_along_edge_loop(
+        {2, 3, 8}, set(range(5)), topology) is None
+
+
+def test_trace_stops_before_protect_and_at_existing_or_current_cut():
+    test_mesh, edge_faces = quad_strip(5)
+    topology = chart_seam.build_edge_loop_topology(test_mesh, edge_faces)
+    protected = chart_seam.trace_clean_edge_loop(
+        2, set(range(5)), topology, protected={4})
+    assert 4 not in protected.edges
+    assert chart_seam.LoopTermination.PROTECTED in {
+        protected.termination_a, protected.termination_b}
+    existing = chart_seam.trace_clean_edge_loop(
+        2, set(range(5)), topology, existing={4})
+    assert 4 in existing.edges
+    assert chart_seam.LoopTermination.EXISTING_SEAM in {
+        existing.termination_a, existing.termination_b}
+    cut = chart_seam.trace_clean_edge_loop(2, set(range(5)), topology, cuts={0})
+    assert 0 in cut.edges
+    assert chart_seam.LoopTermination.CURRENT_CUT in {
+        cut.termination_a, cut.termination_b}
+
+
+def test_trace_stops_at_chart_boundary_and_reports_local_work():
+    test_mesh, edge_faces = quad_strip(20)
+    topology = chart_seam.build_edge_loop_topology(test_mesh, edge_faces)
+    trace = chart_seam.trace_clean_edge_loop(5, {4, 5, 6}, topology)
+    assert set(trace.edges) == {5, 6}
+    assert chart_seam.LoopTermination.CHART_BOUNDARY in {
+        trace.termination_a, trace.termination_b}
+    assert trace.visited_edge_count <= len(trace.edges)
+
+
+def test_triangle_and_ngon_are_explicit_natural_terminations():
+    for size, expected in ((3, chart_seam.LoopTermination.TRIANGLE),
+                           (5, chart_seam.LoopTermination.NGON)):
+        vertices = [SimpleNamespace(co=Vector(i)) for i in range(size)]
+        edges = [SimpleNamespace(index=i, vertices=(i, (i + 1) % size),
+                                 use_seam=False, use_edge_sharp=False, is_convex=True)
+                 for i in range(size)]
+        polygon = SimpleNamespace(vertices=tuple(range(size)), normal=Normal(), material_index=0)
+        test_mesh = SimpleNamespace(vertices=vertices, edges=edges, polygons=[polygon])
+        topology = chart_seam.build_edge_loop_topology(
+            test_mesh, {i: [0] for i in range(size)})
+        trace = chart_seam.trace_clean_edge_loop(0, {0}, topology)
+        assert trace.termination_a == expected
+        assert chart_seam.is_natural_seam_endpoint(expected)
+
+
+def test_feature_off_keeps_analyze_candidate_pool_unexpanded(monkeypatch):
+    test_mesh, edge_faces = quad_strip(2)
+    calls = []
+    monkeypatch.setattr(chart_seam, "expand_edge_loop_candidates",
+                        lambda *args, **kwargs: calls.append(args) or (args[0], 0, 0))
+    chart_seam.analyze(
+        test_mesh, edge_faces, [False] * len(test_mesh.edges),
+        [False] * len(test_mesh.edges),
+        settings(use_edge_loop_completion=False, chart_refinement_iterations=1),
+        lambda _chart, _cuts: 1.0)
+    assert calls == []
+
+
 def test_face_graph_and_segmentation_use_shared_edges():
     graph = face_adjacency(mesh(), {0: [0, 1]})
     assert graph[0] == [(1, 0)]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from enum import Enum
 from heapq import heappop, heappush
 from math import acos, degrees, log, pi, sqrt
 from .seam_path import shortest_path
@@ -47,6 +48,200 @@ PROFESSIONAL_PRESET_MULTIPLIER = {
     "HARD_SURFACE": .25,
     "MANUAL": .25,
 }
+MAX_LOOP_COMPLETION_EDGES = 128
+MAX_LOOP_COMPLETION_MULTIPLIER = 6.0
+LOOP_COMPLETION_RANK_BONUS = {
+    "ORGANIC": 1.0,
+    "CYLINDER": 1.2,
+    "HARD_SURFACE": .25,
+    "MANUAL": .25,
+}
+
+
+class LoopTermination(str, Enum):
+    BOUNDARY = "BOUNDARY"
+    EXISTING_SEAM = "EXISTING_SEAM"
+    CURRENT_CUT = "CURRENT_CUT"
+    PROTECTED = "PROTECTED"
+    POLE = "POLE"
+    TRIANGLE = "TRIANGLE"
+    NGON = "NGON"
+    CLOSED = "CLOSED"
+    CHART_BOUNDARY = "CHART_BOUNDARY"
+    AMBIGUOUS = "AMBIGUOUS"
+    VISITED = "VISITED"
+    LIMIT = "LIMIT"
+
+
+@dataclass(frozen=True)
+class EdgeLoopTopology:
+    """Precomputed O(F+E) topology used by all completion candidates."""
+    face_edges: dict[int, tuple[int, ...]]
+    edge_faces: dict[int, tuple[int, ...]]
+    edge_vertices: dict[int, tuple[int, int]]
+    vertex_edges: dict[int, tuple[int, ...]]
+    quad_opposite_lookup: dict[tuple[int, int], int]
+
+
+@dataclass(frozen=True)
+class EdgeLoopTrace:
+    edges: tuple[int, ...]
+    closed_loop: bool
+    termination_a: LoopTermination
+    termination_b: LoopTermination
+    visited_edge_count: int
+
+
+def build_edge_loop_topology(mesh, edge_faces):
+    """Build ordered face-edge and quad-opposite lookup tables once per analysis."""
+    edge_vertices = {edge.index: tuple(edge.vertices) for edge in mesh.edges}
+    by_key = {frozenset(vertices): index for index, vertices in edge_vertices.items()}
+    face_edges, opposite = {}, {}
+    for face_index, polygon in enumerate(mesh.polygons):
+        vertices = tuple(getattr(polygon, "vertices", ()))
+        ordered = tuple(by_key.get(frozenset((vertices[i], vertices[(i + 1) % len(vertices)])))
+                        for i in range(len(vertices))) if vertices else ()
+        if ordered and all(index is not None for index in ordered):
+            face_edges[face_index] = ordered
+            if len(ordered) == 4:
+                for offset, edge_index in enumerate(ordered):
+                    opposite[(face_index, edge_index)] = ordered[(offset + 2) % 4]
+        else:
+            # Polygon edge order is mandatory: unordered adjacency must never be
+            # mistaken for opposite-edge continuity.
+            face_edges[face_index] = ()
+    vertex_edges = defaultdict(list)
+    for edge_index, vertices in edge_vertices.items():
+        for vertex in vertices:
+            vertex_edges[vertex].append(edge_index)
+    return EdgeLoopTopology(
+        face_edges,
+        {index: tuple(faces) for index, faces in edge_faces.items()},
+        edge_vertices,
+        {vertex: tuple(indices) for vertex, indices in vertex_edges.items()},
+        opposite,
+    )
+
+
+def quad_opposite_edge(topology, face_index, edge_index):
+    """Return the topologically opposite edge in a quad, otherwise ``None``."""
+    return topology.quad_opposite_lookup.get((face_index, edge_index))
+
+
+def _trace_edge_loop_direction(topology, start_edge, start_face, chart, cuts,
+                               existing, protected, visited, limit):
+    result, current_edge, current_face = [], start_edge, start_face
+    while len(visited) < limit:
+        face_edges = topology.face_edges.get(current_face, ())
+        if len(face_edges) == 3:
+            return result, LoopTermination.TRIANGLE
+        if len(face_edges) > 4:
+            return result, LoopTermination.NGON
+        if len(face_edges) != 4:
+            return result, LoopTermination.BOUNDARY
+        next_edge = quad_opposite_edge(topology, current_face, current_edge)
+        if next_edge is None:
+            return result, LoopTermination.AMBIGUOUS
+        if next_edge == start_edge:
+            return result, LoopTermination.CLOSED
+        if next_edge in protected:
+            return result, LoopTermination.PROTECTED
+        if next_edge in existing:
+            result.append(next_edge)
+            return result, LoopTermination.EXISTING_SEAM
+        if next_edge in cuts:
+            result.append(next_edge)
+            return result, LoopTermination.CURRENT_CUT
+        if next_edge in visited:
+            return result, LoopTermination.VISITED
+        faces = topology.edge_faces.get(next_edge, ())
+        if len(faces) < 2:
+            result.append(next_edge)
+            visited.add(next_edge)
+            return result, LoopTermination.BOUNDARY
+        if len(faces) > 2:
+            return result, LoopTermination.AMBIGUOUS
+        neighbours = [face for face in faces if face != current_face]
+        if len(neighbours) != 1:
+            return result, LoopTermination.POLE
+        next_face = neighbours[0]
+        if next_face not in chart:
+            return result, LoopTermination.CHART_BOUNDARY
+        result.append(next_edge)
+        visited.add(next_edge)
+        current_edge, current_face = next_edge, next_face
+    return result, LoopTermination.LIMIT
+
+
+def trace_clean_edge_loop(start_edge, chart, topology, cuts=(), existing=(),
+                          protected=(), limit=MAX_LOOP_COMPLETION_EDGES):
+    """Trace a seed in both quad-opposite directions in O(visited edges)."""
+    chart, cuts = set(chart), set(cuts)
+    existing, protected = set(existing), set(protected)
+    faces = tuple(face for face in topology.edge_faces.get(start_edge, ()) if face in chart)
+    if not faces:
+        return EdgeLoopTrace((start_edge,), False, LoopTermination.CHART_BOUNDARY,
+                             LoopTermination.CHART_BOUNDARY, 1)
+    if len(faces) > 2:
+        return EdgeLoopTrace((start_edge,), False, LoopTermination.AMBIGUOUS,
+                             LoopTermination.AMBIGUOUS, 1)
+    visited = {start_edge}
+    left, termination_a = _trace_edge_loop_direction(
+        topology, start_edge, faces[0], chart, cuts, existing, protected, visited, limit)
+    if termination_a == LoopTermination.CLOSED:
+        return EdgeLoopTrace(tuple([start_edge, *left]), True, termination_a,
+                             termination_a, len(visited))
+    if len(faces) == 1:
+        right, termination_b = [], LoopTermination.BOUNDARY
+    else:
+        right, termination_b = _trace_edge_loop_direction(
+            topology, start_edge, faces[1], chart, cuts, existing, protected, visited, limit)
+    return EdgeLoopTrace(tuple([*reversed(left), start_edge, *right]), False,
+                         termination_a, termination_b, len(visited))
+
+
+def candidate_follows_single_edge_loop(path_edges, trace):
+    """Require complete coverage by one deterministic clean-loop trace."""
+    candidate = set(path_edges)
+    return bool(candidate) and candidate.issubset(trace.edges)
+
+
+def complete_candidate_along_edge_loop(path_edges, chart, topology, cuts=(),
+                                       existing=(), protected=()):
+    """Return an expanded clean-loop trace, retaining the caller's original path."""
+    candidate = set(path_edges)
+    if not candidate or candidate & set(protected):
+        return None
+    traces = [trace_clean_edge_loop(seed, chart, topology, cuts, existing, protected)
+              for seed in sorted(candidate)]
+    trace = next((item for item in traces
+                  if candidate_follows_single_edge_loop(candidate, item)), None)
+    if trace is None:
+        return None
+    completed = set(trace.edges)
+    if completed == candidate or len(completed) > MAX_LOOP_COMPLETION_EDGES:
+        return None
+    if not trace.closed_loop and len(completed) > len(candidate) * MAX_LOOP_COMPLETION_MULTIPLIER:
+        return None
+    return completed, trace
+
+
+def is_natural_seam_endpoint(termination):
+    """Classify trace stops; ambiguity/limits remain unnatural dangling ends."""
+    return termination in {
+        LoopTermination.BOUNDARY, LoopTermination.EXISTING_SEAM,
+        LoopTermination.CURRENT_CUT, LoopTermination.PROTECTED,
+        LoopTermination.POLE, LoopTermination.TRIANGLE, LoopTermination.NGON,
+        LoopTermination.CLOSED, LoopTermination.CHART_BOUNDARY,
+    }
+
+
+def dangling_endpoint_count(trace):
+    """Count regular quad-flow ends that stopped without a natural termination."""
+    if trace.closed_loop:
+        return 0
+    return sum(not is_natural_seam_endpoint(item)
+               for item in (trace.termination_a, trace.termination_b))
 
 
 def garment_sparsity_penalty(seam_ratio):
@@ -569,6 +764,34 @@ def completed_path_rank(path, costs, professional_prior, force_priority=False):
     return rank - (1.0 if force_priority else 0.0)
 
 
+def expand_edge_loop_candidates(paths, mesh, chart, topology, cuts, existing,
+                                protect_set, force_set, edge_faces, costs, settings,
+                                professional):
+    """Append ranked completions without replacing or mutating source candidates."""
+    expanded = list(paths)
+    seen = {frozenset(item[2]) for item in paths}
+    generated = visited = 0
+    for _rank, chosen, path in tuple(paths):
+        completion = complete_candidate_along_edge_loop(
+            path, chart, topology, cuts, existing, protect_set)
+        if completion is None:
+            continue
+        completed, _trace = completion
+        visited += _trace.visited_edge_count
+        key = frozenset(completed)
+        if key in seen:
+            continue
+        prior = path_professional_prior(mesh, completed, edge_faces, settings) if professional else 0.0
+        rank = completed_path_rank(completed, costs, prior, bool(completed & force_set))
+        # Ranking-only: actual benefit and sparsity remain untouched below.
+        rank -= (LOOP_COMPLETION_RANK_BONUS.get(settings.seam_preset, .25)
+                 if professional else .25)
+        expanded.append((rank, chosen, completed))
+        seen.add(key)
+        generated += 1
+    return expanded, generated, visited
+
+
 def mirror_pair_path(path, mirror_edges, protect_set):
     """Return an atomic pair, or the original path for self/partial/protected maps."""
     original = set(path)
@@ -606,6 +829,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
     preset = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"])
     effective_edge_penalty = settings.seam_count_penalty * (1.0 + preset.seam_penalty)
     graph = face_adjacency(mesh, edge_faces)
+    loop_topology = build_edge_loop_topology(mesh, edge_faces)
     face_edges = defaultdict(set)
     for edge_index, faces in edge_faces.items():
         for face_index in faces:
@@ -623,6 +847,8 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
         "distortion_candidates_trialed": 0,
         "standard_candidates_trialed": 0,
         "unique_cut_states_unwrapped": 0,
+        "loop_completion_candidates": 0,
+        "loop_trace_visited_edges": 0,
     }
     vertex_graph = defaultdict(list)
     for edge in mesh.edges:
@@ -762,6 +988,18 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 path_prior = path_professional_prior(mesh, split, edge_faces, settings) if professional else 0.0
                 professional_paths.append((
                     completed_path_rank(split, costs, path_prior), chosen, split))
+
+            if getattr(settings, "use_edge_loop_completion", True):
+                professional_paths, count, visited = expand_edge_loop_candidates(
+                    professional_paths, mesh, chart, loop_topology, cuts, existing,
+                    protect_set, force_set, edge_faces, costs, settings, professional)
+                metrics["loop_completion_candidates"] += count
+                metrics["loop_trace_visited_edges"] += visited
+                distortion_paths, count, visited = expand_edge_loop_candidates(
+                    distortion_paths, mesh, chart, loop_topology, cuts, existing,
+                    protect_set, force_set, edge_faces, costs, settings, professional)
+                metrics["loop_completion_candidates"] += count
+                metrics["loop_trace_visited_edges"] += visited
 
             if professional and mirror_edges is not None:
                 professional_paths = [
