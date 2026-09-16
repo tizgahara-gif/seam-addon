@@ -375,9 +375,9 @@ def apply_weighted_plan(pending):
 
 def weighted_layout_object(obj, density_influence, scale_mode, padding_uv,
                            scope="SELECTED_FACES", target_region="FULL",
-                           allow_rotation=False) -> LayoutReport:
+                           allow_rotation=False, selected_face_indices=None) -> LayoutReport:
     """Lay out one object's active-map islands (the backward-compatible wrapper)."""
-    islands = collect_weighted_islands(obj, scope)
+    islands = collect_weighted_islands(obj, scope, selected_face_indices)
     validate_protection_consistency(obj)
     movable, fixed = [], []
     for island in islands:

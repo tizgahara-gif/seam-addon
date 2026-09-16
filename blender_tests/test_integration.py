@@ -604,6 +604,65 @@ class IntegrationTests(unittest.TestCase):
         bpy.ops.object.mode_set(mode="EDIT")
         self.assertEqual(bpy.ops.autoseamuv.unwrap_selected_faces(), {"FINISHED"})
 
+    def test_follow_clean_edge_loops_change_reanalyzes_cached_chart(self):
+        mesh_object("CacheCube", [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
+                                   (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],
+                    [(0,1,2,3),(4,7,6,5),(0,4,5,1),(1,5,6,2),
+                     (2,6,7,3),(4,0,3,7)])
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.seam_mode = "ADVANCED"
+        original = operators._analyze_with_temporary_unwrap
+        for initial in (False, True):
+            with self.subTest(initial=initial):
+                operators._CHART_ANALYSIS_CACHE.clear()
+                calls = []
+
+                def tracked(obj, current_settings):
+                    calls.append(current_settings.use_edge_loop_completion)
+                    return original(obj, current_settings)
+
+                operators._analyze_with_temporary_unwrap = tracked
+                try:
+                    settings.use_edge_loop_completion = initial
+                    self.assertEqual(bpy.ops.autoseamuv.analyze_seams(), {"FINISHED"})
+                    settings.use_edge_loop_completion = not initial
+                    self.assertEqual(bpy.ops.autoseamuv.generate_seams(), {"FINISHED"})
+                finally:
+                    operators._analyze_with_temporary_unwrap = original
+                self.assertEqual(calls, [initial, not initial])
+
+    def test_chart_analyze_and_generate_process_linked_mesh_once(self):
+        first = mesh_object("LinkedA", [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)])
+        second = bpy.data.objects.new("LinkedB", first.data)
+        bpy.context.collection.objects.link(second)
+        second.select_set(True)
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.seam_mode = "ADVANCED"
+        settings.process_shared_mesh_once = True
+        original_analyze = operators._analyze_with_temporary_unwrap
+        original_apply = operators.apply_chart_seams
+        analyzed, applied = [], []
+
+        def tracked_analyze(obj, current_settings):
+            analyzed.append(obj.name)
+            return original_analyze(obj, current_settings)
+
+        def tracked_apply(obj, result):
+            applied.append(obj.name)
+            return original_apply(obj, result)
+
+        operators._CHART_ANALYSIS_CACHE.clear()
+        operators._analyze_with_temporary_unwrap = tracked_analyze
+        operators.apply_chart_seams = tracked_apply
+        try:
+            self.assertEqual(bpy.ops.autoseamuv.analyze_seams(), {"FINISHED"})
+            self.assertEqual(bpy.ops.autoseamuv.generate_seams(), {"FINISHED"})
+        finally:
+            operators._analyze_with_temporary_unwrap = original_analyze
+            operators.apply_chart_seams = original_apply
+        self.assertEqual(len(analyzed), 1)
+        self.assertEqual(len(applied), 1)
+
     def test_generate_seams_rolls_back_all_objects_on_apply_failure(self):
         first = mesh_object("RollbackA", [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)])
         second = mesh_object("RollbackB", [(2,0,0),(3,0,0),(2,1,0)], [(0,1,2)])

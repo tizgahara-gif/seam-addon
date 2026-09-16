@@ -140,7 +140,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
     show_ring_strip: BoolProperty(name="Ring / Strip", default=False)
-    show_unwrap_advanced: BoolProperty(name="Post-Unwrap", default=False)
+    show_unwrap_advanced: BoolProperty(name="Unwrap Advanced", default=False)
     show_pack_advanced: BoolProperty(name="Pack Advanced", default=False)
     ring_layout: EnumProperty(
         name="Layout",
