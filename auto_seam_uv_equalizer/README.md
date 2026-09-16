@@ -1,4 +1,4 @@
-# Auto Seam UV Equalizer v0.7.x
+# Auto Seam UV Equalizer v0.8.x
 
 Blender 5.1向けに、ZBrush / GoZから来たメッシュのシーム作成、UV展開、配置、対称転送、検証を段階的に行うアドオンです。新しいサイドバーは複合的な Quick Actions ではなく、現在の工程と作用範囲が分かる5つのセクションで構成されています。
 
@@ -22,7 +22,17 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 **Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
 
+#### Shared Weighted Atlas
+
+**Per-Object Weighted Layout** は各オブジェクトがTarget Regionを個別に使用します。**Shared Weighted Atlas** は選択された全オブジェクトのアイランドを一つのpoolに集め、global median polygon densityでimportanceを計算し、既存の回転なしWeighted MaxRectsで一つの共有アトラスへ配置します。対して **Atlas Pack** は現在のアイランド縮尺を基本として一つのアトラスへパックします。Shared Weighted AtlasはUV面積をグローバルに再配分し、Atlas PackやAverage Islands Scaleを自動実行しません。FULL / LEFT_HALF / RIGHT_HALFとSelected UV Islandsをサポートします。
+
+linked objectはProcess Shared Mesh Data Onceが有効ならMesh datablockごとに決定的な代表を一つ処理します。無効な状態で同じMesh datablockが複数対象に含まれる場合は、独立したUV配置が不可能なため処理を中止します。全対象を検証してpending UVを生成してから一括commitし、失敗時は全対象の元UVへrollbackします。
+
 **Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認できます。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックします。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Process Shared Mesh Data Onceはパネル上部の共通Processing設定です。有効ならlinked duplicateは各工程を通して固有Mesh datablockごとに1回だけ処理され、複数選択時はUIに選択数と固有数を表示します。AtlasのAverage Island ScaleはWeightedのAllocate by Importanceが作った相対スケールを上書きする可能性があるため、該当する現在設定の組合せでは警告します（実行は禁止しません）。
+
+#### Distortion-Guided Seam Candidates
+
+Chart-BasedのAdvancedにある **Distortion-Guided Candidates** は、current temporary unwrapのface distortionからlocalized hotspotを見つけ、先に試行する候補を最大2枠確保します。quality評価と同じcut-state UV snapshot cacheを共有するため追加unwrapは行いません。歪みguidanceは候補の試行順だけを決め、シームを強制せず、distortion scoreをfinal benefitへ加算しません。最終採用は従来どおりtemporary Blender unwrap後に実測したUV quality improvement、seam cost、sparsity、Protect、Mirror Pair規則で決まります。OFFでは従来のprofessional candidate選択へ戻ります。
 
 ### 4. Symmetry
 

@@ -170,112 +170,159 @@ def _world_polygon_area(obj, polygon):
                for index in range(1, len(points) - 1))
 
 
-def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
-                           padding_pixels, scope="SELECTED_FACES", target_region="FULL") -> LayoutReport:
-    """Lay out active-map islands using world surface area and polygon density."""
+def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=None):
+    """Collect complete UV islands without changing mesh or UV state."""
     mesh = obj.data
     uv_layer = mesh.uv_layers.active
     if uv_layer is None:
         raise RuntimeError("Weighted Island Layout requires an active UV map.")
     _, _, loop_to_face, _ = build_mesh_topology(mesh)
-    selected = {polygon.index for polygon in mesh.polygons if polygon.select}
-    raw_islands = find_uv_islands(obj)
-    islands = []
-    for loops in raw_islands:
+    selected = (set(selected_face_indices) if selected_face_indices is not None else
+                {polygon.index for polygon in mesh.polygons if polygon.select})
+    result = []
+    for loops in find_uv_islands(obj):
         faces = tuple(sorted({loop_to_face[index] for index in loops}))
-        if scope == "SELECTED_FACES":
-            # Keep the legacy enum identifier for .blend compatibility, but use
-            # mesh selection only as a seed: layout always moves a whole island.
-            if not selected.intersection(faces):
-                continue
+        if scope == "SELECTED_FACES" and not selected.intersection(faces):
+            continue
         if not faces:
             continue
         area = sum(_world_polygon_area(obj, mesh.polygons[index]) for index in faces)
         if not math.isfinite(area) or area <= EPSILON:
             continue
-        islands.append(IslandLayout(faces, tuple(sorted(loops)), area, len(faces), len(faces) / area))
-    if not islands:
-        raise RuntimeError("no non-zero-area UV islands are in the processing scope")
-
-    densities, normalized, weights = calculate_weights(
-        [island.surface_area for island in islands], [island.face_count for island in islands], density_influence)
-    bounds_by_island = []
-    for island in islands:
+        island = IslandLayout(faces, tuple(sorted(loops)), area, len(faces), len(faces) / area)
+        # Runtime-only ownership keeps the public data class and pure helpers simple.
+        island.object = obj
+        island.mesh = mesh
+        island.uv_layer = uv_layer
         coords = [uv_layer.uv[index].vector for index in island.loop_indices]
+        if not coords or any(not math.isfinite(value) for point in coords for value in (point.x, point.y)):
+            raise RuntimeError("a UV island has invalid coordinates")
         bounds = (min(p.x for p in coords), min(p.y for p in coords),
                   max(p.x for p in coords), max(p.y for p in coords))
         width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
         if width <= EPSILON or height <= EPSILON:
             raise RuntimeError("a UV island has zero width or height")
         island.uv_aspect = width / height
-        island.uv_area = _polygon_uv_area(mesh, uv_layer, island.face_indices)
+        island.uv_area = _polygon_uv_area(mesh, uv_layer, faces)
         if not math.isfinite(island.uv_area) or island.uv_area <= EPSILON:
             raise RuntimeError("a UV island has zero or invalid UV area")
-        bounds_by_island.append(bounds)
+        island.source_bounds = bounds
+        result.append(island)
+    return result
+
+
+def plan_weighted_layout(islands, density_influence, scale_mode, texture_size,
+                         padding_pixels, target_region="FULL"):
+    """Build and validate a complete pending weighted layout without UV writes."""
+    if not islands:
+        raise RuntimeError("no non-zero-area UV islands are in the processing scope")
+    densities, normalized, weights = calculate_weights(
+        [item.surface_area for item in islands], [item.face_count for item in islands],
+        density_influence)
     root = target_rectangle(target_region)
     padding = max(0.0, float(padding_pixels)) / max(1, int(texture_size))
-    # A non-rectangular island may fill only part of its BBox.  Compensating by
-    # BBox/polygon fill here makes the *polygon* UV areas (not merely BBoxes)
-    # proportional to importance after a common scale is applied.
-    bbox_areas = [(bounds[2] - bounds[0]) * (bounds[3] - bounds[1])
-                  for bounds in bounds_by_island]
-    packing_weights = ([weight * bbox_area / island.uv_area
-                        for weight, bbox_area, island in zip(weights, bbox_areas, islands)]
+    bbox_areas = [(item.source_bounds[2] - item.source_bounds[0]) *
+                  (item.source_bounds[3] - item.source_bounds[1]) for item in islands]
+    packing_weights = ([weight * bbox_area / item.uv_area
+                        for weight, bbox_area, item in zip(weights, bbox_areas, islands)]
                        if scale_mode == "ALLOCATE_BY_IMPORTANCE" else bbox_areas)
-    rectangles, _packed_global_scale = pack_importance_boxes(
-        packing_weights, [island.uv_aspect for island in islands], root, padding)
-    for island, density, norm, weight, rectangle in zip(islands, densities, normalized, weights, rectangles):
-        island.polygon_density = density; island.normalized_density = norm
-        island.weight = weight; island.packed_rect = rectangle
+    rectangles, _ = pack_importance_boxes(
+        packing_weights, [item.uv_aspect for item in islands], root, padding)
+    for item, density, norm, weight, rectangle in zip(
+            islands, densities, normalized, weights, rectangles):
+        item.polygon_density, item.normalized_density = density, norm
+        item.weight, item.packed_rect = weight, rectangle
 
-    prepared = []
-    global_scale = 1.0
-    for island, bounds in zip(islands, bounds_by_island):
-        x0, y0, x1, y1 = island.packed_rect
-        usable = (x0, y0, x1, y1)
-        width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
-        fit = min((usable[2] - usable[0]) / width, (usable[3] - usable[1]) / height)
-        if scale_mode == "PRESERVE_TEXEL_DENSITY":
-            global_scale = min(global_scale, fit)
-        prepared.append((island, usable, bounds, fit))
-
-    globally_scaled = scale_mode == "PRESERVE_TEXEL_DENSITY" and global_scale < 1.0
-    packed_scales_by_island = None
-    if scale_mode == "ALLOCATE_BY_IMPORTANCE":
-        # The largest common constant that lets every final polygon area equal
-        # ``constant * weight`` while exactly matching its packed BBox.
-        # Every packed body box is its source BBox times one uniform island
-        # scale; all ideal boxes received the same global packing scale.
-        packed_scales_by_island = [
-            (item[1][2] - item[1][0]) / (item[2][2] - item[2][0]) for item in prepared]
+    fits = []
+    for item in islands:
+        bounds = item.source_bounds; rect = item.packed_rect
+        fits.append(min((rect[2] - rect[0]) / (bounds[2] - bounds[0]),
+                        (rect[3] - rect[1]) / (bounds[3] - bounds[1])))
+    global_scale = min([1.0, *fits]) if scale_mode == "PRESERVE_TEXEL_DENSITY" else None
     actual_areas = []
-    for prepared_index, (island, usable, bounds, fit) in enumerate(prepared):
-        scale = (packed_scales_by_island[prepared_index]
-                 if packed_scales_by_island is not None else min(1.0, global_scale))
-        source_center = ((bounds[0] + bounds[2]) * 0.5, (bounds[1] + bounds[3]) * 0.5)
-        target_center = ((usable[0] + usable[2]) * 0.5, (usable[1] + usable[3]) * 0.5)
-        pending = []
-        for index in island.loop_indices:
-            uv = uv_layer.uv[index].vector
-            pending.append((index, target_center[0] + (uv.x - source_center[0]) * scale,
-                            target_center[1] + (uv.y - source_center[1]) * scale))
-        prepared[prepared_index] = (*prepared[prepared_index], pending)
-        actual_areas.append(island.uv_area * scale * scale)
-    epsilon = 1.0e-9
-    for item in prepared:
-        for _, u, v in item[4]:
-            if not (root[0] - epsilon <= u <= root[2] + epsilon
-                    and root[1] - epsilon <= v <= root[3] + epsilon):
+    pending = []
+    for index, item in enumerate(islands):
+        bounds, rect = item.source_bounds, item.packed_rect
+        scale = ((rect[2] - rect[0]) / (bounds[2] - bounds[0])
+                 if global_scale is None else global_scale)
+        source_center = ((bounds[0] + bounds[2]) * .5, (bounds[1] + bounds[3]) * .5)
+        target_center = ((rect[0] + rect[2]) * .5, (rect[1] + rect[3]) * .5)
+        coordinates = []
+        for loop_index in item.loop_indices:
+            uv = item.uv_layer.uv[loop_index].vector
+            u = target_center[0] + (uv.x - source_center[0]) * scale
+            v = target_center[1] + (uv.y - source_center[1]) * scale
+            if not (math.isfinite(u) and math.isfinite(v) and
+                    root[0] - 1e-9 <= u <= root[2] + 1e-9 and
+                    root[1] - 1e-9 <= v <= root[3] + 1e-9):
                 raise RuntimeError("weighted layout produced UVs outside the target region")
-    for item in prepared:
-        for index, u, v in item[4]:
-            uv_layer.uv[index].vector = (u, v)
-    mesh.update()
-    maximum_error = 0.0
-    if packed_scales_by_island is not None:
-        actual_total, weight_total = sum(actual_areas), sum(weights)
-        maximum_error = max(abs((area / actual_total) / (weight / weight_total) - 1.0)
-                            for area, weight in zip(actual_areas, weights))
-    utilization = sum(actual_areas) / ((root[2] - root[0]) * (root[3] - root[1]))
-    return LayoutReport(len(islands), sum(i.surface_area for i in islands), min(weights), max(weights),
-                        globally_scaled, maximum_error, utilization)
+            coordinates.append((loop_index, u, v))
+        pending.append((item, coordinates))
+        actual_areas.append(item.uv_area * scale * scale)
+    # MaxRects body rectangles must remain disjoint and maintain requested padding.
+    for first in range(len(rectangles)):
+        for second in range(first + 1, len(rectangles)):
+            a, b = rectangles[first], rectangles[second]
+            if (min(a[2], b[2]) - max(a[0], b[0]) > -2 * padding + EPSILON and
+                    min(a[3], b[3]) - max(a[1], b[1]) > -2 * padding + EPSILON):
+                raise RuntimeError("weighted layout produced overlapping island bounds")
+    actual_total, weight_total = sum(actual_areas), sum(weights)
+    maximum_error = (max(abs((area / actual_total) / (weight / weight_total) - 1.0)
+                         for area, weight in zip(actual_areas, weights))
+                     if scale_mode == "ALLOCATE_BY_IMPORTANCE" else 0.0)
+    utilization = actual_total / ((root[2] - root[0]) * (root[3] - root[1]))
+    report = LayoutReport(len(islands), sum(item.surface_area for item in islands),
+                          min(weights), max(weights),
+                          scale_mode == "PRESERVE_TEXEL_DENSITY" and global_scale < 1.0,
+                          maximum_error, utilization)
+    return pending, report
+
+
+def apply_weighted_plan(pending):
+    """Commit a previously validated plan; callers may snapshot for rollback."""
+    meshes = set()
+    for item, coordinates in pending:
+        for loop_index, u, v in coordinates:
+            item.uv_layer.uv[loop_index].vector = (u, v)
+        meshes.add(item.mesh)
+    for mesh in meshes:
+        mesh.update()
+
+
+def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
+                           padding_pixels, scope="SELECTED_FACES", target_region="FULL") -> LayoutReport:
+    """Lay out one object's active-map islands (the backward-compatible wrapper)."""
+    islands = collect_weighted_islands(obj, scope)
+    pending, report = plan_weighted_layout(
+        islands, density_influence, scale_mode, texture_size, padding_pixels, target_region)
+    apply_weighted_plan(pending)
+    return report
+
+
+def shared_weighted_layout(objects, density_influence, scale_mode, texture_size,
+                           padding_pixels, scope="SELECTED_FACES", target_region="FULL",
+                           selected_faces_by_mesh=None):
+    """Collect every object's islands into one deterministic global atlas transaction."""
+    selected_faces_by_mesh = selected_faces_by_mesh or {}
+    ordered = sorted(objects, key=lambda obj: obj.name_full)
+    islands = []
+    for obj in ordered:
+        key = obj.data.as_pointer() if hasattr(obj.data, "as_pointer") else id(obj.data)
+        islands.extend(collect_weighted_islands(
+            obj, scope, selected_faces_by_mesh.get(key)))
+    islands.sort(key=lambda item: (item.object.name_full, min(item.face_indices)))
+    meshes = {item.mesh for item in islands}
+    snapshots = {mesh: [tuple(entry.vector) for entry in mesh.uv_layers.active.uv]
+                 for mesh in meshes}
+    try:
+        pending, report = plan_weighted_layout(
+            islands, density_influence, scale_mode, texture_size, padding_pixels, target_region)
+        apply_weighted_plan(pending)
+    except Exception:
+        for mesh, values in snapshots.items():
+            uv_layer = mesh.uv_layers.active
+            for index, vector in enumerate(values):
+                uv_layer.uv[index].vector = vector
+            mesh.update()
+        raise
+    return report

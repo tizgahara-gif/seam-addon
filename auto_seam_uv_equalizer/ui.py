@@ -142,6 +142,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 advanced.prop(settings, "chart_refinement_iterations")
                 advanced.prop(settings, "preserve_existing_seams")
                 advanced.prop(settings, "character_front_axis")
+                advanced.prop(settings, "use_distortion_guided_candidates")
 
     @staticmethod
     def _draw_unwrap(layout, settings, edit_mode):
@@ -204,6 +205,16 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.enabled = preflight["all_ready"] and not (
             settings.weighted_scope == "SELECTED_FACES" and not edit_mode)
         action.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout")
+        weighted.label(text="Each object is laid out independently.", icon="INFO")
+        weighted.separator()
+        weighted.label(text="Shared Atlas")
+        shared = weighted.row()
+        shared.enabled = (preflight["all_ready"] and preflight["unique_mesh_count"] >= 2 and
+                          not (settings.weighted_scope == "SELECTED_FACES" and not edit_mode))
+        shared.operator("autoseamuv.shared_weighted_atlas", text="Shared Weighted Atlas")
+        weighted.label(text="All selected objects share one weighted atlas.", icon="INFO")
+        weighted.label(text="Shared Weighted Atlas reallocates UV area globally.", icon="INFO")
+        weighted.label(text="Atlas Pack preserves existing island scaling unless its options change it.", icon="INFO")
 
         pack = box.column(align=True)
         pack.separator()
