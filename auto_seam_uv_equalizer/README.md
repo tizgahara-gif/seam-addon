@@ -16,7 +16,11 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 ### 2. Unwrap
 
-**Unwrap Selected UV Islands** は、Edit Modeで選択した面をseedとして、その面を1枚以上含む現在のUVアイランド全体をアンラップします。未選択UVアイランドのUV座標は維持され、処理後は元のFace selection（頂点・辺・面のコンポーネント選択とMesh Select Modeを含む）へ復元されます。選択seedがFinished Islandに属する場合、そのアイランドはアンラップ対象外です。Finishedと編集可能なアイランドが混在する場合は編集可能なアイランドだけを処理し、すべてFinishedの場合は処理をキャンセルしてSelectionとModeを復元します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームでUV展開します。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected UV Islandsには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
+**Unwrap Selected UV Islands** は、Edit Modeで選択した面をseedとして、その面を1枚以上含む**現在のActive UV Map上**のUVアイランド全体をアンラップします。この処理は **UV Map Name** を参照せず、Active UV Mapを切り替えず、UVマップも新規作成しません。Active UV Mapがない場合は、Create UV If Missingが有効でも副作用なくキャンセルします。未選択UVアイランドのUV座標は維持され、処理後は元のFace selection（頂点・辺・面のコンポーネント選択とMesh Select Modeを含む）へ復元されます。選択seedがFinished Islandに属する場合、そのアイランドはアンラップ対象外です。Finishedと編集可能なアイランドが混在する場合は編集可能なアイランドだけを処理し、すべてFinishedの場合は処理をキャンセルしてSelectionとModeを復元します。
+
+**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで、設定された **UV Map Name** へUV展開します。**Create UV If Missing** が有効なら、その名前のUVマップを作成できます。同じNamed UV設定は **Ring / Strip Unwrap**、**Atlas PackのUV Source = Named**、および該当するAuto / legacy unwrap workflowでも使用します。Atlasの **UV Source = Active** は各オブジェクトのActive UV Mapだけを使用し、Named設定を使用しません。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected UV Islandsには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
+
+UV targetはoperatorごとに分離されています。Active-map workflowは **Unwrap Selected UV Islands、Weighted Island Layout、Pack Islands、Symmetry、Validation** です（各機能固有のScope規則は後述）。Named-map workflowでは上記のUV Map Name / Create UV If Missingを使用します。パネルのUnwrap AdvancedとAtlasのNamed設定は同じpropertyを表示するため、一方の変更は他方にも反映されます。
 
 ### 3. Layout
 

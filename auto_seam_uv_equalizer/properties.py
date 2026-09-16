@@ -81,7 +81,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     uv_map_name: StringProperty(
         name="UV Map Name",
-        description="UV map to create or use for automatic unwrap operations",
+        description="Named UV map used by Selected Objects, Ring / Strip, and Named Atlas operations; Selected UV Islands always uses Active UV",
         default="UV_Auto",
     )
 
@@ -93,7 +93,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     create_uv_if_missing: BoolProperty(
         name="Create UV If Missing",
-        description="Create the named UV map when it does not already exist",
+        description="Create the named UV map for named-map operations; never applies to Selected UV Islands",
         default=True,
     )
 

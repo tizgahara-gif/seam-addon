@@ -86,6 +86,18 @@ def test_unwrap_selected_label_and_incremental_scope_match_implementation():
     assert 'text="Only the active object is modified."' in ui
     assert 'incremental.enabled = preflight["all_ready"]' not in ui
     assert "Unwrap Selected UV Islands" in readme
+
+
+def test_selected_island_and_named_uv_ui_contracts_are_explicit():
+    ui = (ROOT / "ui.py").read_text(encoding="utf-8")
+    properties = (ROOT / "properties.py").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "edit_mode and selected_face_count > 0 and active_uv is not None" in ui
+    assert 'post.prop(settings, "uv_map_name", text="UV Map Name")' in ui
+    assert 'post.prop(settings, "create_uv_if_missing", text="Create UV If Missing")' in ui
+    assert 'if settings.atlas_uv_source == "NAMED"' in ui
+    assert "Selected UV Islands always uses Active UV" in ui
+    assert "never applies to Selected UV Islands" in properties
     assert "選択面だけを変更します" not in readme
 
 

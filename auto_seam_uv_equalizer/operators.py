@@ -615,8 +615,9 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
     bl_idname = "autoseamuv.unwrap_selected_faces"
     bl_label = "Unwrap Selected UV Islands"
     bl_description = (
-        "Unwraps complete UV islands seeded by the current Edit Mode face selection. "
-        "The original component selection is restored after the operation"
+        "Unwraps complete UV islands on the current active UV map, seeded by the "
+        "Edit Mode face selection. Never creates or switches UV maps. The original "
+        "component selection is restored after the operation"
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -627,11 +628,14 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
 
     def execute(self, context):
         obj, settings = context.active_object, _get_settings(context)
+        if obj is None or obj.type != "MESH" or obj.data.uv_layers.active is None:
+            self.report({"ERROR"}, iface_(
+                "Unwrap Selected UV Islands requires an existing active UV map. "
+                "Create or select a UV map first."))
+            return {"CANCELLED"}
         active, selected_objects, original_mode = _snapshot_context(context)
         try:
-            unwrap_selected_faces(obj, settings.uv_map_name,
-                                  settings.create_uv_if_missing,
-                                  settings.unwrap_method, settings.unwrap_margin)
+            unwrap_selected_faces(obj, settings.unwrap_method, settings.unwrap_margin)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Unwrap Selected UV Islands failed: %s", exc))
             return {"CANCELLED"}
