@@ -34,6 +34,9 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     use_distortion_guided_candidates: BoolProperty(
         name="Distortion-Guided Candidates", default=True,
         description="Uses distortion from the current temporary unwrap to choose which candidate seam paths to trial first. Final seam acceptance still requires measured UV quality improvement")
+    use_edge_loop_completion: BoolProperty(
+        name="Follow Clean Edge Loops", default=True,
+        description="Extends eligible seam candidates along clean topological edge loops to natural endpoints before trialing them. The original shorter candidate is also kept. Final acceptance still requires measured UV quality improvement")
     character_front_axis: EnumProperty(
         name="Character Front Axis",
         items=(("+X", "+X", ""), ("-X", "-X", ""),

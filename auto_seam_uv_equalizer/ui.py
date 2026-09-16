@@ -143,6 +143,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 advanced.prop(settings, "preserve_existing_seams")
                 advanced.prop(settings, "character_front_axis")
                 advanced.prop(settings, "use_distortion_guided_candidates")
+                advanced.prop(settings, "use_edge_loop_completion")
 
     @staticmethod
     def _draw_unwrap(layout, settings, edit_mode):
