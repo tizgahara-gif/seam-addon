@@ -25,10 +25,10 @@ def _selected_face_count(context):
     return sum(poly.select for poly in obj.data.polygons)
 
 
-def _warning(layout, text):
+def _warning(layout, text, *values):
     row = layout.row()
     row.alert = True
-    row.label(text=iface_(text), icon="ERROR")
+    row.label(text=iface_(text, *values), icon="ERROR")
 
 
 def _info(layout, text):
@@ -60,6 +60,14 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 _info(status, "No active UV map. A UV map will be created when Unwrap runs.")
             else:
                 _warning(status, "No active UV map. Enable Create UV If Missing or create a UV map manually.")
+
+        processing = layout.box()
+        processing.label(text="Processing")
+        if len(meshes) > 1:
+            processing.label(text=iface_("Selected Mesh Objects: %d") % len(meshes))
+            processing.label(text=iface_("Unique Mesh Data: %d") %
+                             len({obj.data.as_pointer() for obj in meshes}))
+        processing.prop(settings, "process_shared_mesh_once", text="Process Shared Mesh Data Once")
 
         self._draw_seam(layout, settings, context, edit_mode)
         self._draw_unwrap(layout, settings, edit_mode)
@@ -99,19 +107,25 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         row = assist.row(align=True)
         boundary = row.operator("autoseamuv.mark_selected_region_boundary", text="Selected Boundary", icon="EDGESEL")
         boundary.include_open_boundaries = settings.include_open_boundaries
-        row.operator("autoseamuv.mirror_seams", text="Mirror Seam")
+        mirror_action = row.row()
+        mirror_action.enabled = not (settings.mirror_direction == "SELECTED" and not edit_mode)
+        mirror_action.operator("autoseamuv.mirror_seams", text="Mirror Seam")
         mirror = assist.row(align=True)
         mirror.prop(settings, "mesh_symmetry_axis", text="Mesh Symmetry Axis")
+        mirror.prop(settings, "mesh_symmetry_tolerance", text="Tolerance")
         mirror.prop(settings, "mirror_direction", text="Direction")
+        if settings.mirror_direction == "SELECTED" and not edit_mode:
+            _warning(assist, "Selected Side mirroring requires Edit Mode with selected edges.")
         if settings.seam_mode != "CLASSIC":
             assist.label(text="Selected Edges")
             row = assist.row(align=True)
             row.enabled = edit_mode
             row.operator("autoseamuv.force_seam", text="Force")
             row.operator("autoseamuv.protect_seam", text="Protect")
-            row.operator("autoseamuv.clear_edge_tags", text="Clear Tags")
             if not edit_mode:
                 _warning(assist, "Force / Protect requires Edit Mode and selected edges.")
+            assist.label(text="Active Object")
+            assist.operator("autoseamuv.clear_edge_tags", text="Clear All Tags")
             box.prop(settings, "use_professional_garment_prior", text="Professional Garment Prior")
 
         box.prop(settings, "show_seam_advanced", toggle=True)
@@ -146,7 +160,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.prop(settings, "show_unwrap_advanced", toggle=True)
         if settings.show_unwrap_advanced:
             post = box.column(align=True)
-            post.label(text="Post-Unwrap")
+            post.label(text="Selected Objects Post-Unwrap")
             post.prop(settings, "average_islands", text="Average Island Scale")
             post.prop(settings, "straighten_circular_strip_islands", text="Straighten Circular Strip Islands")
 
@@ -173,11 +187,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             box.label(text=iface_("Selected Mesh Objects: %d") % preflight["target_count"])
             box.label(text=iface_("UV Ready: %d / %d") %
                       (preflight["valid_uv_count"], preflight["target_count"]))
-        if settings.process_shared_mesh_once and preflight["unique_mesh_count"] != preflight["target_count"]:
-            box.label(text=iface_("Unique Mesh Data: %d") % preflight["unique_mesh_count"])
-        box.prop(settings, "process_shared_mesh_once", text="Process Shared Mesh Data Once")
         if preflight["missing_uv_count"]:
-            _warning(box, "%d selected mesh object(s) have no usable UV map." % preflight["missing_uv_count"])
+            _warning(box, "%d selected mesh object(s) have no usable UV map.",
+                     preflight["missing_uv_count"])
         weighted = box.column(align=True)
         weighted.label(text="Weighted Island Layout")
         weighted.prop(settings, "weighted_scope", text="Scope")
@@ -187,7 +199,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.prop(settings, "weighted_texture_size", text="Texture Size")
         weighted.prop(settings, "weighted_padding_pixels", text="Padding Pixels")
         if settings.weighted_scope == "SELECTED_FACES" and not edit_mode:
-            _warning(weighted, "Selected Faces requires Edit Mode.")
+            _warning(weighted, "Selected UV Islands requires Edit Mode.")
         action = weighted.row()
         action.enabled = preflight["all_ready"] and not (
             settings.weighted_scope == "SELECTED_FACES" and not edit_mode)
@@ -196,6 +208,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         pack = box.column(align=True)
         pack.separator()
         pack.label(text="Pack Islands")
+        if settings.weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}:
+            _warning(pack, "Half-region layout is active. Packing may break the Exact Texture-X workflow.")
         pack.prop(settings, "pack_margin", text="Pack Margin")
         pack.prop(settings, "pack_rotation", text="Rotation")
         pack.prop(settings, "pack_margin_method", text="Margin Method")
@@ -218,6 +232,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         atlas = box.column(align=True)
         atlas.separator()
         atlas.label(text="Multiple Objects")
+        if settings.weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}:
+            _warning(atlas, "Half-region layout is active. Packing may break the Exact Texture-X workflow.")
         atlas.prop(settings, "show_atlas_settings", toggle=True)
         if settings.show_atlas_settings:
             atlas_settings = atlas.column(align=True)
@@ -225,6 +241,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             atlas_settings.prop(settings, "atlas_texture_size", text="Texture Size")
             atlas_settings.prop(settings, "atlas_pixel_margin", text="Pixel Margin")
             atlas_settings.prop(settings, "atlas_average_island_scale", text="Average Island Scale")
+            if (settings.weighted_scale_mode == "ALLOCATE_BY_IMPORTANCE" and
+                    settings.atlas_average_island_scale):
+                _warning(atlas_settings, "Average Island Scale may override the relative scaling created by Weighted Island Layout.")
             atlas_settings.prop(settings, "atlas_pack_rotate", text="Allow Rotation")
         atlas_preflight = resolve_atlas_targets(context, settings)
         action = atlas.row()

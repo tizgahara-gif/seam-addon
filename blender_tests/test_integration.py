@@ -4,7 +4,6 @@ import pathlib
 import sys
 import unittest
 
-import bmesh
 import bpy
 import bmesh
 
@@ -79,6 +78,72 @@ class IntegrationTests(unittest.TestCase):
                      "validate_symmetry", "transfer_symmetric_uv",
                      "transfer_exact_texture_x_symmetry"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
+
+    def test_mirror_seam_edit_bmesh_preserves_selection_and_selected_requires_edit(self):
+        obj = mesh_object("Mirror", [(-1,0,0),(-1,1,0),(1,0,0),(1,1,0)],
+                          [(0,1,3,2)])
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.mesh_symmetry_axis = "X"; settings.mesh_symmetry_tolerance = 0.0001
+        settings.mirror_direction = "SELECTED"
+        self.assertEqual(bpy.ops.autoseamuv.mirror_seams(), {"CANCELLED"})
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.edges.ensure_lookup_table()
+        for edge in bm.edges: edge.select = False; edge.seam = False
+        source = next(edge for edge in bm.edges
+                      if all(vertex.co.x < 0 for vertex in edge.verts))
+        target = next(edge for edge in bm.edges
+                      if all(vertex.co.x > 0 for vertex in edge.verts))
+        source.select = True; source.seam = True
+        selected = {edge.index for edge in bm.edges if edge.select}
+        bmesh.update_edit_mesh(obj.data)
+        self.assertEqual(bpy.ops.autoseamuv.mirror_seams(), {"FINISHED"})
+        bm = bmesh.from_edit_mesh(obj.data); bm.edges.ensure_lookup_table()
+        self.assertTrue(bm.edges[target.index].seam)
+        self.assertEqual({edge.index for edge in bm.edges if edge.select}, selected)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertTrue(obj.data.edges[target.index].use_seam)
+
+    def test_uv_quality_edit_mode_replaces_problem_face_selection(self):
+        obj = mesh_object("Quality", [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+                                      (2,0,0),(3,0,0),(3,1,0),(2,1,0)],
+                          [(0,1,2,3), (4,5,6,7)])
+        layer = obj.data.uv_layers.new(name="UVMap")
+        # Face zero has valid area; face one remains collapsed at (0, 0).
+        for index, uv in enumerate(((0,0),(1,0),(1,1),(0,1))):
+            layer.uv[index].vector = uv
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        bm.faces[0].select = True; bm.faces[1].select = False
+        bmesh.update_edit_mesh(obj.data)
+        self.assertEqual(bpy.ops.autoseamuv.validate_uv(), {"FINISHED"})
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        self.assertEqual({face.index for face in bm.faces if face.select}, {1})
+
+    def test_weighted_selected_uv_islands_expands_partial_face_seed(self):
+        obj = mesh_object("IslandScope",
+                          [(0,0,0),(1,0,0),(2,0,0),(0,1,0),(1,1,0),(2,1,0),
+                           (4,0,0),(5,0,0),(5,1,0),(4,1,0)],
+                          [(0,1,4,3), (1,2,5,4), (6,7,8,9)])
+        layer = obj.data.uv_layers.new(name="UVMap")
+        values = ((2,2),(3,2),(3,3),(2,3), (3,2),(4,2),(4,3),(3,3),
+                  (8,8),(9,8),(9,9),(8,9))
+        for item, uv in zip(layer.uv, values): item.vector = uv
+        untouched = tuple(tuple(layer.uv[index].vector) for index in range(8, 12))
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        for face in bm.faces: face.select = False
+        bm.faces[0].select = True
+        bmesh.update_edit_mesh(obj.data)
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.weighted_scope = "SELECTED_FACES"
+        settings.weighted_padding_pixels = 0
+        self.assertEqual(bpy.ops.autoseamuv.weighted_island_layout(), {"FINISHED"})
+        # Both faces in the seeded continuous island moved; the other island did not.
+        self.assertTrue(any(tuple(layer.uv[index].vector) != values[index]
+                            for index in range(4, 8)))
+        self.assertEqual(tuple(tuple(layer.uv[index].vector) for index in range(8, 12)),
+                         untouched)
+        self.assertEqual({face.index for face in bmesh.from_edit_mesh(obj.data).faces if face.select}, {0})
 
     def test_weighted_maxrects_headless_regressions(self):
         """Blender 5.1.2 headless coverage for weighted packing primitives."""

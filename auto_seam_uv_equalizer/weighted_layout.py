@@ -184,8 +184,10 @@ def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
     for loops in raw_islands:
         faces = tuple(sorted({loop_to_face[index] for index in loops}))
         if scope == "SELECTED_FACES":
-            faces = tuple(index for index in faces if index in selected)
-            loops = {loop for face in faces for loop in mesh.polygons[face].loop_indices}
+            # Keep the legacy enum identifier for .blend compatibility, but use
+            # mesh selection only as a seed: layout always moves a whole island.
+            if not selected.intersection(faces):
+                continue
         if not faces:
             continue
         area = sum(_world_polygon_area(obj, mesh.polygons[index]) for index in faces)

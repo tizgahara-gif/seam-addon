@@ -45,3 +45,32 @@ def test_all_literal_ui_text_has_a_japanese_translation():
         if isinstance(key, ast.Constant) and isinstance(key.value, str)
     }
     assert visible <= translated, f"Missing Japanese UI translations: {sorted(visible - translated)}"
+
+
+def test_dynamic_warning_translates_template_before_formatting():
+    source = (ROOT / "ui.py").read_text(encoding="utf-8")
+    assert '_warning(box, "%d selected mesh object(s) have no usable UV map.",' in source
+    ui_tree = ast.parse(source)
+    assert not any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                   and node.func.id == "iface_" and node.args
+                   and isinstance(node.args[0], (ast.BinOp, ast.JoinedStr))
+                   for node in ast.walk(ui_tree))
+
+    namespace = {}
+    tree = ast.parse((ROOT / "translations.py").read_text(encoding="utf-8"))
+    dictionary = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == "_JA_JP"
+                              for target in node.targets))
+    namespace["translations"] = ast.literal_eval(dictionary)
+    assert namespace["translations"]["%d selected mesh object(s) have no usable UV map."] % 2 == \
+        "2個の選択メッシュオブジェクトに使用可能なUVマップがありません。"
+
+
+def test_workflow_scope_labels_and_warning_conditions_are_explicit():
+    ui = (ROOT / "ui.py").read_text(encoding="utf-8")
+    properties = (ROOT / "properties.py").read_text(encoding="utf-8")
+    assert 'text="Selected Objects Post-Unwrap"' in ui
+    assert 'text="Clear All Tags"' in ui
+    assert 'weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}' in ui
+    assert 'weighted_scale_mode == "ALLOCATE_BY_IMPORTANCE"' in ui
+    assert '("SELECTED_FACES", "Selected UV Islands"' in properties

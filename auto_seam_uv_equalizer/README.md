@@ -12,17 +12,17 @@ Blender 5.1向けに、ZBrush / GoZから来たメッシュのシーム作成、
 
 **Classic** は角度、マテリアル境界、開放境界、非多様体の規則でシームを生成します。**Chart-Based** は Organic / Cloth、Hard Surface、Cylinder / Strip、Manual Assisted のプリセットとUV品質評価を使います。Analyze Seamsは診断のみ、Generate Seamsは適用です。
 
-Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Assist — Active Object** はアクティブオブジェクトだけに作用します。ForceとProtectはEdit Modeのアクティブオブジェクトで現在選択している辺だけが対象です（Clear Tagsはアクティブオブジェクトの全タグを消去します）。Selected BoundaryのInclude Open BoundariesはUIで確認できます。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
+Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Assist — Active Object** はアクティブオブジェクトだけに作用します。ForceとProtectはEdit Modeのアクティブオブジェクトで現在選択している辺だけが対象です。**Clear All Tags** はモードや辺選択に関係なくActive ObjectのForce / Protectタグをすべて消去します。Mirror Seamは共通のMesh Symmetry Axis / Toleranceを使い、Selected Side → OppositeだけはEdit Modeの選択辺を必要とします。Selected BoundaryのInclude Open BoundariesはUIで確認できます。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
 
 ### 2. Unwrap
 
-**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームでUV展開します。自動的なAverage Island Scaleはなく、任意の後処理はPost-Unwrapに明示され、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
+**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームでUV展開します。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected Facesには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
 
 ### 3. Layout
 
-**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。
+**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
 
-**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認できます。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックします。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Process Shared Mesh Data Onceが有効ならlinked duplicateは固有Mesh datablockごとに1回だけ処理され、UIに固有数を表示します。
+**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認できます。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックします。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Process Shared Mesh Data Onceはパネル上部の共通Processing設定です。有効ならlinked duplicateは各工程を通して固有Mesh datablockごとに1回だけ処理され、複数選択時はUIに選択数と固有数を表示します。AtlasのAverage Island ScaleはWeightedのAllocate by Importanceが作った相対スケールを上書きする可能性があるため、該当する現在設定の組合せでは警告します（実行は禁止しません）。
 
 ### 4. Symmetry
 
