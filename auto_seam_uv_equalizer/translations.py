@@ -19,6 +19,8 @@ _JA_JP = {
     "Layout Lock protects placement only.": "レイアウト固定: 配置のみを保護",
     "Select at least one face to seed UV islands.": "UVアイランドを指定するため、1面以上を選択してください。",
     "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout or Pack Selected Into Free Space, or clear UV Protection first.": "Pack IslandsはUV保護を維持できません。Weighted Island Layoutまたは「選択UVアイランドを空き領域へ配置」を使用するか、先にUV保護を解除してください。",
+    "Auto Unwrap + Pack cannot preserve UV Protection because its Pack stage uses Standard Pack Islands. Use Unwrap and a Protection-aware layout operation separately.": "Auto Unwrap + Packでは、Pack工程でUV保護を維持できません。アンラップとProtection対応のレイアウト処理を個別に実行してください。",
+    "Auto Seam + Unwrap cannot preserve UV Protection while Pack Islands is enabled because its Pack stage uses Standard Pack Islands. Disable Pack Islands, or use a Protection-aware layout operation separately.": "Pack Islandsが有効なため、Auto Seam + UnwrapではUV保護を維持できません。Pack Islandsを無効にするか、Protection対応のレイアウト処理を個別に実行してください。",
     "Atlas Pack cannot preserve UV Protection on the selected objects. Use Shared Weighted Atlas or clear UV Protection first.": "選択オブジェクトにUV保護が設定されているため、Atlas Packでは保護状態を維持できません。Shared Weighted Atlasを使用するか、先にUV保護を解除してください。",
     "Selects flipped, zero-area, and over-threshold stretch faces in Edit Mode.": "編集モードでは、反転・ゼロ面積・ストレッチ閾値超過の面を選択します。",
     # Panels and sections.

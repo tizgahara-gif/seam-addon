@@ -1,0 +1,86 @@
+"""Source-level guards for Blender mode transactions.
+
+The behavior is also exercised against real Blender RNA in
+``blender_tests/test_integration.py``.  These fast tests make accidental
+reintroduction of the unsafe call ordering visible in normal CI.
+"""
+
+import ast
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1] / "auto_seam_uv_equalizer"
+
+
+def _method(path, class_name, method_name="execute"):
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    cls = next(node for node in tree.body
+               if isinstance(node, ast.ClassDef) and node.name == class_name)
+    return next(node for node in cls.body
+                if isinstance(node, ast.FunctionDef) and node.name == method_name)
+
+
+def _function(path, name):
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    return next(node for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+def _calls(node):
+    result = []
+    for item in ast.walk(node):
+        if not isinstance(item, ast.Call):
+            continue
+        function = item.func
+        result.append(function.id if isinstance(function, ast.Name)
+                      else function.attr if isinstance(function, ast.Attribute) else "")
+    return result
+
+
+def test_incremental_operator_snapshots_faces_and_uses_object_mode_transaction():
+    method = _method("operators.py", "AUTOSEAMUV_OT_pack_selected_into_free_space")
+    source = ast.unparse(method)
+    assert "frozenset" in source
+    assert "selected_face_indices=selected_faces" in source
+    assert "obj.update_from_editmode" not in source
+    assert source.index("_snapshot_context(context)") < source.index("_ensure_object_mode()")
+    assert source.index("_ensure_object_mode()") < source.index("incremental_pack_object(")
+    assert "finally:\n        _restore_context(context, active, selected, mode)" in source
+
+
+def test_incremental_backend_orders_barrier_snapshot_commit_and_rollback():
+    function = _function("weighted_layout.py", "incremental_pack_object")
+    source = ast.unparse(function)
+    assert source.index("collect_weighted_islands") < source.index("validate_protection_consistency")
+    assert source.index("plan_weighted_layout") < source.index("assert_plan_does_not_modify_finished")
+    assert source.index("assert_plan_does_not_modify_finished") < source.index("before =")
+    assert source.index("before =") < source.index("apply_weighted_plan(pending)")
+    assert "for loop, uv in before.items()" in source
+
+
+def test_auto_unwrap_pack_preflight_precedes_context_snapshot_and_unwrap():
+    method = _method("operators.py", "AUTOSEAMUV_OT_auto_unwrap_pack")
+    source = ast.unparse(method)
+    preflight = source.index("has_active_uv_protection")
+    assert preflight < source.index("_snapshot_context")
+    assert preflight < source.index("unwrap_object")
+
+
+def test_mark_and_unwrap_pack_preflight_precedes_seam_mutation():
+    method = _method("operators.py", "AUTOSEAMUV_OT_mark_and_unwrap")
+    source = ast.unparse(method)
+    preflight = source.index("settings.pack_islands and any")
+    assert preflight < source.index("_snapshot_context")
+    assert preflight < source.index("clear_seams")
+    assert preflight < source.index("_auto_mark")
+
+
+def test_unwrap_selected_faces_reacquires_mesh_and_named_layer_after_mode_switch():
+    function = _function("uv_tools.py", "unwrap_selected_faces")
+    source = ast.unparse(function)
+    last_object_mode = source.rindex("bpy.ops.object.mode_set(mode='OBJECT')")
+    reacquire_mesh = source.index("mesh = obj.data", last_object_mode)
+    reacquire_layer = source.index("layer = mesh.uv_layers.get(layer_name)", reacquire_mesh)
+    restore_write = source.index("layer.uv[loop].vector = uv", reacquire_layer)
+    assert last_object_mode < reacquire_mesh < reacquire_layer < restore_write
+    assert "layer_name = layer.name" in source

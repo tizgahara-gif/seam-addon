@@ -109,6 +109,7 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
     if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
         raise RuntimeError(f"UV map '{uv_map_name}' is unavailable")
     layer = obj.data.uv_layers.active
+    layer_name = layer.name
     selected = {face.index for face in obj.data.polygons if face.select}
     if not selected:
         bpy.ops.object.mode_set(mode="EDIT")
@@ -127,9 +128,15 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.uv.unwrap(method=method, margin=margin)
     bpy.ops.object.mode_set(mode="OBJECT")
+    # A mode transition may invalidate RNA collection members.  Reacquire the
+    # Mesh and UV layer before restoring untouched loops.
+    mesh = obj.data
+    layer = mesh.uv_layers.get(layer_name)
+    if layer is None:
+        raise RuntimeError(f"UV map '{layer_name}' became unavailable during unwrap")
     for loop, uv in untouched.items():
         layer.uv[loop].vector = uv
-    obj.data.update()
+    mesh.update()
     bpy.ops.object.mode_set(mode="EDIT")
 
 
