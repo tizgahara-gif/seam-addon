@@ -224,9 +224,29 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
                              ("WHOLE_OBJECT", "Whole Object", "Change all faces")),
         default="WHOLE_OBJECT",
     )
+    weighted_padding_mode: EnumProperty(
+        name="Padding Mode",
+        items=(
+            ("RELATIVE", "Relative UV", "Use a resolution-independent UV-space margin"),
+            ("PIXELS", "Pixels", "Convert a pixel margin using the selected texture resolution"),
+        ),
+        default="PIXELS",
+    )
+    weighted_padding_uv: FloatProperty(
+        name="UV Margin", default=0.004, min=0.0, max=0.5, precision=6,
+        description="Resolution-independent margin in UV space",
+    )
+    weighted_texture_resolution: EnumProperty(
+        name="Texture Resolution",
+        description="Used only to convert pixel padding into UV-space padding. It does not affect island weighting or UV area allocation.",
+        items=tuple((value, value, f"{value} x {value}")
+                    for value in ("512", "1024", "2048", "4096", "8192")),
+        default="2048",
+    )
+    # Legacy compatibility only. Weighted layout code never reads this value.
     weighted_texture_size: IntProperty(
         name="Texture Size", default=2048, min=16, max=16384,
-        description="Texture size used to convert padding pixels to UV units",
+        description="Legacy texture size retained for settings migration",
     )
     weighted_padding_pixels: IntProperty(
         name="Padding Pixels", default=4, min=0, max=1024,
@@ -236,7 +256,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     atlas_texture_size: IntProperty(
         name="Atlas Texture Size",
-        description="Texture size used to convert atlas pixel margin into UV margin",
+        description="Used for Atlas Pack pixel-margin conversion",
         default=2048,
         min=16,
         max=16384,
@@ -343,6 +363,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 def migrate_legacy_settings(settings):
     """Copy stored v0.7 values once; untouched defaults remain independent."""
     keys = set(settings.keys())
+    if "weighted_padding_mode" not in keys and (
+            "weighted_texture_size" in keys or "weighted_padding_pixels" in keys):
+        settings.weighted_padding_mode = "PIXELS"
+    if "weighted_texture_resolution" not in keys and "weighted_texture_size" in keys:
+        legacy_resolution = str(int(settings.weighted_texture_size))
+        if legacy_resolution in {"512", "1024", "2048", "4096", "8192"}:
+            settings.weighted_texture_resolution = legacy_resolution
     if "margin" in keys:
         if "unwrap_margin" not in keys:
             settings.unwrap_margin = settings.margin

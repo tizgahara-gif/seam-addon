@@ -37,6 +37,18 @@ def test_density_influence_zero():
     assert weights == [2.0, 2.0]
 
 
+def test_weighted_padding_resolver_modes_and_pixel_conversion():
+    module = _load_primitives()
+    settings = types.SimpleNamespace(
+        weighted_padding_mode="PIXELS", weighted_padding_pixels=8,
+        weighted_padding_uv=0.004, weighted_texture_resolution="2048")
+    assert module.resolve_weighted_padding(settings) == 0.00390625
+    settings.weighted_padding_mode = "RELATIVE"
+    assert module.resolve_weighted_padding(settings) == 0.004
+    settings.weighted_texture_resolution = "8192"
+    assert module.resolve_weighted_padding(settings) == 0.004
+
+
 def test_world_polygon_areas_uses_loop_triangles_for_concave_ngon():
     module = _load_primitives()
 
@@ -150,7 +162,7 @@ def test_shared_global_planner_area_ratio_regions_and_determinism():
     for region in ("FULL", "LEFT_HALF", "RIGHT_HALF"):
         islands = [island(4, 0), island(1, 1)]
         pending, report = module.plan_weighted_layout(
-            islands, 0.0, "ALLOCATE_BY_IMPORTANCE", 2048, 4, region)
+            islands, 0.0, "ALLOCATE_BY_IMPORTANCE", 4 / 2048, region)
         areas = []
         root = module.target_rectangle(region)
         for _item, coords in pending:
@@ -160,3 +172,44 @@ def test_shared_global_planner_area_ratio_regions_and_determinism():
             areas.append((max(xs)-min(xs)) * (max(ys)-min(ys)))
         assert math.isclose(areas[0] / areas[1], 4.0, rel_tol=1e-7)
         assert report.maximum_area_ratio_error < 1e-7
+
+
+def test_planner_is_resolution_independent_and_equivalent_padding_matches():
+    module = _load_primitives()
+
+    class Vector:
+        def __init__(self, x, y): self.x, self.y = x, y
+    class Entry:
+        def __init__(self, vector): self.vector = Vector(*vector)
+    class Layer:
+        def __init__(self): self.uv = [Entry(v) for v in ((0, 0), (1, 0), (1, 1), (0, 1))]
+    def islands():
+        result = []
+        for offset, area in enumerate((4.0, 1.0)):
+            item = module.IslandLayout((offset,), tuple(range(4)), area, 1, 1 / area)
+            item.uv_layer = Layer(); item.source_bounds = (0, 0, 1, 1)
+            item.uv_aspect = 1.0; item.uv_area = 1.0
+            result.append(item)
+        return result
+    def plan(padding):
+        pending, report = module.plan_weighted_layout(
+            islands(), 0.25, "ALLOCATE_BY_IMPORTANCE", padding)
+        return [[tuple(coordinate) for coordinate in coordinates]
+                for _item, coordinates in pending], report
+
+    relative_512 = types.SimpleNamespace(
+        weighted_padding_mode="RELATIVE", weighted_padding_uv=0.004,
+        weighted_padding_pixels=8, weighted_texture_resolution="512")
+    relative_8192 = types.SimpleNamespace(**vars(relative_512))
+    relative_8192.weighted_texture_resolution = "8192"
+    assert plan(module.resolve_weighted_padding(relative_512)) == plan(
+        module.resolve_weighted_padding(relative_8192))
+
+    pixels = types.SimpleNamespace(
+        weighted_padding_mode="PIXELS", weighted_padding_uv=0.0,
+        weighted_padding_pixels=8, weighted_texture_resolution="2048")
+    relative = types.SimpleNamespace(
+        weighted_padding_mode="RELATIVE", weighted_padding_uv=0.00390625,
+        weighted_padding_pixels=0, weighted_texture_resolution="512")
+    assert plan(module.resolve_weighted_padding(pixels)) == plan(
+        module.resolve_weighted_padding(relative))

@@ -16,7 +16,7 @@ from .seam_detection import (
     mark_selected_region_boundary_seams,
 )
 from .uv_tools import ensure_uv_layer, pack_object, unwrap_object, unwrap_selected_faces
-from .weighted_layout import shared_weighted_layout, weighted_layout_object
+from .weighted_layout import resolve_weighted_padding, shared_weighted_layout, weighted_layout_object
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
@@ -670,7 +670,7 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
         result = _run_existing_uv_operation(
             self, context, lambda obj, settings: reports.append(weighted_layout_object(
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
-                settings.weighted_texture_size, settings.weighted_padding_pixels,
+                resolve_weighted_padding(settings),
                 settings.weighted_scope, settings.weighted_target_region)), "Weighted Island Layout")
         if reports:
             self.report({"INFO"}, iface_(
@@ -731,7 +731,7 @@ class AUTOSEAMUV_OT_shared_weighted_atlas(bpy.types.Operator):
             _ensure_object_mode()
             report = shared_weighted_layout(
                 objects, settings.weighted_density_influence, settings.weighted_scale_mode,
-                settings.weighted_texture_size, settings.weighted_padding_pixels,
+                resolve_weighted_padding(settings),
                 settings.weighted_scope, settings.weighted_target_region, selected_faces)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Shared Weighted Atlas failed: %s", exc))

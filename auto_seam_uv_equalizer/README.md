@@ -20,7 +20,9 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 ### 3. Layout
 
-**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Texture Size、Padding Pixelsを使用します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
+**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Paddingを使用します。テクスチャ解像度はWeighted LayoutのUV面積配分には影響しません。ピクセル単位で余白を指定する場合のみ、UV空間への換算に使用します。Paddingの **Relative UV** は解像度非依存のUV空間マージンを直接指定し、**Pixels** は選択したTexture Resolutionでピクセル余白を換算します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
+
+Texture resolution does not affect weighted UV-area allocation. It is only required when padding is specified in pixels. **Relative UV** supplies a resolution-independent UV-space margin; **Pixels** converts the pixel margin using the selected texture resolution. Weighted Island Layout and Shared Weighted Atlas use the same resolved UV-space padding.
 
 #### Shared Weighted Atlas
 
