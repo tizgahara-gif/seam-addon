@@ -318,7 +318,8 @@ def test_analyze_discards_seed_prior_when_ranking_completed_paths(monkeypatch):
     monkeypatch.setattr(chart_seam, "path_professional_prior",
                         lambda _m, path, _f, _s, visibility_override=None:
                         .5 if path == {0} else 3.0)
-    monkeypatch.setattr(chart_seam, "shortest_path", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(chart_seam, "candidate_path_to_anchor",
+                        lambda _m, seed, *_args, **_kwargs: {seed.index})
     trials = []
 
     def quality(_chart, cuts):
@@ -331,6 +332,49 @@ def test_analyze_discards_seed_prior_when_ranking_completed_paths(monkeypatch):
             settings(chart_refinement_iterations=1), quality)
     # Both seeds enter the pool, but completed-path prior 3.0 ranks ahead of .5.
     assert trials[:2] == [frozenset({1}), frozenset({0})]
+
+
+def test_candidate_path_is_chart_local_and_rejects_failed_seed_only(monkeypatch):
+    test_mesh = _edge_mesh(
+        [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)],
+        [(0, 1), (1, 2), (2, 3)])
+    graph = {0: [(1, 0)], 1: [(0, 0), (2, 1)],
+             2: [(1, 1), (3, 2)], 3: [(2, 2)]}
+    seen = {}
+
+    def path(_graph, starts, goals, edge_cost, *_args):
+        seen["goals"] = set(goals)
+        seen["outside_cost"] = edge_cost(2)
+        return []
+
+    monkeypatch.setattr(chart_seam, "shortest_path", path)
+    assert chart_seam.candidate_path_to_anchor(
+        test_mesh, test_mesh.edges[0], {0, 1}, {3}, graph,
+        {0: 1.0, 1: 1.0, 2: 1.0}, 24, 0.0) is None
+    assert seen["goals"] == {3}
+    assert seen["outside_cost"] == float("inf")
+    # A seed touching this chart's anchor is the sole valid seed-only case.
+    assert chart_seam.candidate_path_to_anchor(
+        test_mesh, test_mesh.edges[0], {0, 1}, {0}, graph,
+        {0: 1.0, 1: 1.0, 2: 1.0}, 24, 0.0) == {0}
+
+
+def test_chart_and_cluster_scans_are_local_not_mesh_wide():
+    edge_count = 1000
+    test_mesh = _edge_mesh(
+        [(i, 0, 0) for i in range(edge_count * 2)],
+        [(i * 2, i * 2 + 1) for i in range(edge_count)], face_count=1000)
+    edge_faces = {i: [i, i + 1] for i in range(0, 999, 2)}
+    # Fill unused mesh edges as remote open boundaries. Only edge zero belongs
+    # to the sole bad two-face chart and should enter its candidate scan.
+    edge_faces.update({i: [999] for i in range(1, edge_count, 2)})
+    result = analyze(
+        test_mesh, edge_faces, [False] * edge_count, [False] * edge_count,
+        settings(seam_preset="HARD_SURFACE", chart_refinement_iterations=1),
+        lambda chart, _cuts: 1.0 if chart == {0, 1} else 0.0,
+        distortion_evaluator=lambda chart, _cuts: {face: float(face) for face in chart})
+    assert result.debug_metrics["candidate_edge_scans"] < 10
+    assert result.debug_metrics["candidate_edge_scans"] < len(edge_faces)
 
 
 def test_seed_prefilter_does_not_leak_into_completed_path_rank():

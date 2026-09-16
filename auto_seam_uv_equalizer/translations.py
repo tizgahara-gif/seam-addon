@@ -32,7 +32,7 @@ _JA_JP = {
     "Shared Weighted Atlas requires at least two unique mesh targets.": "共有ウェイトアトラスには2つ以上の固有メッシュ対象が必要です。",
     "Shared Weighted Atlas cannot independently place objects that share the same Mesh datablock. Enable Process Shared Mesh Data Once or make the mesh data single-user.": "同じメッシュデータブロックを共有するオブジェクトは個別配置できません。「共有メッシュデータを1回処理」を有効にするか、メッシュをシングルユーザー化してください。",
     "Shared Weighted Atlas failed: %s": "共有ウェイトアトラスに失敗しました: %s",
-    "Shared Weighted Atlas: Objects %d, Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.": "共有ウェイトアトラス: オブジェクト%d、アイランド%d、総表面積%.6g、最小ウェイト%.6g、最大ウェイト%.6g、UV使用率%.1f%%。",
+    "Shared Weighted Atlas: Mesh Targets %d, Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.": "共有ウェイトアトラス: メッシュターゲット%d、アイランド%d、総表面積%.6g、最小ウェイト%.6g、最大ウェイト%.6g、UV使用率%.1f%%。",
     "Unique Mesh Data: %d": "固有メッシュデータ: %d",
     "None": "なし", "Edit": "編集", "Object": "オブジェクト",
     "No active UV map. A UV map will be created when Unwrap runs.": "アクティブUVはありません。UV展開時に新しいUVマップを作成します。",

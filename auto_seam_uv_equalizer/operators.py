@@ -739,7 +739,7 @@ class AUTOSEAMUV_OT_shared_weighted_atlas(bpy.types.Operator):
         finally:
             _restore_context(context, active, selected, mode)
         self.report({"INFO"}, iface_(
-            "Shared Weighted Atlas: Objects %d, Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.",
+            "Shared Weighted Atlas: Mesh Targets %d, Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.",
             len(objects), report.island_count, report.total_surface_area,
             report.minimum_weight, report.maximum_weight, report.uv_utilization * 100.0))
         return {"FINISHED"}

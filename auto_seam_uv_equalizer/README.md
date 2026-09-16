@@ -34,6 +34,8 @@ linked objectはProcess Shared Mesh Data Onceが有効ならMesh datablockごと
 
 Chart-BasedのAdvancedにある **Distortion-Guided Candidates** は、current temporary unwrapのface distortionからlocalized hotspotを見つけ、先に試行する候補を最大2枠確保します。quality評価と同じcut-state UV snapshot cacheを共有するため追加unwrapは行いません。歪みguidanceは候補の試行順だけを決め、シームを強制せず、distortion scoreをfinal benefitへ加算しません。最終採用は従来どおりtemporary Blender unwrap後に実測したUV quality improvement、seam cost、sparsity、Protect、Mirror Pair規則で決まります。OFFでは従来のprofessional candidate選択へ戻ります。
 
+Distortion guidance refines anchored charts. Anchorless closed charts still bootstrap using the existing geodesic path.
+
 ### 4. Symmetry
 
 **Mesh Symmetry Axis** と **Mesh Symmetry Tolerance** はProfessional Garment Prior、Mirror Seam、Validate Symmetry、Standard UV Transfer、Exact Texture-Xのジオメトリ対応付けで共通です。Direction / Source Sideは用途別のままです。対称処理のTargetは常にActive Objectで、Scopeはそのオブジェクト内のSelected FacesまたはWhole Meshを意味します。Selected Facesの場合はEdit Modeが必須です。
