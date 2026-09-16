@@ -1,8 +1,10 @@
 """Five-stage UV-production sidebar UI for Blender 5.1."""
 
 import bpy
+import bmesh
 from .translations import iface_
 from .operators import resolve_atlas_targets, resolve_layout_targets
+from .uv_protection import has_active_uv_protection
 
 
 def _mesh_objects(context):
@@ -20,9 +22,8 @@ def _selected_face_count(context):
     obj = getattr(context, "active_object", None)
     if obj is None or obj.type != "MESH" or context.mode != "EDIT_MESH":
         return 0
-    # Mesh polygon selection is sufficient for status display and avoids changing
-    # edit-mesh state merely by drawing the panel.
-    return sum(poly.select for poly in obj.data.polygons)
+    bm = bmesh.from_edit_mesh(obj.data)
+    return sum(face.select for face in bm.faces)
 
 
 def _warning(layout, text, *values):
@@ -186,14 +187,24 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.label(text="3. Layout", icon="UV")
         protection = box.column(align=True)
         protection.label(text="UV Protection", icon="LOCKED")
+        protection.label(text="Target: Active Object", icon="INFO")
+        protection.label(text="Finished protects seams and UVs.", icon="INFO")
+        protection.label(text="Layout Lock protects placement only.", icon="INFO")
+        has_faces = _selected_face_count(context) > 0
         row = protection.row(align=True)
-        row.enabled = edit_mode and active_uv is not None
+        row.enabled = edit_mode and active_uv is not None and has_faces
         row.operator("autoseamuv.mark_finished_islands", text="Mark Finished")
         row.operator("autoseamuv.unmark_finished_islands", text="Unmark Finished")
         row = protection.row(align=True)
-        row.enabled = edit_mode and active_uv is not None
+        row.enabled = edit_mode and active_uv is not None and has_faces
         row.operator("autoseamuv.lock_layout_islands", text="Lock Layout")
         row.operator("autoseamuv.unlock_layout_islands", text="Unlock Layout")
+        row = protection.row(align=True)
+        row.operator("autoseamuv.select_finished_islands", text="Select Finished")
+        row.operator("autoseamuv.select_layout_locked_islands", text="Select Layout Locked")
+        protection.operator("autoseamuv.clear_uv_protection", text="Clear UV Protection")
+        if edit_mode and active_uv is not None and not has_faces:
+            _info(protection, "Select at least one face to seed UV islands.")
         protection.separator()
         preflight = resolve_layout_targets(context)
         if len(meshes) > 1 or preflight["missing_uv_count"]:
@@ -209,7 +220,6 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.prop(settings, "weighted_target_region", text="Target UV Region")
         weighted.prop(settings, "weighted_scale_mode", text="Scale Mode")
         weighted.prop(settings, "weighted_density_influence", text="Density Influence")
-        weighted.prop(settings, "weighted_allow_rotation", text="Allow 90° Island Rotation")
         weighted.separator()
         weighted.label(text="Padding")
         weighted.prop(settings, "weighted_padding_mode", text="Mode")
@@ -227,8 +237,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.enabled = preflight["all_ready"] and not (
             settings.weighted_scope == "SELECTED_FACES" and not edit_mode)
         action.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout")
+        weighted.separator()
+        weighted.label(text="Incremental Pack")
+        weighted.label(text="Target: Active Object", icon="INFO")
+        weighted.label(text="Scope: Selected UV Islands", icon="INFO")
         incremental = weighted.row()
-        incremental.enabled = preflight["all_ready"] and edit_mode
+        incremental.enabled = preflight["all_ready"] and edit_mode and has_faces
         incremental.operator("autoseamuv.pack_selected_into_free_space",
                              text="Pack Selected Into Free Space")
         weighted.label(text="Each object is laid out independently.", icon="INFO")
@@ -259,8 +273,11 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 advanced.prop(settings, "pack_pin_method", text="Pin Method")
             advanced.prop(settings, "merge_overlapping", text="Merge Overlapping")
             advanced.prop(settings, "pack_target", text="Pack Target")
+        protection_active = any(has_active_uv_protection(obj.data) for obj in meshes)
+        if protection_active:
+            _warning(pack, "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout or Pack Selected Into Free Space, or clear UV Protection first.")
         action = pack.row()
-        action.enabled = preflight["all_ready"]
+        action.enabled = preflight["all_ready"] and not protection_active
         action.operator("autoseamuv.pack_islands", text="Pack Islands")
         if len(meshes) > 1:
             _warning(pack, "Objects will be packed independently.")
@@ -275,7 +292,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if settings.show_atlas_settings:
             atlas_settings = atlas.column(align=True)
             atlas_settings.prop(settings, "atlas_uv_source", text="UV Source")
-            atlas_settings.prop(settings, "atlas_texture_size", text="Texture Size")
+            atlas_settings.prop(settings, "atlas_texture_resolution", text="Texture Resolution")
             atlas_settings.prop(settings, "atlas_pixel_margin", text="Pixel Margin")
             atlas_settings.prop(settings, "atlas_average_island_scale", text="Average Island Scale")
             if (settings.weighted_scale_mode == "ALLOCATE_BY_IMPORTANCE" and
@@ -283,8 +300,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 _warning(atlas_settings, "Average Island Scale may override the relative scaling created by Weighted Island Layout.")
             atlas_settings.prop(settings, "atlas_pack_rotate", text="Allow Rotation")
         atlas_preflight = resolve_atlas_targets(context, settings)
+        atlas_protected = any(has_active_uv_protection(obj.data)
+                              for obj in atlas_preflight["objects"])
+        if atlas_protected:
+            _warning(atlas, "Atlas Pack cannot preserve UV Protection on the selected objects. Use Shared Weighted Atlas or clear UV Protection first.")
         action = atlas.row()
-        action.enabled = atlas_preflight["all_ready"]
+        action.enabled = atlas_preflight["all_ready"] and not atlas_protected
         action.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects")
 
     @staticmethod
@@ -369,8 +390,10 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         quality = box.column(align=True)
         quality.separator()
         quality.label(text="UV Quality")
+        quality.label(text="Scope: Selected Objects")
+        quality.prop(settings, "stretch_warning_threshold", text="Stretch Warning Threshold")
         quality.operator("autoseamuv.validate_uv", text="Run UV Quality Check")
-        quality.label(text="Problem faces may be selected in Edit Mode.", icon="INFO")
+        quality.label(text="Selects flipped, zero-area, and over-threshold stretch faces in Edit Mode.", icon="INFO")
         quality.label(text="Last Quality Report")
         quality.label(text=settings.report_summary, icon="INFO")
 

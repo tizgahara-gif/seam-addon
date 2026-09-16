@@ -39,7 +39,7 @@ class AUTOSEAMUV_OT_validate_uv(bpy.types.Operator):
                     iface_("UV quality check failed for %s: %s", obj.name, str(exc)),
                 )
                 continue
-            problem_faces = result['flipped'] | result['zero']
+            problem_faces = result['flipped'] | result['zero'] | result['stretched']
             if obj.mode == 'EDIT':
                 bm = bmesh.from_edit_mesh(obj.data)
                 bm.faces.ensure_lookup_table()
@@ -50,6 +50,6 @@ class AUTOSEAMUV_OT_validate_uv(bpy.types.Operator):
                 for p in obj.data.polygons:
                     p.select = p.index in problem_faces
                 obj.data.update()
-            summaries.append(iface_("%s: seams %d, flipped %d, zero %d, stretch %.2f/%.2f, summed UV area %.3f", obj.name, sum(e.use_seam for e in obj.data.edges), len(result['flipped']), len(result['zero']), result['average_stretch'], result['max_stretch'], result['summed_uv_area']))
+            summaries.append(iface_("%s: seams %d, flipped %d, zero %d, stretched %d, stretch avg %.2f / max %.2f, summed UV area %.3f", obj.name, sum(e.use_seam for e in obj.data.edges), len(result['flipped']), len(result['zero']), len(result['stretched']), result['average_stretch'], result['max_stretch'], result['summed_uv_area']))
         s.report_summary=' | '.join(summaries) if summaries else iface_('No UV meshes selected');self.report({'INFO'},s.report_summary);return {'FINISHED'} if summaries else {'CANCELLED'}
 CLASSES=(AUTOSEAMUV_OT_get_texel_density,AUTOSEAMUV_OT_set_texel_density,AUTOSEAMUV_OT_validate_uv)

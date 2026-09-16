@@ -22,7 +22,9 @@ from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
 from .translations import iface_
-from .uv_protection import (ProtectionError, protected_edge_indices,
+from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
+                            has_active_uv_protection, preflight_finished_write,
+                            protected_edge_indices,
                             validate_protection_consistency)
 from .chart_seam import (PRESETS, cached_uv_analysis_evaluators,
                          uv_chart_quality_from_snapshot, uv_face_distortion_from_snapshot)
@@ -460,6 +462,10 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                     coordinates = build_uv_coordinates(obj.data, grid, seam, settings.ring_layout,
                                                        settings.ring_spacing, settings.ring_orientation,
                                                        settings.ring_normalize)
+                    pending_loops = [loop for face_index in grid.face_indices
+                                     for loop in obj.data.polygons[face_index].loop_indices]
+                    preflight_finished_write(obj.data, pending_loops)
+                    assert_plan_does_not_modify_finished(obj.data, pending_loops)
                     layer = obj.data.uv_layers.get(settings.uv_map_name)
                     if layer is None:
                         if not settings.create_uv_if_missing:
@@ -469,7 +475,7 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                     assign_uv_loops(obj.data, layer, coordinates)
                     completed += 1
                     self.report({"INFO"}, iface_("%s: Rings %d, Columns %d, Boundaries %d, Seam %s", obj.name, grid.ring_count, grid.column_count, grid.boundary_count, seam))
-                except (TopologyError, ValueError) as exc:
+                except (TopologyError, ProtectionError, ValueError) as exc:
                     self.report({"ERROR"}, iface_("%s: Invalid - %s", obj.name, exc))
         finally:
             _restore_context(context, active, original_selection, mode)
@@ -774,6 +780,11 @@ class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        if any(has_active_uv_protection(obj.data)
+               for obj in _selected_visible_mesh_objects(context)):
+            self.report({"ERROR"}, iface_(
+                "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout or Pack Selected Into Free Space, or clear UV Protection first."))
+            return {"CANCELLED"}
         return _run_existing_uv_operation(self, context, pack_object, "Pack Islands")
 
 
@@ -945,6 +956,10 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
                 "%d selected mesh object(s) have no usable UV map.",
                 preflight["missing_uv_count"]))
             return {"CANCELLED"}
+        if any(has_active_uv_protection(obj.data) for obj in selected_objects):
+            self.report({"ERROR"}, iface_(
+                "Atlas Pack cannot preserve UV Protection on the selected objects. Use Shared Weighted Atlas or clear UV Protection first."))
+            return {"CANCELLED"}
         objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
         active, selected, mode = _snapshot_context(context)
         processed = 0
@@ -994,16 +1009,12 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
             if settings.atlas_average_island_scale:
                 bpy.ops.uv.average_islands_scale()
 
-            atlas_margin = settings.atlas_pixel_margin / settings.atlas_texture_size
-            try:
-                bpy.ops.uv.pack_islands(
-                    margin=atlas_margin,
-                    margin_method="FRACTION",
-                    rotate=settings.atlas_pack_rotate,
-                )
-            except TypeError:
-                # Blender versions predating margin_method retain approximate behavior.
-                bpy.ops.uv.pack_islands(margin=atlas_margin)
+            atlas_margin = settings.atlas_pixel_margin / int(settings.atlas_texture_resolution)
+            bpy.ops.uv.pack_islands(
+                margin=atlas_margin,
+                margin_method="FRACTION",
+                rotate=settings.atlas_pack_rotate,
+            )
 
             processed = len(valid_objects)
         except Exception as exc:

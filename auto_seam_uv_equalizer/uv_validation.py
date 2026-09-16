@@ -161,7 +161,7 @@ def validate_snapshot(snapshot, tolerance=1.0e-10, stretch_threshold=2.0):
     """Analyse immutable triangles without reading Blender RNA collections."""
     coord_epsilon = tolerance
     area_epsilon = tolerance
-    flipped, zero, stretches = set(), set(), []
+    flipped, zero, stretched, stretches = set(), set(), set(), []
     summed_uv_area = 0.0
     for triangle in snapshot:
         points = triangle.uv_points
@@ -180,15 +180,18 @@ def validate_snapshot(snapshot, tolerance=1.0e-10, stretch_threshold=2.0):
             zero.add(triangle.face_index)
         elif stretch == stretch:  # Do not allow NaN into reports.
             stretches.append(stretch)
+            if stretch > stretch_threshold:
+                stretched.add(triangle.face_index)
         summed_uv_area += abs(area)
 
     average = sum(stretches) / len(stretches) if stretches else 0.0
     return {
         "flipped": flipped,
         "zero": zero,
+        "stretched": stretched,
         "average_stretch": average,
         "max_stretch": max(stretches, default=0.0),
-        "problem_count": sum(value > stretch_threshold for value in stretches),
+        "problem_count": len(stretched),
         "summed_uv_area": summed_uv_area,
         # Temporary compatibility alias for API users; this is not true union coverage.
         "coverage": summed_uv_area,

@@ -38,6 +38,15 @@ def test_anisotropic_uv_scale_increases_stretch():
     assert result["average_stretch"] > validation.validate_snapshot((triangle(),))["average_stretch"]
 
 
+def test_over_threshold_stretch_reports_its_face_for_selection():
+    result = validation.validate_snapshot(
+        (triangle(uv=((0, 0), (3, 0), (0, 1)), face=12),),
+        stretch_threshold=2.0,
+    )
+    assert result["stretched"] == {12}
+    assert result["problem_count"] == 1
+
+
 def test_flipped_and_zero_triangles_are_detected_without_nonfinite_metrics():
     snapshot = (
         triangle(uv=((0, 0), (0, 1), (1, 0)), face=3),

@@ -37,7 +37,7 @@ UVアイランドを完成済みとして設定すると、自動シーム、ア
 
 **レイアウト固定**
 
-レイアウト固定されたUVアイランドは、Weighted LayoutやShared Weighted Atlas実行時にも現在の位置・回転・スケールを維持します。シーム生成やアンラップは保護しません。
+レイアウト固定されたUVアイランドは、Weighted LayoutやShared Weighted Atlas実行時にも現在の位置・回転・スケールを維持します。シーム生成やアンラップは保護しません。完成済みアイランドはRing / Strip Unwrapを含むUV座標を書き換える自動処理とシーム変更から保護されます。
 
 | 機能 | シーム保護 | アンラップ保護 | 位置 | 回転 | スケール |
 |---|---|---|---|---|---|
@@ -54,11 +54,11 @@ Texture resolution does not affect weighted UV-area allocation. It is only requi
 
 #### Shared Weighted Atlas
 
-**Per-Object Weighted Layout** は各オブジェクトがTarget Regionを個別に使用します。**Shared Weighted Atlas** は選択された全オブジェクトのアイランドを一つのpoolに集め、global median polygon densityでimportanceを計算し、同じWeighted MaxRectsで一つの共有アトラスへ配置します。Allow 90° Island Rotationも両機能で共有されます。対して **Atlas Pack** は現在のアイランド縮尺を基本として一つのアトラスへパックします。Shared Weighted AtlasはUV面積をグローバルに再配分し、Atlas PackやAverage Islands Scaleを自動実行しません。FULL / LEFT_HALF / RIGHT_HALFとSelected UV Islandsをサポートします。
+**Per-Object Weighted Layout** は各オブジェクトがTarget Regionを個別に使用します。**Shared Weighted Atlas** は選択された全オブジェクトのアイランドを一つのpoolに集め、global median polygon densityでimportanceを計算し、同じWeighted MaxRectsで一つの共有アトラスへ配置します。Allow 90° Island Rotationも両機能で共有されます。対して **Atlas Pack** は現在のアイランド縮尺を基本として一つのアトラスへパックします。Shared Weighted AtlasはUV面積をグローバルに再配分し、Atlas PackやAverage Islands Scaleを自動実行しません。FULL / LEFT_HALF / RIGHT_HALFとSelected UV Islandsをサポートします。Selected UV Islands scopeでは、未選択アイランド（通常・完成済み・レイアウト固定のすべて）を現在位置のObstacleとして維持します。この規則はPer-ObjectとShared Weighted Atlasで共通です。
 
 linked objectはProcess Shared Mesh Data Onceが有効ならMesh datablockごとに決定的な代表を一つ処理します。無効な状態で同じMesh datablockが複数対象に含まれる場合は、独立したUV配置が不可能なため処理を中止します。全対象を検証してpending UVを生成してから一括commitし、失敗時は全対象の元UVへrollbackします。
 
-**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認できます。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックします。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Process Shared Mesh Data Onceはパネル上部の共通Processing設定です。有効ならlinked duplicateは各工程を通して固有Mesh datablockごとに1回だけ処理され、複数選択時はUIに選択数と固有数を表示します。AtlasのAverage Island ScaleはWeightedのAllocate by Importanceが作った相対スケールを上書きする可能性があるため、該当する現在設定の組合せでは警告します（実行は禁止しません）。
+**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認でき、これらはすべてBlender標準Pack Islandsへ渡されます。UV Protectionが1アイランドでも有効な場合、Standard Pack Islandsは保護を維持できないため実行前に停止します（値がすべて0の保護Attributeは有効な保護とは扱いません）。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックしますが、選択対象にUV Protectionがあれば全体を実行前に停止します。その場合はProtection-awareな **Shared Weighted Atlas** を使用してください。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Process Shared Mesh Data Onceはパネル上部の共通Processing設定です。有効ならlinked duplicateは各工程を通して固有Mesh datablockごとに1回だけ処理され、複数選択時はUIに選択数と固有数を表示します。AtlasのAverage Island ScaleはWeightedのAllocate by Importanceが作った相対スケールを上書きする可能性があるため、該当する現在設定の組合せでは警告します（実行は禁止しません）。
 
 #### Distortion-Guided Seam Candidates
 
@@ -105,7 +105,7 @@ performed. UVs outside the 0–1 range and zero-width islands are supported.
 
 ### 5. Validation
 
-**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、UV triangle面積合計などを検査してLast Quality Reportへ表示し、flipped / zero-area面を結果として選択します。
+**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、UV triangle面積合計などを検査してLast Quality Reportへ表示し、flipped / zero-area / Stretch Warning Threshold超過面を結果として選択します。
 
 ## Recommended workflow
 

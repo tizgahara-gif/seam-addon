@@ -6,7 +6,7 @@ import bpy
 
 from .island_tools import straighten_circular_strip_islands_on_object
 from .uv_pack import pack as blender_pack
-from .uv_protection import (finished_face_indices, snapshot_finished,
+from .uv_protection import (finished_face_indices, has_active_uv_protection, snapshot_finished,
                             selected_islands, validate_protection_consistency)
 
 
@@ -138,17 +138,10 @@ def pack_object(obj, settings) -> None:
     """Pack existing islands on the active UV map with Blender's pack operator."""
     if obj is None or obj.type != "MESH":
         return
-    # Keep the exact legacy Blender pack path when protection is absent.  Once
-    # protection exists, use the same obstacle-aware transactional MaxRects
-    # backend as incremental packing; Blender UV pins are never repurposed.
-    if (obj.data.attributes.get("autoseam_finished_group") is not None or
-            obj.data.attributes.get("autoseam_layout_lock") is not None):
-        from .weighted_layout import incremental_pack_object, resolve_weighted_padding
-        incremental_pack_object(
-            obj, settings.weighted_density_influence, settings.weighted_scale_mode,
-            resolve_weighted_padding(settings), settings.weighted_target_region,
-            settings.weighted_allow_rotation, range(len(obj.data.polygons)))
-        return
+    if has_active_uv_protection(obj.data):
+        raise RuntimeError(
+            "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout "
+            "or Pack Selected Into Free Space, or clear UV Protection first.")
     try:
         _switch_to_object_mode()
         _select_only_object(obj)

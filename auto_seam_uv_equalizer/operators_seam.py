@@ -8,6 +8,7 @@ from .translations import iface_
 from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 from .seam_mirror import seam_state_assignments
 from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
+                            preflight_finished_write,
                             protected_edge_indices, validate_protection_consistency)
 
 def _active_mesh(context):
@@ -92,6 +93,7 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
         try:
             if edit_mode: obj.update_from_editmode()
             validate_protection_consistency(obj)
+            preflight_finished_write(mesh, edge_indices=assignments)
             assert_plan_does_not_modify_finished(mesh, edge_indices=assignments)
         except ProtectionError as exc:
             self.report({'ERROR'}, iface_(str(exc))); return {'CANCELLED'}

@@ -34,17 +34,21 @@ class IslandLayout:
 @dataclass(frozen=True)
 class PackedIsland:
     """A MaxRects placement, including the orientation selected by the planner."""
-    x: float
-    y: float
-    width: float
-    height: float
+    x0: float
+    y0: float
+    x1: float
+    y1: float
     rotated_90: bool = False
 
     def __iter__(self):
-        return iter((self.x, self.y, self.x + self.width, self.y + self.height))
+        return iter((self.x0, self.y0, self.x1, self.y1))
 
     def __getitem__(self, index):
-        return tuple(self)[index]
+        values = (*tuple(self), self.rotated_90)
+        return values[index]
+
+    def __len__(self):
+        return 5
 
 
 @dataclass(frozen=True)
@@ -119,7 +123,7 @@ def _subtract_occupied(free, occupied):
 
 
 def _maxrects_pack(boxes, rect, padding, obstacles=(), allow_rotation=False):
-    """Pack non-rotated boxes using deterministic MaxRects best-area-fit."""
+    """Pack boxes using deterministic MaxRects best-area-fit placements."""
     x0, y0, x1, y1 = rect
     free = [(x0, y0, x1 - x0, y1 - y0)]
     # An obstacle receives one padding halo and each movable receives its
@@ -144,18 +148,22 @@ def _maxrects_pack(boxes, rect, padding, obstacles=(), allow_rotation=False):
             width, height = body_width + 2 * padding, body_height + 2 * padding
             for free_index, (fx, fy, fw, fh) in enumerate(free):
                 if width <= fw + EPSILON and height <= fh + EPSILON:
+                    # Orientation is an explicit tie-break: an equally good
+                    # unrotated placement always wins over a 90 degree one.
                     candidates.append((fw * fh - width * height,
                                        min(fw - width, fh - height), fy, fx,
-                                       free_index, rotated, body_width, body_height))
+                                       int(rotated), free_index,
+                                       body_width, body_height))
         if not candidates:
             return None
-        _, _, _, _, chosen, rotated, body_width, body_height = min(candidates)
+        _, _, _, _, rotated, chosen, body_width, body_height = min(candidates)
         width, height = body_width + 2 * padding, body_height + 2 * padding
         fx, fy, fw, fh = free.pop(chosen)
         occupied = (fx, fy, width, height)
-        placed[index] = (fx + padding, fy + padding,
-                         fx + padding + body_width, fy + padding + body_height,
-                         rotated)
+        placed[index] = PackedIsland(
+            fx + padding, fy + padding,
+            fx + padding + body_width, fy + padding + body_height,
+            bool(rotated))
         # MaxRects splitting: retain every portion of every free rectangle not
         # covered by the newly occupied rectangle, then prune contained pieces.
         free = _subtract_occupied(free + [(fx, fy, fw, fh)], occupied)
@@ -180,7 +188,7 @@ def pack_importance_boxes(weights, aspects, rect=(0.0, 0.0, 1.0, 1.0), padding=0
             low, best = mid, result
     if best is None or low <= EPSILON:
         raise RuntimeError("importance rectangles cannot fit in the target UV region with the requested padding")
-    return (best if allow_rotation else [rect[:4] for rect in best]), low
+    return best, low
 
 
 def _polygon_uv_area(mesh, uv_layer, face_indices):
@@ -228,8 +236,6 @@ def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=
     result = []
     for loops in find_uv_islands(obj):
         faces = tuple(sorted({loop_to_face[index] for index in loops}))
-        if scope == "SELECTED_FACES" and not selected.intersection(faces):
-            continue
         if not faces:
             continue
         area = sum(polygon_areas[index] for index in faces)
@@ -253,6 +259,7 @@ def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=
         if not math.isfinite(island.uv_area) or island.uv_area <= EPSILON:
             raise RuntimeError("a UV island has zero or invalid UV area")
         island.source_bounds = bounds
+        island.in_scope = scope != "SELECTED_FACES" or bool(selected.intersection(faces))
         result.append(island)
     return result
 
@@ -286,27 +293,27 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
     for item, density, norm, weight, rectangle in zip(
             islands, densities, normalized, weights, rectangles):
         item.polygon_density, item.normalized_density = density, norm
-        item.weight, item.packed_rect = weight, rectangle[:4]
+        item.weight, item.packed_rect = weight, rectangle
 
     fits = []
     for item, packed in zip(islands, rectangles):
         bounds, rect = item.source_bounds, item.packed_rect
-        rotated = packed[4] if len(packed) > 4 else False
+        rotated = packed.rotated_90
         source_width = (bounds[3] - bounds[1]) if rotated else (bounds[2] - bounds[0])
         source_height = (bounds[2] - bounds[0]) if rotated else (bounds[3] - bounds[1])
-        fits.append(min((rect[2] - rect[0]) / source_width,
-                        (rect[3] - rect[1]) / source_height))
+        fits.append(min((rect.x1 - rect.x0) / source_width,
+                        (rect.y1 - rect.y0) / source_height))
     global_scale = min([1.0, *fits]) if scale_mode == "PRESERVE_TEXEL_DENSITY" else None
     actual_areas = []
     pending = []
     for index, item in enumerate(islands):
         bounds, packed = item.source_bounds, rectangles[index]
-        rect, rotated = packed[:4], (packed[4] if len(packed) > 4 else False)
+        rect, rotated = packed, packed.rotated_90
         source_width = (bounds[3] - bounds[1]) if rotated else (bounds[2] - bounds[0])
-        scale = ((rect[2] - rect[0]) / source_width
+        scale = ((rect.x1 - rect.x0) / source_width
                  if global_scale is None else global_scale)
         source_center = ((bounds[0] + bounds[2]) * .5, (bounds[1] + bounds[3]) * .5)
-        target_center = ((rect[0] + rect[2]) * .5, (rect[1] + rect[3]) * .5)
+        target_center = ((rect.x0 + rect.x1) * .5, (rect.y0 + rect.y1) * .5)
         coordinates = []
         for loop_index in item.loop_indices:
             uv = item.uv_layer.uv[loop_index].vector
@@ -339,8 +346,8 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
     for first in range(len(rectangles)):
         for second in range(first + 1, len(rectangles)):
             a, b = rectangles[first], rectangles[second]
-            if (min(a[2], b[2]) - max(a[0], b[0]) > -2 * padding + EPSILON and
-                    min(a[3], b[3]) - max(a[1], b[1]) > -2 * padding + EPSILON):
+            if (min(a.x1, b.x1) - max(a.x0, b.x0) > -2 * padding + EPSILON and
+                    min(a.y1, b.y1) - max(a.y0, b.y0) > -2 * padding + EPSILON):
                 raise RuntimeError("weighted layout produced overlapping island bounds")
     actual_total, weight_total = sum(actual_areas), sum(weights)
     maximum_error = (max(abs((area / actual_total) / (weight / weight_total) - 1.0)
@@ -374,8 +381,9 @@ def weighted_layout_object(obj, density_influence, scale_mode, padding_uv,
     validate_protection_consistency(obj)
     movable, fixed = [], []
     for island in islands:
-        (fixed if island_state(obj.data, island.face_indices).effectively_layout_locked
-         else movable).append(island)
+        state = island_state(obj.data, island.face_indices)
+        (movable if island.in_scope and not state.effectively_layout_locked
+         else fixed).append(island)
     if not movable:
         raise RuntimeError("all target UV islands are protected")
     obstacles = [item.source_bounds for item in fixed]
@@ -442,8 +450,9 @@ def shared_weighted_layout(objects, density_influence, scale_mode, padding_uv,
         validate_protection_consistency(obj)
     movable, fixed = [], []
     for island in islands:
-        (fixed if island_state(island.mesh, island.face_indices).effectively_layout_locked
-         else movable).append(island)
+        state = island_state(island.mesh, island.face_indices)
+        (movable if island.in_scope and not state.effectively_layout_locked
+         else fixed).append(island)
     if not movable:
         raise RuntimeError("all target UV islands are protected")
     meshes = {item.mesh for item in islands}

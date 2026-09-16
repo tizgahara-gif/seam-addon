@@ -53,36 +53,107 @@ class _ProtectionTagBase(bpy.types.Operator):
             self.report({"ERROR"}, iface_(str(exc)))
             return {"CANCELLED"}
         if obj.data.users > 1:
-            self.report({"INFO"}, iface_("Protection is stored on shared mesh data."))
-        self.report({"INFO"}, iface_("Updated protection on %d UV island(s).", count))
+            self.report({"INFO"}, iface_("UV protection is stored on shared mesh data."))
+        messages = {
+            ("finished", True): "Marked %d UV islands as Finished.",
+            ("finished", False): "Removed Finished state from %d UV islands.",
+            ("layout", True): "Locked layout for %d UV islands.",
+            ("layout", False): "Unlocked layout for %d UV islands.",
+        }
+        self.report({"INFO"}, iface_(messages[(self.kind, self.value)], count))
         return {"FINISHED"}
 
 
 class AUTOSEAMUV_OT_mark_finished_islands(_ProtectionTagBase):
     bl_idname = "autoseamuv.mark_finished_islands"
-    bl_label = "Mark Selected UV Islands Finished"
+    bl_label = "Mark Finished"
+    bl_description = "Protect selected UV islands from automatic seam, unwrap, and layout changes"
     kind = "finished"
 
 
 class AUTOSEAMUV_OT_unmark_finished_islands(_ProtectionTagBase):
     bl_idname = "autoseamuv.unmark_finished_islands"
-    bl_label = "Unmark Selected UV Islands Finished"
+    bl_label = "Unmark Finished"
+    bl_description = "Remove Finished protection from selected UV islands"
     kind = "finished"; value = False
 
 
 class AUTOSEAMUV_OT_lock_layout_islands(_ProtectionTagBase):
     bl_idname = "autoseamuv.lock_layout_islands"
-    bl_label = "Lock Selected UV Islands"
+    bl_label = "Lock Layout"
+    bl_description = "Keep selected UV islands' position, rotation, and scale during layout and packing"
     kind = "layout"
 
 
 class AUTOSEAMUV_OT_unlock_layout_islands(_ProtectionTagBase):
     bl_idname = "autoseamuv.unlock_layout_islands"
-    bl_label = "Unlock Selected UV Islands"
+    bl_label = "Unlock Layout"
+    bl_description = "Remove layout-only protection from selected UV islands"
     kind = "layout"; value = False
+
+
+class _SelectProtectedBase(bpy.types.Operator):
+    bl_options = {"REGISTER", "UNDO"}
+    attribute_name = ""
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return bool(obj and obj.type == "MESH" and context.mode == "EDIT_MESH")
+
+    def execute(self, context):
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        layer = bm.faces.layers.int.get(self.attribute_name)
+        for face in bm.faces:
+            face.select = bool(layer and int(face[layer]) != 0)
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        return {"FINISHED"}
+
+
+class AUTOSEAMUV_OT_select_finished_islands(_SelectProtectedBase):
+    bl_idname = "autoseamuv.select_finished_islands"
+    bl_label = "Select Finished"
+    attribute_name = FINISHED_ATTRIBUTE
+
+
+class AUTOSEAMUV_OT_select_layout_locked_islands(_SelectProtectedBase):
+    bl_idname = "autoseamuv.select_layout_locked_islands"
+    bl_label = "Select Layout Locked"
+    attribute_name = LAYOUT_LOCK_ATTRIBUTE
+
+
+class AUTOSEAMUV_OT_clear_uv_protection(bpy.types.Operator):
+    bl_idname = "autoseamuv.clear_uv_protection"
+    bl_label = "Clear UV Protection"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        obj = context.active_object
+        if obj is None or obj.type != "MESH":
+            return {"CANCELLED"}
+        bm = bmesh.from_edit_mesh(obj.data) if context.mode == "EDIT_MESH" else None
+        if bm:
+            for name in (FINISHED_ATTRIBUTE, LAYOUT_LOCK_ATTRIBUTE):
+                layer = bm.faces.layers.int.get(name)
+                if layer:
+                    for face in bm.faces:
+                        face[layer] = 0
+            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        else:
+            for name in (FINISHED_ATTRIBUTE, LAYOUT_LOCK_ATTRIBUTE):
+                attribute = obj.data.attributes.get(name)
+                if attribute:
+                    for value in attribute.data:
+                        value.value = 0
+            obj.data.update()
+        return {"FINISHED"}
 
 
 CLASSES = (AUTOSEAMUV_OT_mark_finished_islands,
            AUTOSEAMUV_OT_unmark_finished_islands,
            AUTOSEAMUV_OT_lock_layout_islands,
-           AUTOSEAMUV_OT_unlock_layout_islands)
+           AUTOSEAMUV_OT_unlock_layout_islands,
+           AUTOSEAMUV_OT_select_finished_islands,
+           AUTOSEAMUV_OT_select_layout_locked_islands,
+           AUTOSEAMUV_OT_clear_uv_protection)
