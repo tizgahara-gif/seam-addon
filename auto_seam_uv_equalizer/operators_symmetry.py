@@ -10,6 +10,7 @@ from .symmetry import (SymmetryError, build_symmetry_plan,
 from .translations import iface_
 from .operators import _restore_context, _snapshot_context
 from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
+                            preflight_finished_write,
                             validate_protection_consistency)
 
 
@@ -127,6 +128,7 @@ class AUTOSEAMUV_OT_transfer_symmetric_uv(bpy.types.Operator):
             writes = transferred_uvs(source_uvs, plan.loop_pairs,
                                       settings.symmetry_layout, settings.symmetry_island_gap)
             validate_protection_consistency(obj)
+            preflight_finished_write(obj.data, writes)
             assert_plan_does_not_modify_finished(obj.data, writes)
             # This is the first mutation: every geometry/loop/UV check succeeded.
             for loop_index, uv in writes.items():
@@ -171,6 +173,7 @@ class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry(bpy.types.Operator):
                 self._EPSILON,
             )
             validate_protection_consistency(obj)
+            preflight_finished_write(obj.data, writes)
             assert_plan_does_not_modify_finished(obj.data, writes)
 
             # Retain every destination value so even assignment or post-check
@@ -269,9 +272,13 @@ class AUTOSEAMUV_OT_sync_mirrored_uv_island(bpy.types.Operator):
             )
             obj.update_from_editmode()
             validate_protection_consistency(obj)
+            preflight_finished_write(obj.data, plan.uv_writes, plan.seam_writes)
             assert_plan_does_not_modify_finished(
                 obj.data, plan.uv_writes, plan.seam_writes)
-        except (SymmetryError, ProtectionError, ValueError, IndexError) as exc:
+        except ProtectionError as exc:
+            self.report({"ERROR"}, iface_(str(exc)))
+            return {"CANCELLED"}
+        except (SymmetryError, ValueError, IndexError) as exc:
             message = str(exc)
             if not message.startswith(("Exactly one", "The selected UV island",
                                        "The selected island crosses")):

@@ -173,7 +173,27 @@ def test_obstacles_are_clipped_to_each_target_region_and_rotation_is_optional():
         assert len(rectangles[0]) == 5
         assert root[0] <= rectangles[0][0] < rectangles[0][2] <= root[2]
     plain, _ = module.pack_importance_boxes([1], [4], allow_rotation=False)
-    assert len(plain[0]) == 4
+    assert len(plain[0]) == 5
+    assert isinstance(plain[0], module.PackedIsland)
+    assert plain[0].rotated_90 is False
+
+
+def test_rotation_fit_rescue_tie_preference_and_determinism():
+    module = _load_primitives()
+    # The body fits only after swapping width and height.
+    rescued = module._maxrects_pack([(0.7, 0.4)], (0, 0, 0.5, 0.8), 0,
+                                    allow_rotation=True)
+    assert rescued and rescued[0].rotated_90 is True
+    assert module._maxrects_pack([(0.7, 0.4)], (0, 0, 0.5, 0.8), 0,
+                                 allow_rotation=False) is None
+
+    # Both orientations have the same geometric and position scores.  The
+    # explicit orientation key must select 0 degrees on every repeat.
+    results = [module._maxrects_pack([(0.4, 0.2)], (0, 0, 0.5, 0.5), 0,
+                                     allow_rotation=True)
+               for _ in range(10)]
+    assert all(result[0].rotated_90 is False for result in results)
+    assert all(result == results[0] for result in results)
 
 
 def test_shared_global_planner_area_ratio_regions_and_determinism():

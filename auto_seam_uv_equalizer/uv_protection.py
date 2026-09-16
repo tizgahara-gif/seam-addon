@@ -131,6 +131,16 @@ def finished_face_indices(mesh):
             if attribute else set())
 
 
+def has_active_uv_protection(mesh) -> bool:
+    """Return whether any face has an effective Finished or Layout Lock value."""
+    finished = _attribute(mesh, FINISHED_ATTRIBUTE)
+    locked = _attribute(mesh, LAYOUT_LOCK_ATTRIBUTE)
+    return bool(
+        (finished and any(int(item.value) > 0 for item in finished.data)) or
+        (locked and any(int(item.value) != 0 for item in locked.data))
+    )
+
+
 def edge_touches_finished_region(mesh, edge, edge_faces=None):
     if edge_faces is None:
         from .mesh_utils import build_edge_to_faces
@@ -160,6 +170,30 @@ def assert_plan_does_not_modify_finished(mesh, loop_indices=(), edge_indices=())
     bad_edges = set(edge_indices) & protected_edge_indices(mesh)
     if bad_loops or bad_edges:
         raise ProtectionError("internal protection violation")
+
+
+def preflight_finished_write(mesh, loop_indices=(), edge_indices=()):
+    """Reject a user operation targeting Finished islands before its commit."""
+    loops = set(loop_indices)
+    edges = set(edge_indices)
+    if not (loops & finished_loop_indices(mesh) or edges & protected_edge_indices(mesh)):
+        return
+    target_faces = {mesh.loops[index].polygon_index for index in loops}
+    if edges:
+        from .mesh_utils import build_edge_to_faces
+        edge_faces = build_edge_to_faces(mesh)
+        target_faces.update(face for edge in edges for face in edge_faces.get(edge, ()))
+    affected_faces = target_faces & finished_face_indices(mesh)
+    # Count complete current islands rather than loops/faces so the message
+    # matches the protection unit presented by the UI.
+    count = 0
+    if affected_faces:
+        # This fallback is deliberately mesh-only and does not mutate UV state.
+        count = len({int(_attribute(mesh, FINISHED_ATTRIBUTE).data[index].value)
+                     for index in affected_faces})
+    raise ProtectionError(
+        f"Target contains {count or 1} Finished UV island(s). "
+        "Unmark Finished before this operation.")
 
 
 def snapshot_finished(mesh):

@@ -259,19 +259,16 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Padding Pixels", default=4, min=0, max=1024,
         description="Padding reserved around each packed island bound in pixels",
     )
-    weighted_allow_rotation: BoolProperty(
-        name="Allow 90° Island Rotation", default=False,
-        description="Allow movable weighted-layout islands to rotate by 90 degrees",
+    atlas_texture_resolution: EnumProperty(
+        name="Texture Resolution",
+        description="Used only to convert pixel padding into UV-space padding",
+        items=tuple((value, value, f"{value} x {value}")
+                    for value in ("512", "1024", "2048", "4096", "8192")),
+        default="2048",
     )
-
-
-    atlas_texture_size: IntProperty(
-        name="Atlas Texture Size",
-        description="Used for Atlas Pack pixel-margin conversion",
-        default=2048,
-        min=16,
-        max=16384,
-    )
+    # Legacy compatibility; runtime code never reads this property.
+    atlas_texture_size: IntProperty(name="Atlas Texture Size", default=2048,
+                                    min=16, max=16384)
 
     atlas_uv_source: EnumProperty(
         name="Atlas UV Source",
@@ -378,9 +375,11 @@ def migrate_legacy_settings(settings):
             "weighted_texture_size" in keys or "weighted_padding_pixels" in keys):
         settings.weighted_padding_mode = "PIXELS"
     if "weighted_texture_resolution" not in keys and "weighted_texture_size" in keys:
-        legacy_resolution = str(int(settings.weighted_texture_size))
-        if legacy_resolution in {"512", "1024", "2048", "4096", "8192"}:
-            settings.weighted_texture_resolution = legacy_resolution
+        settings.weighted_texture_resolution = nearest_texture_resolution(
+            settings.weighted_texture_size)
+    if "atlas_texture_resolution" not in keys and "atlas_texture_size" in keys:
+        settings.atlas_texture_resolution = nearest_texture_resolution(
+            settings.atlas_texture_size)
     if "margin" in keys:
         if "unwrap_margin" not in keys:
             settings.unwrap_margin = settings.margin
@@ -396,3 +395,15 @@ def migrate_legacy_settings(settings):
             settings.mesh_symmetry_tolerance = settings.symmetry_tolerance
         elif "mirror_tolerance" in keys:
             settings.mesh_symmetry_tolerance = settings.mirror_tolerance
+
+
+def nearest_texture_resolution(value):
+    """Normalize legacy resolution values to the nearest supported enum value."""
+    candidates = (512, 1024, 2048, 4096, 8192)
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return "2048"
+    if number <= 0:
+        return "2048"
+    return str(min(candidates, key=lambda candidate: (abs(candidate - number), candidate)))

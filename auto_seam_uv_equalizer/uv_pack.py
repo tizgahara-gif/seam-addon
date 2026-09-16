@@ -14,9 +14,6 @@ def pack(bpy, settings, margin=None):
     }
     if settings.pack_rotation != "OFF":
         kwargs["rotate_method"] = settings.pack_rotation
-    try:
-        return bpy.ops.uv.pack_islands(**kwargs)
-    except TypeError:
-        return bpy.ops.uv.pack_islands(
-            margin=kwargs["margin"], rotate=kwargs["rotate"]
-        )
+    # Never silently retry with a reduced argument set: every visible setting
+    # must reach Blender's packer, or the operation must fail explicitly.
+    return bpy.ops.uv.pack_islands(**kwargs)
