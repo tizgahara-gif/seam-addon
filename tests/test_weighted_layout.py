@@ -95,3 +95,31 @@ def test_importance_packer_all_target_regions_and_determinism():
         second = module.pack_importance_boxes([4, 2, 1], [6, 0.25, 1], root, 0.002)
         assert first == second
         _assert_packing(module, [4, 2, 1], [6, 0.25, 1], root, 0.002)
+
+
+def test_shared_global_planner_area_ratio_regions_and_determinism():
+    module = _load_primitives()
+    class Vector:
+        def __init__(self, x, y): self.x, self.y = x, y
+    class Entry:
+        def __init__(self, vector): self.vector = vector
+    class Layer:
+        def __init__(self, vectors): self.uv = [Entry(Vector(*v)) for v in vectors]
+    def island(area, offset):
+        item = module.IslandLayout((offset,), tuple(range(4)), area, 1, 1 / area)
+        item.uv_layer = Layer(((0, 0), (1, 0), (1, 1), (0, 1)))
+        item.source_bounds = (0, 0, 1, 1); item.uv_aspect = 1; item.uv_area = 1
+        return item
+    for region in ("FULL", "LEFT_HALF", "RIGHT_HALF"):
+        islands = [island(4, 0), island(1, 1)]
+        pending, report = module.plan_weighted_layout(
+            islands, 0.0, "ALLOCATE_BY_IMPORTANCE", 2048, 4, region)
+        areas = []
+        root = module.target_rectangle(region)
+        for _item, coords in pending:
+            xs = [u for _, u, _ in coords]; ys = [v for _, _, v in coords]
+            assert min(xs) >= root[0] and max(xs) <= root[2]
+            assert min(ys) >= root[1] and max(ys) <= root[3]
+            areas.append((max(xs)-min(xs)) * (max(ys)-min(ys)))
+        assert math.isclose(areas[0] / areas[1], 4.0, rel_tol=1e-7)
+        assert report.maximum_area_ratio_error < 1e-7

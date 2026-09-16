@@ -463,3 +463,35 @@ def test_hard_surface_and_manual_scale_entire_professional_prior(monkeypatch):
         test_mesh, 0, [0, 1], settings(seam_preset="MANUAL"))[0]
     assert hard == pytest.approx(organic * .25)
     assert manual == pytest.approx(organic * .25)
+
+
+def test_shared_analysis_cache_unwraps_each_cut_state_once():
+    calls = []
+    quality, distortion = chart_seam.cached_uv_analysis_evaluators(
+        lambda cuts: calls.append(frozenset(cuts)) or "snapshot",
+        lambda snapshot, chart: len(chart),
+        lambda snapshot, chart: {face: float(face) for face in chart},
+    )
+    cuts = {2, 4}
+    assert quality({0}, cuts) == 1
+    assert distortion({0}, cuts) == {0: 0.0}
+    assert quality({1}, cuts) == 1
+    assert distortion({1}, cuts) == {1: 1.0}
+    assert calls == [frozenset(cuts)]
+
+
+def test_distortion_hot_clusters_localized_uniform_and_separate():
+    graph = {0: [(1, 0)], 1: [(0, 0), (2, 1)], 2: [(1, 1)], 3: []}
+    clusters = chart_seam.distortion_hot_clusters(
+        {0: .1, 1: 4.0, 2: .1, 3: 3.0}, graph, set())
+    assert clusters == [{1}, {3}]
+    assert chart_seam.distortion_hot_clusters({0: 1.0, 1: 1.0}, graph, set()) == []
+
+
+def test_distortion_trial_slots_are_reserved_and_deduplicated():
+    standard = [(float(i), i, {i}) for i in range(5)]
+    guided = [(-2.0, 9, {9}), (-1.0, 8, {8}), (0.0, 0, {0})]
+    selected = chart_seam.select_trial_paths(standard, guided)
+    assert [item[2] for item in selected[:2]] == [{9}, {8}]
+    assert len(selected) == 5
+    assert sum(item[2] == {0} for item in selected) == 1

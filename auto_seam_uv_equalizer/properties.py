@@ -31,6 +31,9 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     use_professional_garment_prior: BoolProperty(
         name="Use Professional Garment Prior", default=True,
         description="Ranks likely garment seam positions before trial unwrap. It never forces a seam; final acceptance is based on measured UV quality")
+    use_distortion_guided_candidates: BoolProperty(
+        name="Distortion-Guided Candidates", default=True,
+        description="Uses distortion from the current temporary unwrap to choose which candidate seam paths to trial first. Final seam acceptance still requires measured UV quality improvement")
     character_front_axis: EnumProperty(
         name="Character Front Axis",
         items=(("+X", "+X", ""), ("-X", "-X", ""),

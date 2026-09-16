@@ -138,7 +138,7 @@ def _bool_edge_attribute(mesh, name: str) -> list[bool]:
     return [item.value for item in attribute.data]
 
 
-def analyze_chart_seams(obj, settings, quality_evaluator=None):
+def analyze_chart_seams(obj, settings, quality_evaluator=None, distortion_evaluator=None):
     """Return a non-destructive chart plan for an object."""
     mesh = obj.data
     mesh.update(calc_edges=True)
@@ -164,7 +164,7 @@ def analyze_chart_seams(obj, settings, quality_evaluator=None):
             "XYZ".index(getattr(settings, "mesh_symmetry_axis", "X")),
             getattr(settings, "mesh_symmetry_tolerance", 0.0001))
     result = analyze(mesh, edge_faces, force, protect, settings, quality_evaluator,
-                     preferred_paths, mirror_edges, topology_rings)
+                     preferred_paths, mirror_edges, topology_rings, distortion_evaluator)
     result.signature = analysis_signature(obj, settings)
     return result
 
@@ -180,7 +180,8 @@ def analysis_signature(obj, settings):
                      "curvature_bias", "weight_material", "seam_search_radius",
                      "chart_refinement_iterations")
     setting_names += ("character_front_axis", "use_professional_garment_prior",
-                      "mesh_symmetry_axis", "mesh_symmetry_tolerance")
+                      "mesh_symmetry_axis", "mesh_symmetry_tolerance",
+                      "use_distortion_guided_candidates")
     return (
         tuple(tuple(vertex.co) for vertex in mesh.vertices),
         tuple(tuple(edge.vertices) for edge in mesh.edges),
@@ -188,7 +189,8 @@ def analysis_signature(obj, settings):
         tuple(edge.use_seam for edge in mesh.edges), tuple(force), tuple(protect),
         tuple(getattr(edge, "use_edge_sharp", False) for edge in mesh.edges),
         tuple(face.material_index for face in mesh.polygons),
-        tuple((name, getattr(settings, name)) for name in setting_names),
+        tuple((name, getattr(settings, name, True) if name == "use_distortion_guided_candidates"
+               else getattr(settings, name)) for name in setting_names),
     )
 
 

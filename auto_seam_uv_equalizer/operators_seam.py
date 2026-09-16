@@ -61,6 +61,9 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
         if edit_mode:
             bm = bmesh.from_edit_mesh(mesh)
             bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table()
+            if s.mirror_direction == 'SELECTED' and not any(edge.select for edge in bm.edges):
+                self.report({'WARNING'}, iface_("No mesh edges are selected."))
+                return {'CANCELLED'}
             vertices, edges = bm.verts, bm.edges
             coordinates = [tuple(v.co) for v in vertices]
             edge_vertices = [tuple(v.index for v in edge.verts) for edge in edges]

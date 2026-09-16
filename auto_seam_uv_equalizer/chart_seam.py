@@ -35,6 +35,8 @@ PRESETS = {
 }
 
 TRIAL_CANDIDATE_LIMIT = 5
+DISTORTION_RESERVED_TRIALS = 2
+MAX_DISTORTION_CLUSTERS = 2
 SEED_POOL_LIMIT = 12
 QUALITY_EPSILON = 1.0e-7
 UV_EPSILON = 1.0e-12
@@ -267,8 +269,8 @@ def proxy_chart_quality(mesh, chart, edge_faces):
     return min(2.0, .55 * mean + .45 * accumulated)
 
 
-def uv_chart_quality_from_snapshot(mesh, uv_vectors, chart):
-    """Measure chart distortion from a sequence indexed by mesh-loop index."""
+def _uv_distortion_samples(mesh, uv_vectors, chart):
+    """Extract the shared scale-normalized triangle measurements."""
     samples = []
     mesh.calc_loop_triangles()
     for triangle in mesh.loop_triangles:
@@ -280,39 +282,82 @@ def uv_chart_quality_from_snapshot(mesh, uv_vectors, chart):
             u = points2[1] - points2[0]; v = points2[2] - points2[0]
             area2 = abs(u.x * v.y - u.y * v.x) * .5
             if area3 > UV_EPSILON:
-                samples.append((area3, area2, points3, points2))
+                samples.append((area3, area2, points3, points2, triangle.polygon_index))
     if not samples:
-        return 2.0
+        return [], 1.0
     scale = max(UV_EPSILON, sum(max(item[1], UV_EPSILON) for item in samples) /
                 sum(item[0] for item in samples))
+    measured = []
+    for area3, area2, points3, points2, face_index in samples:
+        uv_edges = [(points2[(vertex + 1) % 3] - points2[vertex]).length for vertex in range(3)]
+        collapsed = area2 <= UV_EPSILON or min(uv_edges) <= UV_EPSILON
+        errors = []
+        if not collapsed:
+            for vertex in range(3):
+                a3, b3 = points3[(vertex + 1) % 3] - points3[vertex], points3[(vertex + 2) % 3] - points3[vertex]
+                a2, b2 = points2[(vertex + 1) % 3] - points2[vertex], points2[(vertex + 2) % 3] - points2[vertex]
+                c3 = max(-1., min(1., a3.dot(b3) / max(1e-12, a3.length * b3.length)))
+                c2 = max(-1., min(1., a2.dot(b2) / max(1e-12, a2.length * b2.length)))
+                errors.append(abs(acos(c3) - acos(c2)) / pi)
+        measured.append((area3, area2, sum(errors) / 3.0 if errors else 0.0,
+                         collapsed, face_index))
+    return measured, scale
+
+
+def uv_chart_quality_from_snapshot(mesh, uv_vectors, chart):
+    """Measure chart distortion; the v0.7 aggregate formula is unchanged."""
+    samples, scale = _uv_distortion_samples(mesh, uv_vectors, chart)
+    if not samples:
+        return 2.0
     area_error = sum(abs(log(max(item[1], UV_EPSILON) / item[0] / scale))
                      for item in samples) / len(samples)
-    angular = 0.0; angular_count = 0; collapsed = 0
-    for _a3, _a2, p3, p2 in samples:
-        uv_edges = [(p2[(vertex + 1) % 3] - p2[vertex]).length for vertex in range(3)]
-        if _a2 <= UV_EPSILON or min(uv_edges) <= UV_EPSILON:
-            collapsed += 1
-            continue
-        errors = []
-        for vertex in range(3):
-            a3, b3 = p3[(vertex + 1) % 3] - p3[vertex], p3[(vertex + 2) % 3] - p3[vertex]
-            a2, b2 = p2[(vertex + 1) % 3] - p2[vertex], p2[(vertex + 2) % 3] - p2[vertex]
-            c3 = max(-1., min(1., a3.dot(b3) / max(1e-12, a3.length * b3.length)))
-            c2 = max(-1., min(1., a2.dot(b2) / max(1e-12, a2.length * b2.length)))
-            errors.append(abs(acos(c3) - acos(c2)) / pi)
-        angular += sum(errors) / 3.0
-        angular_count += 1
-    angular = angular / angular_count if angular_count else 0.0
+    valid = [item[2] for item in samples if not item[3]]
+    angular = sum(valid) / len(valid) if valid else 0.0
+    collapsed = sum(item[3] for item in samples)
     # Area and angle are dimensionless; collapse is an explicit strong penalty.
     collapse_ratio = collapsed / len(samples)
     return (.55 * angular + .35 * area_error +
             .10 * min(2.0, area_error * area_error) + COLLAPSE_WEIGHT * collapse_ratio)
 
 
+def uv_face_distortion_from_snapshot(mesh, uv_vectors, chart):
+    """Return per-face guidance scores; these never enter final seam benefit."""
+    samples, scale = _uv_distortion_samples(mesh, uv_vectors, chart)
+    by_face = defaultdict(list)
+    for area3, area2, angular, collapsed, face_index in samples:
+        area_error = abs(log(max(area2, UV_EPSILON) / area3 / scale))
+        score = (.55 * angular + .35 * area_error +
+                 .10 * min(2.0, area_error * area_error) + COLLAPSE_WEIGHT * collapsed)
+        by_face[face_index].append(score)
+    return {face: sum(values) / len(values) for face, values in by_face.items()}
+
+
 def uv_chart_quality(mesh, uv_layer, chart):
     """Measure chart quality directly from a Blender UV layer."""
     return uv_chart_quality_from_snapshot(
         mesh, [item.vector for item in uv_layer.uv], chart)
+
+
+def cached_uv_analysis_evaluators(unwrap_snapshot, quality_from_snapshot,
+                                  distortion_from_snapshot):
+    """Share one unwrap snapshot cache between quality and face guidance."""
+    uv_state_cache, quality_cache, distortion_cache = {}, {}, {}
+    def snapshot(cuts):
+        key = frozenset(cuts)
+        if key not in uv_state_cache:
+            uv_state_cache[key] = unwrap_snapshot(cuts)
+        return key, uv_state_cache[key]
+    def quality(chart, cuts):
+        cuts_key, state = snapshot(cuts); key = (frozenset(chart), cuts_key)
+        if key not in quality_cache:
+            quality_cache[key] = quality_from_snapshot(state, chart)
+        return quality_cache[key]
+    def distortion(chart, cuts):
+        cuts_key, state = snapshot(cuts); key = (frozenset(chart), cuts_key)
+        if key not in distortion_cache:
+            distortion_cache[key] = distortion_from_snapshot(state, chart)
+        return distortion_cache[key]
+    return quality, distortion
 
 
 def cached_uv_quality_evaluator(unwrap_snapshot, quality_from_snapshot):
@@ -330,6 +375,48 @@ def cached_uv_quality_evaluator(unwrap_snapshot, quality_from_snapshot):
         return quality_cache[key]
 
     return evaluate
+
+
+def distortion_hot_clusters(face_scores, graph, cuts, epsilon=QUALITY_EPSILON,
+                            limit=MAX_DISTORTION_CLUSTERS):
+    """Find deterministic localized P80 hot-face components."""
+    if not face_scores:
+        return []
+    values = sorted(face_scores.values()); middle = values[len(values) // 2]
+    if len(values) % 2 == 0:
+        middle = (values[len(values)//2 - 1] + middle) * .5
+    if max(values) - middle <= epsilon:
+        return []
+    p80 = values[min(len(values) - 1, max(0, int(.8 * (len(values) - 1))))]
+    hot = {face for face, score in face_scores.items()
+           if score >= p80 and score > middle + epsilon}
+    clusters = []
+    while hot:
+        seed = min(hot); hot.remove(seed); component = {seed}; queue = deque((seed,))
+        while queue:
+            face = queue.popleft()
+            for other, edge in graph.get(face, ()):
+                if edge not in cuts and other in hot:
+                    hot.remove(other); component.add(other); queue.append(other)
+        clusters.append(component)
+    clusters.sort(key=lambda cluster: (-max(face_scores[f] for f in cluster),
+                                       -sum(face_scores[f] for f in cluster), min(cluster)))
+    return clusters[:limit]
+
+
+def select_trial_paths(standard_paths, distortion_paths, limit=TRIAL_CANDIDATE_LIMIT,
+                       reserved_distortion=DISTORTION_RESERVED_TRIALS):
+    """Reserve guidance trial opportunities, deduplicating identical edge sets."""
+    chosen, seen = [], set()
+    def add(paths, maximum):
+        for item in paths:
+            key = frozenset(item[2])
+            if key in seen: continue
+            seen.add(key); chosen.append(item)
+            if len(chosen) >= maximum: break
+    add(sorted(distortion_paths, key=lambda item: item[:2]), min(limit, reserved_distortion))
+    add(sorted(standard_paths, key=lambda item: item[:2]), limit)
+    return chosen[:limit]
 
 
 def _geodesic_farthest(vertex_graph, positions, start, allowed_edges):
@@ -476,7 +563,8 @@ def affected_chart_quality(charts, split, edge_faces, cuts, evaluator, graph, fa
 
 
 def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
-            preferred_paths=(), mirror_edges=None, topology_rings=()):
+            preferred_paths=(), mirror_edges=None, topology_rings=(),
+            distortion_evaluator=None):
     """Build/refine provisional charts and return seams without mutating *mesh*."""
     preset = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"])
     effective_edge_penalty = settings.seam_count_penalty * (1.0 + preset.seam_penalty)
@@ -515,6 +603,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
             best_trial = None
             ranked = []
             professional_paths = []
+            distortion_paths = []
             professional = getattr(settings, "use_professional_garment_prior", True)
             sleeve = settings.seam_preset == "CYLINDER" and bool(preferred_paths)
             for path in preferred_paths:
@@ -553,6 +642,39 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 edge_index in {index for index, faces in edge_faces.items()
                                if set(faces).issubset(chart)}
                 for _other, edge_index in vertex_graph.get(vertex, ()))}
+            if (getattr(settings, "use_distortion_guided_candidates", True) and
+                    distortion_evaluator is not None and chart_anchors):
+                scores = distortion_evaluator(chart, cuts)
+                for cluster in distortion_hot_clusters(scores, graph, cuts):
+                    boundary = []
+                    incident = []
+                    for edge_index, faces in edge_faces.items():
+                        if (len(faces) != 2 or not set(faces).issubset(chart) or
+                                edge_index in cuts or edge_index in protect_set):
+                            continue
+                        if min(distance.get(faces[0], 10**9), distance.get(faces[1], 10**9)) < max(settings.seam_minimum_spacing, preset.spacing):
+                            continue
+                        hot_count = sum(face in cluster for face in faces)
+                        if not hot_count:
+                            continue
+                        edge = mesh.edges[edge_index]
+                        length = (mesh.vertices[edge.vertices[0]].co - mesh.vertices[edge.vertices[1]].co).length
+                        prior = professional_edge_prior(mesh, edge_index, faces, settings, sleeve)[0] if professional else 0.0
+                        item = (-max(scores.get(face, 0.0) for face in faces),
+                                costs[edge_index] + length * .01 - prior, edge_index)
+                        (boundary if hot_count == 1 else incident).append(item)
+                    pool = boundary or incident
+                    if not pool:
+                        continue
+                    chosen = min(pool)[2]; seed = mesh.edges[chosen]
+                    path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
+                                         lambda index: costs.get(index, 1.0), settings.seam_search_radius,
+                                         [vertex.co for vertex in mesh.vertices],
+                                         settings.straightness_bias * preset.straightness)
+                    split = {chosen, *path}
+                    if split - cuts and not split & protect_set:
+                        score = path_professional_prior(mesh, split, edge_faces, settings) if professional else 0.0
+                        distortion_paths.append((completed_path_rank(split, costs, score), chosen, split))
             # Tier 2 is deliberately kept separate: professional candidates can
             # never starve a closed-chart geodesic fallback.
             bootstrap = set()
@@ -621,7 +743,7 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     if best_trial is None or candidate[:2] > best_trial[:2]:
                         best_trial = candidate
 
-            tier_one = sorted(professional_paths, key=lambda item: item[:2])[:TRIAL_CANDIDATE_LIMIT]
+            tier_one = select_trial_paths(professional_paths, distortion_paths)
             try_paths(tier_one)
             # Only if every Tier-1 trial failed and this closed chart has no
             # usable anchor do we measure the independent geodesic candidate.

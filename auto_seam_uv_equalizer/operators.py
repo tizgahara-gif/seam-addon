@@ -16,13 +16,13 @@ from .seam_detection import (
     mark_selected_region_boundary_seams,
 )
 from .uv_tools import ensure_uv_layer, pack_object, unwrap_object, unwrap_selected_faces
-from .weighted_layout import weighted_layout_object
+from .weighted_layout import shared_weighted_layout, weighted_layout_object
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
 from .translations import iface_
-from .chart_seam import (PRESETS, cached_uv_quality_evaluator,
-                         uv_chart_quality_from_snapshot)
+from .chart_seam import (PRESETS, cached_uv_analysis_evaluators,
+                         uv_chart_quality_from_snapshot, uv_face_distortion_from_snapshot)
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -253,14 +253,16 @@ def _analyze_with_temporary_unwrap(obj, settings):
                       False, False, 3, 0.0)
         return tuple(item.vector.copy() for item in temp_mesh.uv_layers.active.uv)
 
-    evaluate = cached_uv_quality_evaluator(
+    evaluate, distortion = cached_uv_analysis_evaluators(
         unwrap_snapshot,
         lambda snapshot, chart: uv_chart_quality_from_snapshot(
+            temp_mesh, snapshot, chart),
+        lambda snapshot, chart: uv_face_distortion_from_snapshot(
             temp_mesh, snapshot, chart),
     )
 
     try:
-        return analyze_chart_seams(obj, settings, evaluate)
+        return analyze_chart_seams(obj, settings, evaluate, distortion)
     finally:
         if temp_obj.name in context.view_layer.objects:
             bpy.data.objects.remove(temp_obj, do_unlink=True)
@@ -681,6 +683,66 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
             if any(item.maximum_area_ratio_error > 0.15 for item in reports):
                 self.report({"WARNING"}, iface_("Weighted UV area differs from its target by more than 15%."))
         return result
+
+
+class AUTOSEAMUV_OT_shared_weighted_atlas(bpy.types.Operator):
+    """Allocate one weighted atlas across all selected visible mesh objects."""
+
+    bl_idname = "autoseamuv.shared_weighted_atlas"
+    bl_label = "Shared Weighted Atlas"
+    bl_description = "Reallocate UV area globally so all selected objects share one weighted atlas"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = _get_settings(context)
+        preflight = resolve_layout_targets(context)
+        if not preflight["objects"]:
+            self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
+            return {"CANCELLED"}
+        if not preflight["all_ready"]:
+            self.report({"ERROR"}, iface_("%d selected mesh object(s) have no usable UV map.",
+                                          preflight["missing_uv_count"]))
+            return {"CANCELLED"}
+        if preflight["unique_mesh_count"] < 2:
+            self.report({"ERROR"}, iface_("Shared Weighted Atlas requires at least two unique mesh targets."))
+            return {"CANCELLED"}
+        mesh_counts = {}
+        for obj in preflight["objects"]:
+            mesh_counts[_mesh_datablock_key(obj)] = mesh_counts.get(_mesh_datablock_key(obj), 0) + 1
+        if not settings.process_shared_mesh_once and any(count > 1 for count in mesh_counts.values()):
+            self.report({"ERROR"}, iface_("Shared Weighted Atlas cannot independently place objects that share the same Mesh datablock. Enable Process Shared Mesh Data Once or make the mesh data single-user."))
+            return {"CANCELLED"}
+        if settings.weighted_scope == "SELECTED_FACES" and context.mode != "EDIT_MESH":
+            self.report({"ERROR"}, iface_("Selected UV Islands requires Edit Mode."))
+            return {"CANCELLED"}
+        selected_faces = {}
+        if context.mode == "EDIT_MESH":
+            for obj in preflight["objects"]:
+                if obj.mode == "EDIT":
+                    bm = bmesh.from_edit_mesh(obj.data)
+                    selected_faces[_mesh_datablock_key(obj)] = frozenset(
+                        face.index for face in bm.faces if face.select)
+        representatives = {}
+        for obj in sorted(preflight["objects"], key=lambda item: item.name_full):
+            representatives.setdefault(_mesh_datablock_key(obj), obj)
+        objects = list(representatives.values()) if settings.process_shared_mesh_once else preflight["objects"]
+        active, selected, mode = _snapshot_context(context)
+        try:
+            _ensure_object_mode()
+            report = shared_weighted_layout(
+                objects, settings.weighted_density_influence, settings.weighted_scale_mode,
+                settings.weighted_texture_size, settings.weighted_padding_pixels,
+                settings.weighted_scope, settings.weighted_target_region, selected_faces)
+        except Exception as exc:
+            self.report({"ERROR"}, iface_("Shared Weighted Atlas failed: %s", exc))
+            return {"CANCELLED"}
+        finally:
+            _restore_context(context, active, selected, mode)
+        self.report({"INFO"}, iface_(
+            "Shared Weighted Atlas: Objects %d, Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.",
+            len(objects), report.island_count, report.total_surface_area,
+            report.minimum_weight, report.maximum_weight, report.uv_utilization * 100.0))
+        return {"FINISHED"}
 
 
 class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):

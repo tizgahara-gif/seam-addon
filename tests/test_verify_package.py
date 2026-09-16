@@ -47,9 +47,19 @@ def _maxrects_pack(): pass
 def pack_importance_boxes():
     importance_boxes()
     _maxrects_pack()
-def weighted_layout_object():
+def collect_weighted_islands(): pass
+def apply_weighted_plan(): pass
+def plan_weighted_layout():
     calculate_weights()
     pack_importance_boxes()
+def weighted_layout_object():
+    collect_weighted_islands()
+    plan_weighted_layout()
+    apply_weighted_plan()
+def shared_weighted_layout():
+    collect_weighted_islands()
+    plan_weighted_layout()
+    apply_weighted_plan()
 """
     verify_package._verify_weighted_layout_backend(source)
 
@@ -60,8 +70,17 @@ def calculate_weights(): pass
 def importance_boxes(): pass
 def _maxrects_pack(): pass
 def pack_importance_boxes(): pass
+def collect_weighted_islands(): pass
+def apply_weighted_plan(): pass
+def plan_weighted_layout(): pass
 def weighted_layout_object():
-    calculate_weights()
+    collect_weighted_islands()
+    plan_weighted_layout()
+    apply_weighted_plan()
+def shared_weighted_layout():
+    collect_weighted_islands()
+    plan_weighted_layout()
+    apply_weighted_plan()
 """
     with pytest.raises(RuntimeError, match="does not call"):
         verify_package._verify_weighted_layout_backend(source)

@@ -36,6 +36,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "unwrap_margin",
         "pack_margin",
         "mesh_symmetry_axis",
+        "use_distortion_guided_candidates",
     ),
     "auto_seam_uv_equalizer/seam_detection.py": (
         "def mark_auto_seams",
@@ -56,7 +57,8 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
     ),
     "auto_seam_uv_equalizer/weighted_layout.py": (
         "def calculate_weights", "def importance_boxes", "def pack_importance_boxes",
-        "def _maxrects_pack", "def weighted_layout_object",
+        "def _maxrects_pack", "def weighted_layout_object", "def collect_weighted_islands",
+        "def plan_weighted_layout", "def apply_weighted_plan", "def shared_weighted_layout",
         "DENSITY_MIN = 0.25", "DENSITY_MAX = 4.0", "find_uv_islands",
     ),
     "auto_seam_uv_equalizer/operators.py": (
@@ -65,6 +67,8 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         'bl_label = "Auto Unwrap"',
         "class AUTOSEAMUV_OT_weighted_island_layout",
         'bl_idname = "autoseamuv.weighted_island_layout"',
+        "class AUTOSEAMUV_OT_shared_weighted_atlas",
+        'bl_idname = "autoseamuv.shared_weighted_atlas"',
         "class AUTOSEAMUV_OT_pack_islands",
         "class AUTOSEAMUV_OT_atlas_pack_selected_objects",
         'bl_idname = "autoseamuv.atlas_pack_selected_objects"',
@@ -88,6 +92,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         '"autoseamuv.analyze_seams"',
         '"autoseamuv.generate_seams"',
         '"autoseamuv.weighted_island_layout"',
+        '"autoseamuv.shared_weighted_atlas"',
         '"autoseamuv.pack_islands"',
     ),
     "auto_seam_uv_equalizer/symmetry.py": (
@@ -111,12 +116,19 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "def _candidate_pairs",
     ),
     "auto_seam_uv_equalizer/README.md": (
-        "Auto Seam UV Equalizer v0.7.x",
+        "Auto Seam UV Equalizer v0.8.x",
         "Five-stage panel",
         "Weighted Island Layout",
         "Atlas Pack Selected Objects",
         "Exact Texture-X",
         "Clear Overlap Selection",
+        "Shared Weighted Atlas",
+        "Distortion-Guided Seam Candidates",
+    ),
+    "auto_seam_uv_equalizer/chart_seam.py": (
+        "def cached_uv_analysis_evaluators", "def uv_face_distortion_from_snapshot",
+        "def distortion_hot_clusters", "def select_trial_paths",
+        "DISTORTION_RESERVED_TRIALS = 2",
     ),
 }
 
@@ -214,13 +226,16 @@ def _verify_weighted_layout_backend(module_source: str) -> None:
     calls = _function_calls(module_source, filename)
     required = {
         "calculate_weights", "importance_boxes", "pack_importance_boxes",
-        "_maxrects_pack", "weighted_layout_object",
+        "_maxrects_pack", "weighted_layout_object", "collect_weighted_islands",
+        "plan_weighted_layout", "apply_weighted_plan", "shared_weighted_layout",
     }
     missing = sorted(required - calls.keys())
     if missing:
         raise RuntimeError(f"Weighted Layout backend functions missing: {missing}")
     required_edges = {
-        "weighted_layout_object": {"calculate_weights", "pack_importance_boxes"},
+        "weighted_layout_object": {"collect_weighted_islands", "plan_weighted_layout", "apply_weighted_plan"},
+        "shared_weighted_layout": {"collect_weighted_islands", "plan_weighted_layout", "apply_weighted_plan"},
+        "plan_weighted_layout": {"calculate_weights", "pack_importance_boxes"},
         "pack_importance_boxes": {"importance_boxes", "_maxrects_pack"},
     }
     for caller, callees in required_edges.items():
