@@ -266,7 +266,7 @@ def _analyze_with_temporary_unwrap(obj, settings):
         for edge in temp_mesh.edges:
             edge.use_seam = edge.index in cuts
         method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
-        unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, 0.0,
+        unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, "SCALED", 0.0,
                       False, False, 3, 0.0)
         return tuple(item.vector.copy() for item in temp_mesh.uv_layers.active.uv)
 
@@ -602,6 +602,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
                         settings.unwrap_method,
+                        settings.unwrap_margin_method,
                         settings.unwrap_margin,
                         settings.average_islands,
                         settings.straighten_circular_strip_islands,
@@ -648,7 +649,7 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
             return {"CANCELLED"}
         active, selected_objects, original_mode = _snapshot_context(context)
         try:
-            unwrap_selected_faces(obj, settings.unwrap_method, settings.unwrap_margin)
+            unwrap_selected_faces(obj, settings.unwrap_method, settings.unwrap_margin_method, settings.unwrap_margin)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Unwrap Selected UV Islands failed: %s", exc))
             return {"CANCELLED"}
@@ -908,6 +909,7 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
                         settings.unwrap_method,
+                        settings.unwrap_margin_method,
                         settings.unwrap_margin,
                         settings.average_islands,
                         settings.straighten_circular_strip_islands,
@@ -973,6 +975,7 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
                         settings.unwrap_method,
+                        settings.unwrap_margin_method,
                         settings.unwrap_margin,
                         settings.average_islands,
                         settings.straighten_circular_strip_islands,

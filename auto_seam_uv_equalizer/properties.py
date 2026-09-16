@@ -59,9 +59,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     mesh_symmetry_tolerance: FloatProperty(
         name="Mesh Symmetry Tolerance",
-        description=("Maximum object-space distance in Blender units when matching "
-                     "mirrored mesh coordinates"),
-        default=0.0001, min=1e-7, max=0.1, precision=6,
+        description=("Maximum object-space distance in Blender units. Maximum local mesh-coordinate "
+                     "distance allowed when matching mirrored geometry. "
+                     "This is an object-space distance before Object Scale is applied. "
+                     "The displayed unit follows Blender's scene unit settings"),
+        default=0.0001, min=1e-7, max=0.1,
+        soft_min=1e-6, soft_max=0.01, precision=6,
+        subtype="DISTANCE", unit="LENGTH",
     )
     mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
     # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
@@ -87,14 +91,26 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default="LEFT_HALF",
     )
 
+    unwrap_margin_method: EnumProperty(
+        name="Margin Method",
+        description="How Blender calculates margins between unwrapped UV islands",
+        items=(
+            ("SCALED", "Scaled", "Uses Blender's Scaled margin method. This value is not a direct percentage of the UV unit square"),
+            ("ADD", "Add", "Uses Blender's Add margin method, adding this absolute UV-space value to the existing margin. This value is not a percentage"),
+            ("FRACTION", "Fraction", "Uses an exact fraction of the final UV unit square"),
+        ),
+        default="FRACTION",
+    )
     unwrap_margin: FloatProperty(
-        name="Unwrap Margin", description="Island margin used by UV unwrap operations",
+        name="Unwrap Margin",
+        description=("Raw Blender margin value used by Scaled and Add. "
+                     "This is not a direct percentage of the UV unit square"),
         default=0.015, min=0.0, max=0.2,
     )
     unwrap_margin_percent: FloatProperty(
         name="Unwrap Margin (%)",
-        description=("Island margin relative to the normalized 0-1 UV space. "
-                     "For example, 0.5% corresponds to 0.005 UV units"),
+        description=("Exact fraction of the final UV unit square. "
+                     "0.5% corresponds to an internal value of 0.005"),
         min=0.0, max=20.0, soft_min=0.0, soft_max=5.0,
         precision=3, step=10,
         get=get_unwrap_margin_percent,
@@ -452,6 +468,12 @@ def migrate_legacy_settings(settings):
             settings.unwrap_margin = settings.margin
         if "pack_margin" not in keys:
             settings.pack_margin = settings.margin
+    # Before margin_method was exposed, Blender implicitly used SCALED. Only
+    # migrate genuinely stored legacy margins; untouched new settings retain
+    # the FRACTION property default.
+    if "unwrap_margin_method" not in keys and (
+            "unwrap_margin" in keys or "margin" in keys):
+        settings.unwrap_margin_method = "SCALED"
     if "mesh_symmetry_axis" not in keys:
         if "symmetry_axis" in keys:
             settings.mesh_symmetry_axis = settings.symmetry_axis
