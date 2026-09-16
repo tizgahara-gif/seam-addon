@@ -3,12 +3,13 @@
 import bpy
 import bmesh
 from .translations import iface_
-from .operators import resolve_atlas_targets, resolve_layout_targets
+from .operators import (resolve_atlas_targets, resolve_layout_targets,
+                        selected_face_seeds_by_mesh)
 from .uv_protection import has_active_uv_protection
 
 
 def _mesh_objects(context):
-    return [obj for obj in getattr(context, "selected_objects", ()) if obj.type == "MESH"]
+    return resolve_layout_targets(context, require_uv=False)["objects"]
 
 
 def _active_uv(context):
@@ -24,6 +25,13 @@ def _selected_face_count(context):
         return 0
     bm = bmesh.from_edit_mesh(obj.data)
     return sum(face.select for face in bm.faces)
+
+
+def _selected_edge_count(context):
+    obj = getattr(context, "active_object", None)
+    if obj is None or obj.type != "MESH" or context.mode != "EDIT_MESH":
+        return 0
+    return sum(edge.select for edge in bmesh.from_edit_mesh(obj.data).edges)
 
 
 def _warning(layout, text, *values):
@@ -48,6 +56,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         meshes = _mesh_objects(context)
         active_uv = _active_uv(context)
         edit_mode = context.mode == "EDIT_MESH"
+        selected_faces = _selected_face_count(context)
+        selected_edges = _selected_edge_count(context)
 
         status = layout.box()
         status.label(text="Status", icon="INFO")
@@ -69,14 +79,14 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                              len({obj.data.as_pointer() for obj in meshes}))
         processing.prop(settings, "process_shared_mesh_once", text="Process Shared Mesh Data Once")
 
-        self._draw_seam(layout, settings, context, edit_mode)
+        self._draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges)
         self._draw_unwrap(layout, settings, edit_mode, active_uv, context)
         self._draw_layout(layout, settings, meshes, active_uv, edit_mode, context)
-        self._draw_symmetry(layout, settings, active_uv, edit_mode)
+        self._draw_symmetry(layout, settings, active_uv, edit_mode, selected_faces)
         self._draw_validation(layout, settings)
 
     @staticmethod
-    def _draw_seam(layout, settings, context, edit_mode):
+    def _draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges):
         box = layout.box()
         box.label(text="1. Seam", icon="MOD_UVPROJECT")
         box.prop(settings, "seam_mode", text="Mode")
@@ -105,24 +115,27 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         assist.label(text="Assist — Active Object")
         assist.prop(settings, "include_open_boundaries", text="Include Open Boundaries")
         row = assist.row(align=True)
-        boundary = row.operator("autoseamuv.mark_selected_region_boundary", text="Selected Boundary", icon="EDGESEL")
+        boundary_action = row.row()
+        boundary_action.enabled = edit_mode and selected_faces > 0
+        boundary = boundary_action.operator("autoseamuv.mark_selected_region_boundary", text="Selected Boundary", icon="EDGESEL")
         boundary.include_open_boundaries = settings.include_open_boundaries
         mirror_action = row.row()
-        mirror_action.enabled = not (settings.mirror_direction == "SELECTED" and not edit_mode)
+        mirror_action.enabled = not (settings.mirror_direction == "SELECTED" and
+                                     (not edit_mode or selected_edges == 0))
         mirror_action.operator("autoseamuv.mirror_seams", text="Mirror Seam State")
         mirror = assist.row(align=True)
         mirror.prop(settings, "mesh_symmetry_axis", text="Mesh Symmetry Axis")
         mirror.prop(settings, "mesh_symmetry_tolerance", text="Tolerance")
         mirror.prop(settings, "mirror_direction", text="Direction")
-        if settings.mirror_direction == "SELECTED" and not edit_mode:
+        if settings.mirror_direction == "SELECTED" and (not edit_mode or selected_edges == 0):
             _warning(assist, "Selected Side mirroring requires Edit Mode with selected edges.")
         if settings.seam_mode != "CLASSIC":
             assist.label(text="Selected Edges")
             row = assist.row(align=True)
-            row.enabled = edit_mode
+            row.enabled = edit_mode and selected_edges > 0
             row.operator("autoseamuv.force_seam", text="Force")
             row.operator("autoseamuv.protect_seam", text="Protect")
-            if not edit_mode:
+            if not edit_mode or selected_edges == 0:
                 _warning(assist, "Force / Protect requires Edit Mode and selected edges.")
             assist.label(text="Active Object")
             assist.operator("autoseamuv.clear_edge_tags", text="Clear All Tags")
@@ -169,7 +182,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.prop(settings, "show_unwrap_advanced", toggle=True)
         if settings.show_unwrap_advanced:
             post = box.column(align=True)
-            post.label(text="Selected Objects / Generated UV Map")
+            post.label(text="Named UV Settings")
             post.prop(settings, "uv_map_name", text="UV Map Name")
             post.prop(settings, "create_uv_if_missing", text="Create UV If Missing")
             post.label(text="Named settings apply to Selected Objects and Ring / Strip.", icon="INFO")
@@ -243,11 +256,18 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.separator()
         weighted.label(text="Packing")
         weighted.prop(settings, "weighted_allow_rotation")
+        seed_map = selected_face_seeds_by_mesh(context, meshes)
+        has_weighted_seeds = any(seed_map.values())
+        selected_scope_ready = has_weighted_seeds and all(
+            obj.data.polygons and obj.data.uv_layers.active is not None
+            for obj in meshes if seed_map.get(obj.data.as_pointer()))
         if settings.weighted_scope == "SELECTED_FACES" and not edit_mode:
             _warning(weighted, "Selected UV Islands requires Edit Mode.")
+        elif settings.weighted_scope == "SELECTED_FACES" and not has_weighted_seeds:
+            _info(weighted, "Select at least one face to seed UV islands.")
         action = weighted.row()
-        action.enabled = preflight["all_ready"] and not (
-            settings.weighted_scope == "SELECTED_FACES" and not edit_mode)
+        action.enabled = (preflight["all_ready"] if settings.weighted_scope != "SELECTED_FACES"
+                          else edit_mode and selected_scope_ready)
         action.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout")
         weighted.separator()
         weighted.label(text="Incremental Pack")
@@ -264,7 +284,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.label(text="Shared Atlas")
         shared = weighted.row()
         shared.enabled = (preflight["all_ready"] and preflight["unique_mesh_count"] >= 2 and
-                          not (settings.weighted_scope == "SELECTED_FACES" and not edit_mode))
+                          not (settings.weighted_scope == "SELECTED_FACES" and
+                               (not edit_mode or not has_weighted_seeds)))
         shared.operator("autoseamuv.shared_weighted_atlas", text="Shared Weighted Atlas")
         weighted.label(text="All selected objects share one weighted atlas.", icon="INFO")
         weighted.label(text="Shared Weighted Atlas reallocates UV area globally.", icon="INFO")
@@ -328,7 +349,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects")
 
     @staticmethod
-    def _draw_symmetry(layout, settings, active_uv, edit_mode):
+    def _draw_symmetry(layout, settings, active_uv, edit_mode, selected_faces):
         box = layout.box()
         box.label(text="4. Symmetry")
         mesh = box.column(align=True)
@@ -338,9 +359,10 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         mesh.prop(settings, "symmetry_direction", text="Mesh Source Side")
         mesh.prop(settings, "symmetry_scope", text="Faces")
         mesh.prop(settings, "mesh_symmetry_tolerance", text="Mesh Symmetry Tolerance")
-        if settings.symmetry_scope == "SELECTED" and not edit_mode:
+        if settings.symmetry_scope == "SELECTED" and (not edit_mode or selected_faces == 0):
             _warning(mesh, "Selected Faces requires Edit Mode.")
-        symmetry_available = not (settings.symmetry_scope == "SELECTED" and not edit_mode)
+        symmetry_available = not (settings.symmetry_scope == "SELECTED" and
+                                  (not edit_mode or selected_faces == 0))
         action = mesh.row()
         action.enabled = symmetry_available
         action.operator("autoseamuv.validate_symmetry", text="Validate Symmetry")
@@ -366,7 +388,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             "to its mesh-symmetric counterpart."), icon="INFO")
         island_sync.label(text="The UV islands will overlap exactly.", icon="INFO")
         action = island_sync.row()
-        action.enabled = edit_mode and active_uv is not None
+        action.enabled = edit_mode and active_uv is not None and selected_faces > 0
         action.operator("autoseamuv.sync_mirrored_uv_island",
                         text="Synchronize Mirrored UV Island")
 
@@ -376,7 +398,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         transform.label(text="Target: Active Object")
         transform.label(text="Scope: Selected UV Islands")
         action = transform.row()
-        action.enabled = edit_mode and active_uv is not None
+        action.enabled = edit_mode and active_uv is not None and selected_faces > 0
         action.operator("autoseamuv.flip_selected_uv_islands",
                         text="Flip Selected UV Islands")
 

@@ -59,6 +59,22 @@ def resolve_layout_targets(context, require_uv=True):
     }
 
 
+def selected_face_seeds_by_mesh(context, objects=None):
+    """Snapshot Edit Mode face seeds for visible operator targets, by Mesh."""
+    if context.mode != "EDIT_MESH":
+        return {}
+    targets = objects if objects is not None else _selected_visible_mesh_objects(context)
+    target_keys = {_mesh_datablock_key(obj) for obj in targets}
+    seeds = {}
+    for obj in getattr(context, "objects_in_mode", ()):
+        key = _mesh_datablock_key(obj) if obj.type == "MESH" else None
+        if key not in target_keys or key in seeds:
+            continue
+        bm = bmesh.from_edit_mesh(obj.data)
+        seeds[key] = frozenset(face.index for face in bm.faces if face.select)
+    return seeds
+
+
 def resolve_atlas_targets(context, settings):
     """Resolve atlas readiness without creating UV layers or changing state."""
     result = resolve_layout_targets(context, require_uv=False)
@@ -285,11 +301,12 @@ class AUTOSEAMUV_OT_analyze_seams(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
+        settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(
+            self, _selected_visible_mesh_objects(context), settings.process_shared_mesh_once)
         if not objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
-        settings = _get_settings(context)
         active, selected, mode = _snapshot_context(context)
         chart_count = problem_count = candidate_count = 0
         try:
@@ -302,8 +319,8 @@ class AUTOSEAMUV_OT_analyze_seams(bpy.types.Operator):
                 candidate_count += len(result.candidate_seams)
         finally:
             _restore_context(context, active, selected, mode)
-        self.report({"INFO"}, iface_("Charts: %d; Problem Charts: %d; Candidate Seams: %d",
-                                     chart_count, problem_count, candidate_count))
+        self.report({"INFO"}, iface_("Charts: %d; Problem Charts: %d; Candidate Seams: %d; Skipped Shared: %d",
+                                     chart_count, problem_count, candidate_count, skipped_shared))
         return {"FINISHED"}
 
 
@@ -316,11 +333,12 @@ class AUTOSEAMUV_OT_generate_seams(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        objects = _selected_visible_mesh_objects(context)
+        settings = _get_settings(context)
+        objects, skipped_shared = _objects_for_processing(
+            self, _selected_visible_mesh_objects(context), settings.process_shared_mesh_once)
         if not objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
-        settings = _get_settings(context)
         active, selected, mode = _snapshot_context(context)
         changed = processed = 0
         originals = {obj.data.as_pointer(): (obj.data, [edge.use_seam for edge in obj.data.edges])
@@ -349,7 +367,8 @@ class AUTOSEAMUV_OT_generate_seams(bpy.types.Operator):
             return {"CANCELLED"}
         finally:
             _restore_context(context, active, selected, mode)
-        self.report({"INFO"}, iface_("Generated %d seam(s) on %d object(s).", changed, processed))
+        self.report({"INFO"}, iface_("Generated %d seam(s) on %d object(s); skipped shared %d.",
+                                     changed, processed, skipped_shared))
         return {"FINISHED"}
 
 
@@ -644,17 +663,19 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def _run_existing_uv_operation(operator, context, operation, action_label):
+def _run_existing_uv_operation(operator, context, operation, action_label, target_objects=None):
     """Run a UV-only backend for selected objects and restore all selection state."""
     preflight = resolve_layout_targets(context)
-    selected_objects = preflight["objects"]
+    selected_objects = target_objects if target_objects is not None else preflight["objects"]
     if not selected_objects:
         operator.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
         return {"CANCELLED"}
-    if not preflight["all_ready"]:
+    missing_uv_count = sum(not obj.data.polygons or obj.data.uv_layers.active is None
+                           for obj in selected_objects)
+    if missing_uv_count:
         operator.report({"ERROR"}, iface_(
             "%d selected mesh object(s) have no usable UV map.",
-            preflight["missing_uv_count"]))
+            missing_uv_count))
         return {"CANCELLED"}
     settings = _get_settings(context)
     objects, skipped_shared = _objects_for_processing(
@@ -698,13 +719,22 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
         if settings.weighted_scope == "SELECTED_FACES" and context.mode != "EDIT_MESH":
             self.report({"ERROR"}, iface_("Selected UV Islands requires Edit Mode."))
             return {"CANCELLED"}
+        seeds = selected_face_seeds_by_mesh(context)
+        if settings.weighted_scope == "SELECTED_FACES" and not any(seeds.values()):
+            self.report({"ERROR"}, iface_("Select at least one face to seed UV islands."))
+            return {"CANCELLED"}
+        targets = None
+        if settings.weighted_scope == "SELECTED_FACES":
+            targets = [obj for obj in resolve_layout_targets(context)["objects"]
+                       if seeds.get(_mesh_datablock_key(obj))]
         reports = []
         result = _run_existing_uv_operation(
             self, context, lambda obj, settings: reports.append(weighted_layout_object(
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings),
                 settings.weighted_scope, settings.weighted_target_region,
-                settings.weighted_allow_rotation)), "Weighted Island Layout")
+                settings.weighted_allow_rotation,
+                seeds.get(_mesh_datablock_key(obj)))), "Weighted Island Layout", targets)
         if reports:
             self.report({"INFO"}, iface_(
                 "Weighted Island Layout: Islands %d, Rotated Islands: %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV utilization %.1f%%.",
@@ -750,13 +780,10 @@ class AUTOSEAMUV_OT_shared_weighted_atlas(bpy.types.Operator):
         if settings.weighted_scope == "SELECTED_FACES" and context.mode != "EDIT_MESH":
             self.report({"ERROR"}, iface_("Selected UV Islands requires Edit Mode."))
             return {"CANCELLED"}
-        selected_faces = {}
-        if context.mode == "EDIT_MESH":
-            for obj in preflight["objects"]:
-                if obj.mode == "EDIT":
-                    bm = bmesh.from_edit_mesh(obj.data)
-                    selected_faces[_mesh_datablock_key(obj)] = frozenset(
-                        face.index for face in bm.faces if face.select)
+        selected_faces = selected_face_seeds_by_mesh(context, preflight["objects"])
+        if settings.weighted_scope == "SELECTED_FACES" and not any(selected_faces.values()):
+            self.report({"ERROR"}, iface_("Select at least one face to seed UV islands."))
+            return {"CANCELLED"}
         representatives = {}
         for obj in sorted(preflight["objects"], key=lambda item: item.name_full):
             representatives.setdefault(_mesh_datablock_key(obj), obj)

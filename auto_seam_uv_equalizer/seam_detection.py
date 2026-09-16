@@ -196,7 +196,7 @@ def analysis_signature(obj, settings):
                      "chart_refinement_iterations")
     setting_names += ("character_front_axis", "use_professional_garment_prior",
                       "mesh_symmetry_axis", "mesh_symmetry_tolerance",
-                      "use_distortion_guided_candidates")
+                      "use_distortion_guided_candidates", "use_edge_loop_completion")
     return (
         tuple(tuple(vertex.co) for vertex in mesh.vertices),
         tuple(tuple(edge.vertices) for edge in mesh.edges),
@@ -204,7 +204,8 @@ def analysis_signature(obj, settings):
         tuple(edge.use_seam for edge in mesh.edges), tuple(force), tuple(protect),
         tuple(getattr(edge, "use_edge_sharp", False) for edge in mesh.edges),
         tuple(face.material_index for face in mesh.polygons),
-        tuple((name, getattr(settings, name, True) if name == "use_distortion_guided_candidates"
+        tuple((name, getattr(settings, name, True) if name in {
+            "use_distortion_guided_candidates", "use_edge_loop_completion"}
                else getattr(settings, name)) for name in setting_names),
     )
 
