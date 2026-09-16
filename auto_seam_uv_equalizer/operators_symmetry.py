@@ -13,9 +13,27 @@ from .operators import _restore_context, _snapshot_context
 def _selected_faces(obj):
     if obj.mode == "EDIT":
         bm = bmesh.from_edit_mesh(obj.data)
-        bm.faces.ensure_lookup_table(); bm.faces.index_update()
+        bm.faces.ensure_lookup_table()
+        bm.faces.index_update()
         return {face.index for face in bm.faces if face.select}
     return {face.index for face in obj.data.polygons if face.select}
+
+
+def _capture_symmetry_selected_faces(context, settings):
+    """Capture edit-BMesh face selection before an operator changes mode."""
+    if settings.symmetry_scope != "SELECTED":
+        return None
+    if context.mode != "EDIT_MESH":
+        raise SymmetryError("Selected Faces symmetry requires Edit Mode.")
+
+    obj = context.active_object
+    if obj is None or obj.type != "MESH":
+        raise SymmetryError("active object is not a mesh")
+
+    selected = _selected_faces(obj)
+    if not selected:
+        raise SymmetryError("no faces selected")
+    return frozenset(selected)
 
 
 def _source_faces(mesh, candidates, axis, sign, tolerance):
@@ -29,20 +47,28 @@ def _source_faces(mesh, candidates, axis, sign, tolerance):
     return result
 
 
-def _plan(context, require_uv):
+def _plan(context, require_uv, selected_faces=None):
     obj = context.active_object
     if obj is None or obj.type != "MESH":
         raise SymmetryError("active object is not a mesh")
     settings, mesh = context.scene.autoseamuv_settings, obj.data
-    if settings.symmetry_scope == "SELECTED" and context.mode != "EDIT_MESH":
-        raise SymmetryError("Selected Faces symmetry requires Edit Mode.")
     layer = mesh.uv_layers.active
     if require_uv and layer is None:
         raise SymmetryError("active UV map does not exist")
-    selected = _selected_faces(obj)
-    candidates = selected if settings.symmetry_scope == "SELECTED" else range(len(mesh.polygons))
-    if settings.symmetry_scope == "SELECTED" and not selected:
-        raise SymmetryError("no faces selected")
+    if settings.symmetry_scope == "SELECTED":
+        if selected_faces is None:
+            if context.mode != "EDIT_MESH":
+                raise SymmetryError(
+                    "Selected Faces symmetry requires Edit Mode."
+                )
+            selected = _selected_faces(obj)
+        else:
+            selected = set(selected_faces)
+        if not selected:
+            raise SymmetryError("no faces selected")
+        candidates = selected
+    else:
+        candidates = range(len(mesh.polygons))
     axis = "XYZ".index(settings.mesh_symmetry_axis)
     sign = -1 if settings.symmetry_direction == "NEGATIVE_TO_POSITIVE" else 1
     sources = _source_faces(mesh, candidates, axis, sign, settings.mesh_symmetry_tolerance)
@@ -62,11 +88,11 @@ class AUTOSEAMUV_OT_validate_symmetry(bpy.types.Operator):
 
     def execute(self, context):
         settings = context.scene.autoseamuv_settings
-        if settings.symmetry_scope == "SELECTED" and context.mode != "EDIT_MESH":
-            self.report({"ERROR"}, iface_("Selected Faces symmetry requires Edit Mode."))
-            return {"CANCELLED"}
         try:
-            obj, _layer, plan = _plan(context, False)
+            selected_faces = _capture_symmetry_selected_faces(context, settings)
+            obj, _layer, plan = _plan(
+                context, False, selected_faces=selected_faces
+            )
         except (SymmetryError, ValueError) as exc:
             self.report({"ERROR"}, iface_("Symmetry validation failed: %s", exc))
             return {"CANCELLED"}
@@ -81,15 +107,18 @@ class AUTOSEAMUV_OT_transfer_symmetric_uv(bpy.types.Operator):
 
     def execute(self, context):
         settings = context.scene.autoseamuv_settings
-        if settings.symmetry_scope == "SELECTED" and context.mode != "EDIT_MESH":
-            self.report({"ERROR"}, iface_("Selected Faces symmetry requires Edit Mode."))
+        try:
+            selected_faces = _capture_symmetry_selected_faces(context, settings)
+        except SymmetryError as exc:
+            self.report({"ERROR"}, iface_(str(exc)))
             return {"CANCELLED"}
-        obj = context.active_object
         active, selected_objects, original_mode = _snapshot_context(context)
         try:
             if original_mode == "EDIT":
                 bpy.ops.object.mode_set(mode="OBJECT")
-            obj, layer, plan = _plan(context, True)
+            obj, layer, plan = _plan(
+                context, True, selected_faces=selected_faces
+            )
             settings = context.scene.autoseamuv_settings
             source_uvs = [tuple(item.vector) for item in layer.uv]
             writes = transferred_uvs(source_uvs, plan.loop_pairs,
@@ -118,14 +147,18 @@ class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry(bpy.types.Operator):
 
     def execute(self, context):
         settings = context.scene.autoseamuv_settings
-        if settings.symmetry_scope == "SELECTED" and context.mode != "EDIT_MESH":
-            self.report({"ERROR"}, iface_("Selected Faces symmetry requires Edit Mode."))
+        try:
+            selected_faces = _capture_symmetry_selected_faces(context, settings)
+        except SymmetryError as exc:
+            self.report({"ERROR"}, iface_(str(exc)))
             return {"CANCELLED"}
         active, selected_objects, original_mode = _snapshot_context(context)
         try:
             if original_mode == "EDIT":
                 bpy.ops.object.mode_set(mode="OBJECT")
-            obj, layer, plan = _plan(context, True)
+            obj, layer, plan = _plan(
+                context, True, selected_faces=selected_faces
+            )
             source_uvs = [tuple(item.vector) for item in layer.uv]
             writes = exact_texture_x_uvs(
                 source_uvs, plan.loop_pairs,

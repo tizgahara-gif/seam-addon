@@ -618,6 +618,7 @@ class IntegrationTests(unittest.TestCase):
         original_selection = {face.index for face in edit_mesh.faces if face.select}
         self.assertEqual(original_selection, {0})
 
+        self.assertEqual(bpy.ops.autoseamuv.validate_symmetry(), {"FINISHED"})
         self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(), {"FINISHED"})
         self.assertEqual(bpy.context.mode, "EDIT_MESH")
         self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode),
@@ -628,6 +629,31 @@ class IntegrationTests(unittest.TestCase):
             face.index for face in restored_mesh.faces if face.select
         }
         self.assertEqual(restored_selection, original_selection)
+
+    def test_symmetric_uv_selected_scope_rejects_object_mode_and_empty_selection(self):
+        obj = mesh_object(
+            "SymmetricSelectionValidation",
+            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+             (1,0,0),(1,0,1),(1,1,1),(1,1,0)],
+            [(0,1,2,3),(4,5,6,7)],
+        )
+        obj.data.uv_layers.new(name="UVMap")
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.symmetry_scope = "SELECTED"
+
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(),
+                         {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(),
+                         {"CANCELLED"})
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+        bpy.ops.mesh.select_all(action="DESELECT")
+        self.assertEqual(bpy.ops.autoseamuv.transfer_symmetric_uv(),
+                         {"CANCELLED"})
+        self.assertEqual(bpy.ops.autoseamuv.transfer_exact_texture_x_symmetry(),
+                         {"CANCELLED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
 
     def _exact_texture_mesh(self):
         return mesh_object(
