@@ -60,3 +60,25 @@ def test_standard_pack_routing_contract_is_unchanged():
                      "shape_method", "pin", "pin_method", "merge_overlap",
                      "udim_source"):
         assert f'"{argument}"' in source
+
+
+def test_weighted_rotation_enum_ui_and_backend_contract():
+    properties = _source("properties.py")
+    ui = _source("ui.py")
+    operators = _source("operators.py")
+    backend = _source("weighted_layout.py")
+    assert 'weighted_rotation_mode: EnumProperty' in properties
+    for identifier in ('"NONE"', '"STEP_90"', '"STEP_15"'):
+        assert identifier in properties
+    assert 'prop(settings, "weighted_rotation_mode", text="Island Rotation")' in ui
+    assert 'prop(settings, "weighted_allow_rotation"' not in ui
+    assert "rotation_steps_for_mode(settings.weighted_rotation_mode)" in operators
+    assert '"NONE": (0,)' in backend and '"STEP_90": (0, 6)' in backend
+    assert '"STEP_15": tuple(range(12))' in backend
+
+
+def test_weighted_rotation_legacy_migration_is_idempotent_by_key():
+    properties = _source("properties.py")
+    assert '"weighted_rotation_mode" not in keys' in properties
+    assert '"weighted_allow_rotation" in keys' in properties
+    assert '"STEP_90" if settings.weighted_allow_rotation else "NONE"' in properties

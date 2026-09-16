@@ -50,15 +50,19 @@ UVアイランドを完成済みとして設定すると、自動シーム、ア
 
 **Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Paddingを使用します。テクスチャ解像度はWeighted LayoutのUV面積配分には影響しません。ピクセル単位で余白を指定する場合のみ、UV空間への換算に使用します。Paddingの **Relative UV** は解像度非依存のUV空間マージンを直接指定し、**Pixels** は選択したTexture Resolutionでピクセル余白を換算します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
 
-**Allow 90° Island Rotation**（**90°アイランド回転を許可**）を有効にすると、Weighted MaxRects packerは配置効率が向上する場合に個々のUVアイランドを90°回転できます。回転はアイランドの重要度、UV面積配分、相対スケールを変更しません。布目、ヘアフローなどUV方向を維持する必要がある場合は無効にしてください。この設定は既存結果との互換性を保つため既定で無効で、Per-Object Weighted LayoutとShared Weighted Atlasの両方に適用されます。
+**アイランド回転 / Island Rotation** は **なし / Off**（回転なし、既定）、**90°単位 / 90° Steps**（0°と90°）、**15°単位 / 15° Steps**（0°から165°までの12方向）を選択できます。15°単位は斜めまたは細長いアイランドのパッキングを改善できますが、計算量が増え、テクスチャ方向を変える場合があります。重要度、UV面積配分、相対スケール、Paddingの意味は変わりません。15°単位だけが、最大5種類の決定的な並び順を比較します。
 
-When **Allow 90° Island Rotation** is enabled, the weighted MaxRects packer may rotate individual UV islands by 90 degrees when this improves placement. Rotation does not change island importance, UV area allocation, or scale. Disable this option when UV orientation must be preserved. It is off by default and is shared by Per-Object Weighted Layout and Shared Weighted Atlas.
+**Island Rotation** offers **Off** (no rotation, the default), **90° Steps** (0° and 90°), and **15° Steps** (12 orientations from 0° through 165°). 15° Steps can improve packing of diagonal or elongated islands, but requires more computation and may alter texture orientation. Rotation does not change importance, UV-area allocation, relative scale, or padding semantics. Only 15° Steps compares up to five deterministic ordering trials.
+
+各回転候補は実際のUV loopを回転した後の軸平行外接BBoxを用いてMaxRectsでパッキングします。ポリゴン形状同士を噛み合わせる厳密なPolygon Nestingではありません。
+
+The MaxRects packer uses an axis-aligned bounding box calculated from the actual rotated UV loops for each candidate. It does not perform true polygon nesting.
 
 Texture resolution does not affect weighted UV-area allocation. It is only required when padding is specified in pixels. **Relative UV** supplies a resolution-independent UV-space margin; **Pixels** converts the pixel margin using the selected texture resolution. Weighted Island Layout and Shared Weighted Atlas use the same resolved UV-space padding.
 
 #### Shared Weighted Atlas
 
-**Per-Object Weighted Layout** は各オブジェクトがTarget Regionを個別に使用します。**Shared Weighted Atlas** は選択された全オブジェクトのアイランドを一つのpoolに集め、global median polygon densityでimportanceを計算し、同じWeighted MaxRectsで一つの共有アトラスへ配置します。Allow 90° Island Rotationも両機能で共有されます。対して **Atlas Pack** は現在のアイランド縮尺を基本として一つのアトラスへパックします。Shared Weighted AtlasはUV面積をグローバルに再配分し、Atlas PackやAverage Islands Scaleを自動実行しません。FULL / LEFT_HALF / RIGHT_HALFとSelected UV Islandsをサポートします。Selected UV Islands scopeでは、未選択アイランド（通常・完成済み・レイアウト固定のすべて）を現在位置のObstacleとして維持します。この規則はPer-ObjectとShared Weighted Atlasで共通です。
+**Per-Object Weighted Layout** は各オブジェクトがTarget Regionを個別に使用します。**Shared Weighted Atlas** は選択された全オブジェクトのアイランドを一つのpoolに集め、global median polygon densityでimportanceを計算し、同じWeighted MaxRectsで一つの共有アトラスへ配置します。Island Rotationも両機能で共有されます。対して **Atlas Pack** は現在のアイランド縮尺を基本として一つのアトラスへパックします。Shared Weighted AtlasはUV面積をグローバルに再配分し、Atlas PackやAverage Islands Scaleを自動実行しません。FULL / LEFT_HALF / RIGHT_HALFとSelected UV Islandsをサポートします。Selected UV Islands scopeでは、未選択アイランド（通常・完成済み・レイアウト固定のすべて）を現在位置のObstacleとして維持します。この規則はPer-ObjectとShared Weighted Atlasで共通です。
 
 linked objectはProcess Shared Mesh Data Onceが有効ならMesh datablockごとに決定的な代表を一つ処理します。無効な状態で同じMesh datablockが複数対象に含まれる場合は、独立したUV配置が不可能なため処理を中止します。全対象を検証してpending UVを生成してから一括commitし、失敗時は全対象の元UVへrollbackします。
 
@@ -84,7 +88,7 @@ Distortion guidance refines anchored charts. Anchorless closed charts still boot
 
 Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。「Layout settings match Exact Texture-X.」は設定値の一致だけを示し、UVや対称対応の検証成功を保証しません。本当の検証はOperator実行時に行います。
 
-Source側のWeighted Layoutでは90°回転を使用できます。その後、Exact Texture-Xは完成済みSource UV layoutを反対側へ厳密にミラー転送します。Exact Texture-X後に左右を個別に再パックしないでください。
+Source側のWeighted Layoutでは90°単位または15°単位の回転探索を使用できます。その後、Exact Texture-Xは完成済みSource UV layoutを反対側へ厳密にミラー転送します。Exact Texture-X後に左右を個別に再パックしないでください。
 
 90° rotation may be used while laying out the source side. Exact Texture-X then mirrors the resulting source UV layout. Do not repack either side independently after Exact Texture-X.
 

@@ -169,30 +169,30 @@ def test_obstacles_are_clipped_to_each_target_region_and_rotation_is_optional():
         root = module.target_rectangle(region)
         rectangles, _ = module.pack_importance_boxes(
             [1], [4], root, 0.0,
-            obstacles=[(-1, 0.4, root[0] + 0.1, 0.6)], allow_rotation=True)
+            obstacles=[(-1, 0.4, root[0] + 0.1, 0.6)], rotation_steps=(0, 6))
         assert len(rectangles[0]) == 5
         assert root[0] <= rectangles[0][0] < rectangles[0][2] <= root[2]
-    plain, _ = module.pack_importance_boxes([1], [4], allow_rotation=False)
+    plain, _ = module.pack_importance_boxes([1], [4], rotation_steps=(0,))
     assert len(plain[0]) == 5
     assert isinstance(plain[0], module.PackedIsland)
-    assert plain[0].rotated_90 is False
+    assert plain[0].rotation_step == 0
 
 
 def test_rotation_fit_rescue_tie_preference_and_determinism():
     module = _load_primitives()
     # The body fits only after swapping width and height.
     rescued = module._maxrects_pack([(0.7, 0.4)], (0, 0, 0.5, 0.8), 0,
-                                    allow_rotation=True)
-    assert rescued and rescued[0].rotated_90 is True
+                                    rotation_steps=(0, 6))
+    assert rescued and rescued[0].rotation_step == 6
     assert module._maxrects_pack([(0.7, 0.4)], (0, 0, 0.5, 0.8), 0,
-                                 allow_rotation=False) is None
+                                 rotation_steps=(0,)) is None
 
     # Both orientations have the same geometric and position scores.  The
     # explicit orientation key must select 0 degrees on every repeat.
     results = [module._maxrects_pack([(0.4, 0.2)], (0, 0, 0.5, 0.5), 0,
-                                     allow_rotation=True)
+                                     rotation_steps=(0, 6))
                for _ in range(10)]
-    assert all(result[0].rotated_90 is False for result in results)
+    assert all(result[0].rotation_step == 0 for result in results)
     assert all(result == results[0] for result in results)
 
 
@@ -263,3 +263,32 @@ def test_planner_is_resolution_independent_and_equivalent_padding_matches():
         weighted_padding_pixels=0, weighted_texture_resolution="512")
     assert plan(module.resolve_weighted_padding(pixels)) == plan(
         module.resolve_weighted_padding(relative))
+
+
+def test_rotation_modes_actual_loop_bbox_and_fifteen_degree_rescue():
+    module = _load_primitives()
+    assert module.rotation_steps_for_mode("NONE") == (0,)
+    assert module.rotation_steps_for_mode("STEP_90") == (0, 6)
+    assert module.rotation_steps_for_mode("STEP_15") == tuple(range(12))
+    # A diagonal parallelogram has a substantially smaller actual 45-degree
+    # bbox than the bbox-rectangle rotation formula would report.
+    points = ((0, 0), (0.8, 0.6), (0.7, 0.7), (-0.1, 0.1))
+    candidate = module.rotation_candidates(points, 0.9, 0.7, (3,))[0]
+    rectangle_formula = 0.9 * math.cos(math.pi / 4) + 0.7 * math.sin(math.pi / 4)
+    assert candidate.width < rectangle_formula * 0.8
+    # This body cannot fit at 0/90, while an actual 45-degree candidate can.
+    region = (0, 0, 1.1, 0.3)
+    assert module._maxrects_pack([(0.9, 0.7)], region, 0,
+        rotation_steps=(0, 6), source_uvs=[points]) is None
+    rescued = module._maxrects_pack([(0.9, 0.7)], region, 0,
+        rotation_steps=tuple(range(12)), source_uvs=[points])
+    assert rescued is not None and rescued[0].rotation_step not in (0, 6)
+
+
+def test_fifteen_degree_results_are_deterministic_and_bounded():
+    module = _load_primitives()
+    args = ([5, 4, 3, 2, 1], [5, 3, 1, .4, .2])
+    results = [module.pack_importance_boxes(*args, rotation_steps=tuple(range(12)))
+               for _ in range(10)]
+    assert all(result == results[0] for result in results)
+    assert all(0 <= rectangle.rotation_step < 12 for rectangle in results[0][0])

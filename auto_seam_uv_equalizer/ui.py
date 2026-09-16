@@ -255,7 +255,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             weighted.prop(settings, "weighted_texture_resolution", text="Texture Resolution")
         weighted.separator()
         weighted.label(text="Packing")
-        weighted.prop(settings, "weighted_allow_rotation")
+        weighted.prop(settings, "weighted_rotation_mode", text="Island Rotation")
         seed_map = selected_face_seeds_by_mesh(context, meshes)
         has_weighted_seeds = any(seed_map.values())
         selected_scope_ready = has_weighted_seeds and all(
