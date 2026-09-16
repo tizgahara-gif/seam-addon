@@ -163,7 +163,11 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="2. Unwrap", icon="UV")
         box.prop(settings, "unwrap_method", text="Method")
-        box.prop(settings, "unwrap_margin_percent", text="Unwrap Margin (%)")
+        box.prop(settings, "unwrap_margin_method", text="Margin Method")
+        if settings.unwrap_margin_method == "FRACTION":
+            box.prop(settings, "unwrap_margin_percent", text="Unwrap Margin (%)")
+        else:
+            box.prop(settings, "unwrap_margin", text="Unwrap Margin")
         box.label(text="Scope: Selected UV Islands")
         selected_face_count = _selected_face_count(context)
         selected = box.column()

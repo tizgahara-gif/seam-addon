@@ -38,6 +38,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "symmetry_scope",
         "texture_source_side",
         "unwrap_margin",
+        "unwrap_margin_method",
         "pack_margin",
         "mesh_symmetry_axis",
         "use_distortion_guided_candidates",
@@ -201,7 +202,31 @@ def _verify_percentage_facade_routing(sources: dict[str, str]) -> None:
                   if name not in allowed and "_percent" in source)
     if hits:
         raise RuntimeError(f"Backend reads percentage façade properties: {hits}")
-    print("OK: percentage façade properties are restricted to the UI boundary")
+    ui = sources.get("auto_seam_uv_equalizer/ui.py", "")
+    uv_tools = sources.get("auto_seam_uv_equalizer/uv_tools.py", "")
+    operators = sources.get("auto_seam_uv_equalizer/operators.py", "")
+    if "unwrap_margin" in ui and not all(token in ui for token in (
+            'settings.unwrap_margin_method == "FRACTION"',
+            'prop(settings, "unwrap_margin_percent"',
+            'prop(settings, "unwrap_margin", text="Unwrap Margin")')):
+        raise RuntimeError("Unwrap Margin percentage façade is not conditional on Fraction")
+    if uv_tools:
+        tree = ast.parse(uv_tools, filename="auto_seam_uv_equalizer/uv_tools.py")
+        functions = {node.name: node for node in tree.body
+                     if isinstance(node, ast.FunctionDef)}
+        for name in ("unwrap_object", "unwrap_selected_faces"):
+            function = functions.get(name)
+            calls = [] if function is None else [
+                node for node in ast.walk(function)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "unwrap"]
+            if not calls or not all(
+                    {"method", "margin_method", "margin"} <=
+                    {keyword.arg for keyword in call.keywords} for call in calls):
+                raise RuntimeError(f"{name} does not route Blender unwrap margin_method")
+    if operators and "settings.unwrap_margin_percent" in operators:
+        raise RuntimeError("Unwrap backend reads percentage façade property")
+    print("OK: percentage façades and Unwrap margin methods are routed correctly")
 
 
 def _read_zip_text(archive: zipfile.ZipFile, member_name: str) -> str:

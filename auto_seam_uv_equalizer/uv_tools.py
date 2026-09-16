@@ -48,6 +48,7 @@ def unwrap_object(
     uv_map_name: str,
     create_if_missing: bool,
     method: str,
+    margin_method: str,
     margin: float,
     average_islands: bool,
     straighten_circular_strip_islands: bool,
@@ -74,7 +75,7 @@ def unwrap_object(
             face.select = face.index in editable
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_mode(type="FACE")
-        bpy.ops.uv.unwrap(method=method, margin=margin)
+        bpy.ops.uv.unwrap(method=method, margin_method=margin_method, margin=margin)
 
         straightened_count = 0
         if straighten_circular_strip_islands:
@@ -101,7 +102,7 @@ def unwrap_object(
         raise RuntimeError(f"Failed to unwrap {obj.name}: {exc}") from exc
 
 
-def unwrap_selected_faces(obj, method, margin):
+def unwrap_selected_faces(obj, method, margin_method, margin):
     """Unwrap selected islands on the existing active UV map only.
 
     Unlike the named-map unwrap workflows, this function never creates or
@@ -139,7 +140,7 @@ def unwrap_selected_faces(obj, method, margin):
     before = {loop: datum.vector.copy() for loop, datum in enumerate(layer.uv)}
     bpy.ops.object.mode_set(mode="EDIT")
     try:
-        result = bpy.ops.uv.unwrap(method=method, margin=margin)
+        result = bpy.ops.uv.unwrap(method=method, margin_method=margin_method, margin=margin)
         if "FINISHED" not in result:
             raise RuntimeError("Blender UV unwrap was cancelled")
         bpy.ops.object.mode_set(mode="OBJECT")

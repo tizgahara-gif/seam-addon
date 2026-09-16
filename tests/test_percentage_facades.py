@@ -90,3 +90,49 @@ def test_fraction_pack_uses_facade_but_backend_keeps_normalized_property():
     assert 'prop(settings, "pack_margin_percent"' in ui
     assert 'prop(settings, "pack_margin", text="Pack Margin")' in ui
     assert '"margin": settings.pack_margin' in backend
+
+
+def test_unwrap_margin_method_contract_and_conditional_ui():
+    import ast
+
+    properties = (ROOT / "auto_seam_uv_equalizer" / "properties.py").read_text()
+    ui = (ROOT / "auto_seam_uv_equalizer" / "ui.py").read_text()
+    uv_tools = (ROOT / "auto_seam_uv_equalizer" / "uv_tools.py").read_text()
+    operators = (ROOT / "auto_seam_uv_equalizer" / "operators.py").read_text()
+
+    assert 'default="FRACTION"' in properties
+    assert 'settings.unwrap_margin_method == "FRACTION"' in ui
+    assert 'prop(settings, "unwrap_margin_percent"' in ui
+    assert 'prop(settings, "unwrap_margin", text="Unwrap Margin")' in ui
+
+    tree = ast.parse(uv_tools)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    for name in ("unwrap_object", "unwrap_selected_faces"):
+        function = functions[name]
+        args = [arg.arg for arg in function.args.args]
+        assert args.index("method") < args.index("margin_method") < args.index("margin")
+        unwrap_calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "unwrap"]
+        assert unwrap_calls
+        assert {kw.arg for kw in unwrap_calls[0].keywords} >= {
+            "method", "margin_method", "margin"}
+
+    # Both public operators route the normalized source-of-truth values.
+    assert "unwrap_selected_faces(obj, settings.unwrap_method, settings.unwrap_margin_method, settings.unwrap_margin)" in operators
+    assert operators.count("settings.unwrap_margin_method,") >= 3
+    assert "settings.unwrap_margin_percent" not in operators
+
+
+def test_unwrap_legacy_migration_requires_stored_margin():
+    properties = (ROOT / "auto_seam_uv_equalizer" / "properties.py").read_text()
+    assert '"unwrap_margin_method" not in keys and (' in properties
+    assert '"unwrap_margin" in keys or "margin" in keys' in properties
+    assert 'settings.unwrap_margin_method = "SCALED"' in properties
+
+
+def test_mesh_symmetry_tolerance_has_length_metadata_without_conversion():
+    properties = (ROOT / "auto_seam_uv_equalizer" / "properties.py").read_text()
+    assert 'subtype="DISTANCE", unit="LENGTH"' in properties
+    assert "before Object Scale is applied" in properties
+    assert "mesh_symmetry_tolerance_percent" not in properties

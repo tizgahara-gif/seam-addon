@@ -85,7 +85,7 @@ def test_unwrap_selected_faces_reacquires_active_layer_after_mode_switch():
     assert last_object_mode < reacquire_mesh < reacquire_layer < restore_write
     assert "active_uv_name = active_layer.name" in source
     assert "ensure_uv_layer" not in source
-    assert len(function.args.args) == 3
+    assert [arg.arg for arg in function.args.args] == ["obj", "method", "margin_method", "margin"]
     assert "before =" in source
     assert "for loop, uv in before.items()" in source
     assert "Blender UV unwrap was cancelled" in source
