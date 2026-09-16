@@ -28,7 +28,23 @@ class IslandLayout:
     weight: float = 0.0
     uv_aspect: float = 1.0
     uv_area: float = 0.0
-    packed_rect: tuple[float, float, float, float] | None = None
+    packed_rect: PackedIsland | None = None
+
+
+@dataclass(frozen=True)
+class PackedIsland:
+    """A MaxRects placement, including the orientation selected by the planner."""
+    x: float
+    y: float
+    width: float
+    height: float
+    rotated_90: bool = False
+
+    def __iter__(self):
+        return iter((self.x, self.y, self.x + self.width, self.y + self.height))
+
+    def __getitem__(self, index):
+        return tuple(self)[index]
 
 
 @dataclass(frozen=True)
@@ -40,6 +56,7 @@ class LayoutReport:
     globally_scaled: bool = False
     maximum_area_ratio_error: float = 0.0
     uv_utilization: float = 0.0
+    rotated_island_count: int = 0
 
 
 def calculate_weights(areas, face_counts, density_influence: float):
@@ -303,6 +320,21 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
             coordinates.append((loop_index, u, v))
         pending.append((item, coordinates))
         actual_areas.append(item.uv_area * scale * scale)
+        actual_bounds = (min(value[1] for value in coordinates),
+                         min(value[2] for value in coordinates),
+                         max(value[1] for value in coordinates),
+                         max(value[2] for value in coordinates))
+        planned_width = ((bounds[3] - bounds[1]) if rect.rotated_90
+                         else (bounds[2] - bounds[0])) * scale
+        planned_height = ((bounds[2] - bounds[0]) if rect.rotated_90
+                          else (bounds[3] - bounds[1])) * scale
+        planned_bounds = (target_center[0] - planned_width * .5,
+                          target_center[1] - planned_height * .5,
+                          target_center[0] + planned_width * .5,
+                          target_center[1] + planned_height * .5)
+        if any(abs(actual - planned) > 1e-9
+               for actual, planned in zip(actual_bounds, planned_bounds)):
+            raise RuntimeError("weighted layout transform does not match its planned bounds")
     # MaxRects body rectangles must remain disjoint and maintain requested padding.
     for first in range(len(rectangles)):
         for second in range(first + 1, len(rectangles)):
@@ -318,7 +350,8 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
     report = LayoutReport(len(islands), sum(item.surface_area for item in islands),
                           min(weights), max(weights),
                           scale_mode == "PRESERVE_TEXEL_DENSITY" and global_scale < 1.0,
-                          maximum_error, utilization)
+                          maximum_error, utilization,
+                          sum(rect.rotated_90 for rect in rectangles))
     return pending, report
 
 

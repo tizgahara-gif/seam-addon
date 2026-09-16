@@ -26,6 +26,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "check_overlap_across_objects",
         "show_ring_strip",
         "weighted_density_influence",
+        "weighted_allow_rotation",
         "weighted_target_region",
         "weighted_scale_mode",
         "weighted_padding_mode",
