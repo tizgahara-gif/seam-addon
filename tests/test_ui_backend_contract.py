@@ -54,6 +54,19 @@ def test_ui_contract_exposes_routed_setting_families():
     assert 'text="Named UV Settings"' in ui
 
 
+def test_normalized_uv_distances_use_ui_only_percentage_facades():
+    ui = _source("ui.py")
+    properties = _source("properties.py")
+    for facade in (
+        "unwrap_margin_percent", "weighted_padding_uv_percent",
+        "pack_margin_percent", "symmetry_island_gap_percent",
+    ):
+        assert f'prop(settings, "{facade}"' in ui
+        assert f"{facade}: FloatProperty" in properties
+    assert 'prop(settings, "weighted_padding_uv", text="UV Margin")' not in ui
+    assert 'prop(settings, "symmetry_island_gap", text="Island Gap")' not in ui
+
+
 def test_standard_pack_routing_contract_is_unchanged():
     source = _source("uv_pack.py")
     for argument in ("margin", "rotate", "rotate_method", "margin_method",
