@@ -289,6 +289,21 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.enabled = active_uv is not None and symmetry_available
         action.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV")
 
+        island_sync = box.column(align=True)
+        island_sync.separator()
+        island_sync.label(text="Island Synchronization")
+        island_sync.label(text="Source: Selected UV Island")
+        island_sync.label(text="Mode: Copy Exact")
+        island_sync.label(text="Synchronize Seams", icon="CHECKMARK")
+        island_sync.label(text=(
+            "Copies the selected island's UV coordinates and seam ON/OFF state "
+            "to its mesh-symmetric counterpart."), icon="INFO")
+        island_sync.label(text="The UV islands will overlap exactly.", icon="INFO")
+        action = island_sync.row()
+        action.enabled = edit_mode and active_uv is not None
+        action.operator("autoseamuv.sync_mirrored_uv_island",
+                        text="Synchronize Mirrored UV Island")
+
         exact = box.column(align=True)
         exact.separator()
         exact.label(text="Exact Texture-X")

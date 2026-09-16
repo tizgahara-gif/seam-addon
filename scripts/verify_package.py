@@ -99,12 +99,16 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "def build_symmetry_plan",
         "def transferred_uvs",
         "def exact_texture_x_uvs",
+        "def collect_selected_source_uv_island",
+        "def plan_mirrored_island_sync",
     ),
     "auto_seam_uv_equalizer/operators_symmetry.py": (
         'bl_idname = "autoseamuv.validate_symmetry"',
         'bl_idname = "autoseamuv.transfer_symmetric_uv"',
         "class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry",
         'bl_idname = "autoseamuv.transfer_exact_texture_x_symmetry"',
+        "class AUTOSEAMUV_OT_sync_mirrored_uv_island",
+        'bl_idname = "autoseamuv.sync_mirrored_uv_island"',
     ),
     "auto_seam_uv_equalizer/mesh_utils.py": (
         "def build_mesh_topology",
@@ -124,6 +128,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "Clear Overlap Selection",
         "Shared Weighted Atlas",
         "Distortion-Guided Seam Candidates",
+        "Mirrored UV Island Synchronization",
     ),
     "auto_seam_uv_equalizer/chart_seam.py": (
         "def cached_uv_analysis_evaluators", "def uv_face_distortion_from_snapshot",

@@ -4,8 +4,9 @@ from __future__ import annotations
 import bmesh
 import bpy
 
-from .symmetry import (SymmetryError, build_symmetry_plan, exact_texture_x_uvs,
-                       transferred_uvs)
+from .symmetry import (SymmetryError, build_symmetry_plan,
+                       collect_selected_source_uv_island, exact_texture_x_uvs,
+                       plan_mirrored_island_sync, transferred_uvs)
 from .translations import iface_
 from .operators import _restore_context, _snapshot_context
 
@@ -169,5 +170,101 @@ class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry(bpy.types.Operator):
         return return_value
 
 
+class AUTOSEAMUV_OT_sync_mirrored_uv_island(bpy.types.Operator):
+    bl_idname = "autoseamuv.sync_mirrored_uv_island"
+    bl_label = "Synchronize Mirrored UV Island"
+    bl_description = (
+        "Copies the selected island's UV coordinates and seam ON/OFF state "
+        "to its mesh-symmetric counterpart. The UV islands will overlap exactly."
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return bool(obj and obj.type == "MESH" and context.mode == "EDIT_MESH")
+
+    def execute(self, context):
+        obj = context.active_object
+        if obj is None or obj.type != "MESH" or context.mode != "EDIT_MESH":
+            self.report({"ERROR"}, iface_("Edit Mode with an active mesh is required."))
+            return {"CANCELLED"}
+        if obj.data.uv_layers.active is None:
+            self.report({"ERROR"}, iface_("No active UV map."))
+            return {"CANCELLED"}
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table(); bm.verts.index_update()
+        bm.edges.ensure_lookup_table(); bm.edges.index_update()
+        bm.faces.ensure_lookup_table(); bm.faces.index_update()
+        uv_layer = bm.loops.layers.uv.active
+        if uv_layer is None:
+            self.report({"ERROR"}, iface_("No active UV map."))
+            return {"CANCELLED"}
+
+        # Use deterministic face/loop ordering matching Mesh polygon loops,
+        # while retaining BMLoop references for an Edit Mode-only commit.
+        coordinates = [tuple(vertex.co) for vertex in bm.verts]
+        edges = [tuple(vertex.index for vertex in edge.verts) for edge in bm.edges]
+        faces = [None] * len(bm.faces)
+        loop_refs, uvs = [], []
+        for face_index in range(len(bm.faces)):
+            face = bm.faces[face_index]
+            faces[face.index] = tuple(loop.vert.index for loop in face.loops)
+        for face_index in range(len(bm.faces)):
+            face = bm.faces[face_index]
+            for loop in face.loops:
+                loop_refs.append(loop)
+                uvs.append(tuple(loop[uv_layer].uv))
+        selected_faces = {face.index for face in bm.faces if face.select}
+
+        try:
+            source_faces = collect_selected_source_uv_island(
+                faces, uvs, selected_faces)
+            settings = context.scene.autoseamuv_settings
+            plan = plan_mirrored_island_sync(
+                coordinates, edges, faces, source_faces,
+                [bool(edge.seam) for edge in bm.edges], uvs,
+                "XYZ".index(settings.mesh_symmetry_axis),
+                settings.mesh_symmetry_tolerance,
+            )
+        except (SymmetryError, ValueError, IndexError) as exc:
+            message = str(exc)
+            if not message.startswith(("Exactly one", "The selected UV island",
+                                       "The selected island crosses")):
+                message = "The selected island has no complete mirrored topology."
+            self.report({"ERROR"}, iface_(message))
+            return {"CANCELLED"}
+
+        # Snapshot both source values (inside the plan) and every target value.
+        # No mutation occurs before this point.  Any commit-time exception rolls
+        # back both data domains before reporting cancellation.
+        target_seams_before = {index: bool(bm.edges[index].seam)
+                               for index in plan.seam_writes}
+        target_uvs_before = {index: loop_refs[index][uv_layer].uv.copy()
+                             for index in plan.uv_writes}
+        try:
+            for edge_index, state in plan.seam_writes.items():
+                bm.edges[edge_index].seam = state
+            for loop_index, uv in plan.uv_writes.items():
+                loop_refs[loop_index][uv_layer].uv = uv
+            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        except Exception as exc:
+            for edge_index, state in target_seams_before.items():
+                bm.edges[edge_index].seam = state
+            for loop_index, uv in target_uvs_before.items():
+                loop_refs[loop_index][uv_layer].uv = uv
+            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+            self.report({"ERROR"}, iface_(
+                "Mirrored UV island synchronization failed: %s", str(exc)))
+            return {"CANCELLED"}
+
+        self.report({"INFO"}, iface_(
+            "Synchronized mirrored UV island: %d faces, %d seam edges, %d UV loops.",
+            len(plan.symmetry.face_pairs), len(plan.seam_writes), len(plan.uv_writes)))
+        return {"FINISHED"}
+
+
 CLASSES = (AUTOSEAMUV_OT_validate_symmetry, AUTOSEAMUV_OT_transfer_symmetric_uv,
-           AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry)
+           AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry,
+           AUTOSEAMUV_OT_sync_mirrored_uv_island)

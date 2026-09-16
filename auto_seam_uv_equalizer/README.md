@@ -42,6 +42,18 @@ Distortion guidance refines anchored charts. Anchorless closed charts still boot
 
 Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。「Layout settings match Exact Texture-X.」は設定値の一致だけを示し、UVや対称対応の検証成功を保証しません。本当の検証はOperator実行時に行います。
 
+#### Mirrored UV Island Synchronization
+
+1. Enter Edit Mode.
+2. Select faces belonging to exactly one source UV island. A partial face selection is expanded internally to that complete island without changing the mesh selection.
+3. Run **Synchronize Mirrored UV Island**.
+4. The mirrored counterpart receives the same mesh seam ON/OFF states and the exact same UV coordinates.
+5. The two UV islands overlap exactly.
+
+**Standard UV Transfer** is the existing general symmetry UV-transfer workflow. **Synchronize Mirrored UV Island** instead treats one selected UV island as authoritative and overwrites its mirrored counterpart. It performs `Udest = Usrc` and `Vdest = Vsrc`; it does not flip, rotate, pack, or re-unwrap UVs and does not call Weighted Layout or Atlas Pack.
+
+This operation requires a complete one-to-one symmetric face, edge, vertex, and loop topology mapping using the shared **Mesh Symmetry Axis** and **Mesh Symmetry Tolerance**. It never guesses a missing correspondence. Centerline/cross-plane islands, ambiguous matches, multiple selected islands, and incomplete topology are cancelled without modifying seams or UVs. Target seams and UV coordinates are snapshotted and rolled back together if committing fails. UV pin and UV/mesh selection states are preserved.
+
 ### 5. Validation
 
 **Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、coverageなどを検査してLast Quality Reportへ表示し、flipped / zero-area面を結果として選択します。
