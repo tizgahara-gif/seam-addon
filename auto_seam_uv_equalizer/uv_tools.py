@@ -6,6 +6,8 @@ import bpy
 
 from .island_tools import straighten_circular_strip_islands_on_object
 from .uv_pack import pack as blender_pack
+from .uv_protection import (finished_face_indices, snapshot_finished,
+                            selected_islands, validate_protection_consistency)
 
 
 def ensure_uv_layer(obj, uv_map_name: str, create_if_missing: bool) -> bool:
@@ -63,9 +65,15 @@ def unwrap_object(
         if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
             raise RuntimeError(f"UV map '{uv_map_name}' does not exist and Create UV If Missing is disabled.")
 
+        validate_protection_consistency(obj)
+        protected = snapshot_finished(obj.data)
+        editable = set(range(len(obj.data.polygons))) - finished_face_indices(obj.data)
+        if not editable:
+            raise RuntimeError("all target UV islands are Finished")
+        for face in obj.data.polygons:
+            face.select = face.index in editable
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_mode(type="FACE")
-        bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.uv.unwrap(method=method, margin=margin)
 
         straightened_count = 0
@@ -82,6 +90,10 @@ def unwrap_object(
             bpy.ops.uv.average_islands_scale()
 
         bpy.ops.object.mode_set(mode="OBJECT")
+        layer = obj.data.uv_layers.active
+        for loop, uv in protected["uv"].items():
+            layer.uv[loop].vector = uv
+        obj.data.update()
         return straightened_count
     except Exception as exc:
         if bpy.ops.object.mode_set.poll():
@@ -101,6 +113,14 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
     if not selected:
         bpy.ops.object.mode_set(mode="EDIT")
         raise RuntimeError("no faces selected")
+    validate_protection_consistency(obj)
+    selected = {face for island in selected_islands(obj, selected) for face in island}
+    selected -= finished_face_indices(obj.data)
+    if not selected:
+        bpy.ops.object.mode_set(mode="EDIT")
+        raise RuntimeError("all selected UV islands are Finished")
+    for face in obj.data.polygons:
+        face.select = face.index in selected
     untouched = {loop: layer.uv[loop].vector.copy()
                  for face in obj.data.polygons if face.index not in selected
                  for loop in face.loop_indices}
@@ -117,6 +137,17 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
 def pack_object(obj, settings) -> None:
     """Pack existing islands on the active UV map with Blender's pack operator."""
     if obj is None or obj.type != "MESH":
+        return
+    # Keep the exact legacy Blender pack path when protection is absent.  Once
+    # protection exists, use the same obstacle-aware transactional MaxRects
+    # backend as incremental packing; Blender UV pins are never repurposed.
+    if (obj.data.attributes.get("autoseam_finished_group") is not None or
+            obj.data.attributes.get("autoseam_layout_lock") is not None):
+        from .weighted_layout import incremental_pack_object, resolve_weighted_padding
+        incremental_pack_object(
+            obj, settings.weighted_density_influence, settings.weighted_scale_mode,
+            resolve_weighted_padding(settings), settings.weighted_target_region,
+            settings.weighted_allow_rotation, range(len(obj.data.polygons)))
         return
     try:
         _switch_to_object_mode()

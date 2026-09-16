@@ -16,11 +16,14 @@ from .seam_detection import (
     mark_selected_region_boundary_seams,
 )
 from .uv_tools import ensure_uv_layer, pack_object, unwrap_object, unwrap_selected_faces
-from .weighted_layout import resolve_weighted_padding, shared_weighted_layout, weighted_layout_object
+from .weighted_layout import (incremental_pack_object, resolve_weighted_padding,
+                              shared_weighted_layout, weighted_layout_object)
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
 from .translations import iface_
+from .uv_protection import (ProtectionError, protected_edge_indices,
+                            validate_protection_consistency)
 from .chart_seam import (PRESETS, cached_uv_analysis_evaluators,
                          uv_chart_quality_from_snapshot, uv_face_distortion_from_snapshot)
 
@@ -222,6 +225,8 @@ def _get_settings(context):
 
 def _auto_mark(obj, settings) -> int:
     """Dispatch to the selected seam engine with its complete settings."""
+    if obj.data.uv_layers.active is not None:
+        validate_protection_consistency(obj)
     if settings.seam_mode == "ADVANCED":
         return apply_chart_seams(obj, _analyze_with_temporary_unwrap(obj, settings))
     return mark_auto_seams(
@@ -368,7 +373,17 @@ class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
     def execute(self, context):
         obj = context.active_object
         bm = bmesh.from_edit_mesh(obj.data)
+        obj.update_from_editmode()
+        try:
+            validate_protection_consistency(obj)
+        except ProtectionError as exc:
+            self.report({"ERROR"}, iface_(str(exc)))
+            return {"CANCELLED"}
+        protected = protected_edge_indices(obj.data)
+        seam_snapshot = {index: bool(bm.edges[index].seam) for index in protected}
         counts = mark_selected_region_boundary_seams(bm, self.include_open_boundaries)
+        for index, state in seam_snapshot.items():
+            bm.edges[index].seam = state
         bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
         self.report(
             {"INFO"},
@@ -762,6 +777,35 @@ class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):
         return _run_existing_uv_operation(self, context, pack_object, "Pack Islands")
 
 
+class AUTOSEAMUV_OT_pack_selected_into_free_space(bpy.types.Operator):
+    """Pack selected editable islands while treating every other island as fixed."""
+    bl_idname = "autoseamuv.pack_selected_into_free_space"
+    bl_label = "Pack Selected Into Free Space"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return bool(obj and obj.type == "MESH" and context.mode == "EDIT_MESH")
+
+    def execute(self, context):
+        obj, settings = context.active_object, _get_settings(context)
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table(); bm.faces.index_update()
+        selected_faces = frozenset(face.index for face in bm.faces if face.select)
+        obj.update_from_editmode()
+        try:
+            report = incremental_pack_object(
+                obj, settings.weighted_density_influence, settings.weighted_scale_mode,
+                resolve_weighted_padding(settings), settings.weighted_target_region,
+                settings.weighted_allow_rotation, selected_faces)
+        except Exception as exc:
+            self.report({"ERROR"}, iface_("Pack Selected Into Free Space failed: %s", exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, iface_("Packed %d selected UV island(s).", report.island_count))
+        return {"FINISHED"}
+
+
 class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
     """Unwrap selected mesh objects and pack UV islands efficiently."""
 
@@ -1092,6 +1136,8 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
             _ensure_object_mode()
             for obj in objects:
                 try:
+                    if obj.data.uv_layers.active is not None:
+                        validate_protection_consistency(obj)
                     total_cleared += clear_seams(obj.data)
                     processed += 1
                 except Exception as exc:

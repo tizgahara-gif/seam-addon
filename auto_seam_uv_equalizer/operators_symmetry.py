@@ -9,6 +9,8 @@ from .symmetry import (SymmetryError, build_symmetry_plan,
                        plan_mirrored_island_sync, transferred_uvs)
 from .translations import iface_
 from .operators import _restore_context, _snapshot_context
+from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
+                            validate_protection_consistency)
 
 
 def _selected_faces(obj):
@@ -94,7 +96,7 @@ class AUTOSEAMUV_OT_validate_symmetry(bpy.types.Operator):
             obj, _layer, plan = _plan(
                 context, False, selected_faces=selected_faces
             )
-        except (SymmetryError, ValueError) as exc:
+        except (SymmetryError, ProtectionError, ValueError) as exc:
             self.report({"ERROR"}, iface_("Symmetry validation failed: %s", exc))
             return {"CANCELLED"}
         self.report({"INFO"}, iface_("%s: symmetry valid for %d face pair(s)", obj.name, len(plan.face_pairs)))
@@ -124,11 +126,13 @@ class AUTOSEAMUV_OT_transfer_symmetric_uv(bpy.types.Operator):
             source_uvs = [tuple(item.vector) for item in layer.uv]
             writes = transferred_uvs(source_uvs, plan.loop_pairs,
                                       settings.symmetry_layout, settings.symmetry_island_gap)
+            validate_protection_consistency(obj)
+            assert_plan_does_not_modify_finished(obj.data, writes)
             # This is the first mutation: every geometry/loop/UV check succeeded.
             for loop_index, uv in writes.items():
                 layer.uv[loop_index].vector = uv
             obj.data.update()
-        except (SymmetryError, ValueError) as exc:
+        except (SymmetryError, ProtectionError, ValueError) as exc:
             self.report({"ERROR"}, iface_("Symmetric UV transfer failed: %s", exc))
             return_value = {"CANCELLED"}
         else:
@@ -166,6 +170,8 @@ class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry(bpy.types.Operator):
                 context.scene.autoseamuv_settings.texture_source_side,
                 self._EPSILON,
             )
+            validate_protection_consistency(obj)
+            assert_plan_does_not_modify_finished(obj.data, writes)
 
             # Retain every destination value so even assignment or post-check
             # failures leave the active map exactly as it was before execution.
@@ -186,7 +192,7 @@ class AUTOSEAMUV_OT_transfer_exact_texture_x_symmetry(bpy.types.Operator):
                 obj.data.update()
                 raise
             obj.data.update()
-        except (SymmetryError, ValueError) as exc:
+        except (SymmetryError, ProtectionError, ValueError) as exc:
             self.report({"ERROR"}, iface_(str(exc)))
             return_value = {"CANCELLED"}
         except Exception as exc:
@@ -261,7 +267,11 @@ class AUTOSEAMUV_OT_sync_mirrored_uv_island(bpy.types.Operator):
                 "XYZ".index(settings.mesh_symmetry_axis),
                 settings.mesh_symmetry_tolerance,
             )
-        except (SymmetryError, ValueError, IndexError) as exc:
+            obj.update_from_editmode()
+            validate_protection_consistency(obj)
+            assert_plan_does_not_modify_finished(
+                obj.data, plan.uv_writes, plan.seam_writes)
+        except (SymmetryError, ProtectionError, ValueError, IndexError) as exc:
             message = str(exc)
             if not message.startswith(("Exactly one", "The selected UV island",
                                        "The selected island crosses")):

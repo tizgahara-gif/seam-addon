@@ -11,6 +11,8 @@ from .uv_island_flip import (
     collect_selected_uv_islands,
     plan_horizontal_uv_flip,
 )
+from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
+                            validate_protection_consistency)
 
 
 class AUTOSEAMUV_OT_flip_selected_uv_islands(bpy.types.Operator):
@@ -46,7 +48,9 @@ class AUTOSEAMUV_OT_flip_selected_uv_islands(bpy.types.Operator):
             return {"CANCELLED"}
         try:
             planned_uvs = plan_horizontal_uv_flip(islands)
-        except ValueError as exc:
+            validate_protection_consistency(obj)
+            assert_plan_does_not_modify_finished(obj.data, planned_uvs)
+        except (ProtectionError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 

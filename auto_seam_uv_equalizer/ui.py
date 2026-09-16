@@ -184,6 +184,17 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     def _draw_layout(layout, settings, meshes, active_uv, edit_mode, context):
         box = layout.box()
         box.label(text="3. Layout", icon="UV")
+        protection = box.column(align=True)
+        protection.label(text="UV Protection", icon="LOCKED")
+        row = protection.row(align=True)
+        row.enabled = edit_mode and active_uv is not None
+        row.operator("autoseamuv.mark_finished_islands", text="Mark Finished")
+        row.operator("autoseamuv.unmark_finished_islands", text="Unmark Finished")
+        row = protection.row(align=True)
+        row.enabled = edit_mode and active_uv is not None
+        row.operator("autoseamuv.lock_layout_islands", text="Lock Layout")
+        row.operator("autoseamuv.unlock_layout_islands", text="Unlock Layout")
+        protection.separator()
         preflight = resolve_layout_targets(context)
         if len(meshes) > 1 or preflight["missing_uv_count"]:
             box.label(text=iface_("Selected Mesh Objects: %d") % preflight["target_count"])
@@ -198,6 +209,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.prop(settings, "weighted_target_region", text="Target UV Region")
         weighted.prop(settings, "weighted_scale_mode", text="Scale Mode")
         weighted.prop(settings, "weighted_density_influence", text="Density Influence")
+        weighted.prop(settings, "weighted_allow_rotation", text="Allow 90° Island Rotation")
         weighted.separator()
         weighted.label(text="Padding")
         weighted.prop(settings, "weighted_padding_mode", text="Mode")
@@ -215,6 +227,10 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.enabled = preflight["all_ready"] and not (
             settings.weighted_scope == "SELECTED_FACES" and not edit_mode)
         action.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout")
+        incremental = weighted.row()
+        incremental.enabled = preflight["all_ready"] and edit_mode
+        incremental.operator("autoseamuv.pack_selected_into_free_space",
+                             text="Pack Selected Into Free Space")
         weighted.label(text="Each object is laid out independently.", icon="INFO")
         weighted.separator()
         weighted.label(text="Shared Atlas")

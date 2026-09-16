@@ -16,7 +16,8 @@ import bpy  # noqa: E402
 from bpy.app.handlers import persistent  # noqa: E402
 from bpy.props import PointerProperty  # noqa: E402
 
-from . import operators, operators_seam, operators_symmetry, operators_uv, operators_validation, properties, translations, ui
+from . import (operators, operators_protection, operators_seam, operators_symmetry,
+               operators_uv, operators_validation, properties, translations, ui)
 
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
@@ -31,6 +32,7 @@ CLASSES = (
     operators.AUTOSEAMUV_OT_weighted_island_layout,
     operators.AUTOSEAMUV_OT_shared_weighted_atlas,
     operators.AUTOSEAMUV_OT_pack_islands,
+    operators.AUTOSEAMUV_OT_pack_selected_into_free_space,
     operators.AUTOSEAMUV_OT_auto_unwrap_pack,
     operators.AUTOSEAMUV_OT_mark_and_unwrap,
     operators.AUTOSEAMUV_OT_atlas_pack_selected_objects,
@@ -40,6 +42,7 @@ CLASSES = (
     *operators_seam.CLASSES,
     *operators_symmetry.CLASSES,
     *operators_uv.CLASSES,
+    *operators_protection.CLASSES,
     *operators_validation.CLASSES,
     *ui.CLASSES,
 )

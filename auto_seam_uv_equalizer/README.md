@@ -85,6 +85,52 @@ performed. UVs outside the 0–1 range and zero-width islands are supported.
 
 ## Recommended workflow
 
+### Protected UV Workflow
+
+Protection is explicit and persistent. It never infers manual work from UV
+changes or Blender pins, and it does not install a background watcher.
+
+- **Finished** protects an island's seam state, UV topology/continuity, and all
+  UV coordinates (position, scale, and rotation) from automatic modification.
+- **Layout Lock** protects only placement, scale, and rotation during weighted
+  layout and packing. It does not prevent seam generation, unwrap, or explicit
+  symmetry tools.
+
+Both values are stored on the Mesh as face-domain integer attributes:
+`autoseam_finished_group` and `autoseam_layout_lock`. Each island marked in one
+action receives a distinct positive Finished group ID. A partial face selection
+is expanded to the complete current UV island without changing selection.
+Finished and Layout Lock remain independent from the edge-domain Force/Protect
+candidate tags. Linked objects therefore see the same protection and the
+**Process Shared Mesh Data Once** policy still applies.
+
+Recommended iterative workflow:
+
+1. Auto Seam.
+2. Unwrap.
+3. Weighted Layout.
+4. Manually correct important UV islands.
+5. Mark completed islands as **Finished**.
+6. Manually position islands that should stay fixed.
+7. Apply **Layout Lock**.
+8. Continue automatic processing.
+9. Use **Pack Selected Into Free Space** for newly added or reworked islands.
+
+Weighted Layout and Shared Weighted Atlas use locked/Finished bounding boxes as
+fixed MaxRects obstacles. Only the obstacle portion inside FULL, LEFT_HALF, or
+RIGHT_HALF consumes free space. Existing overlapping locked islands are left
+untouched. Obstacles receive one margin halo and movable rectangles retain their
+existing one margin halo, so the existing two-sided padding is not counted
+twice. Optional 90-degree rotation applies only to movable islands.
+
+Pack Selected Into Free Space treats selected editable islands as one movable
+pool and every other island as an obstacle. It uses one common fit scale,
+performs Collect → Validate → Plan → write-barrier → Commit, and restores the
+pre-commit coordinates if committing fails. Symmetry operations transactionally
+cancel rather than partially writing when any target belongs to a Finished
+island. Mixed protection values inside one current UV island are reported as an
+inconsistent state and are never guessed or repaired.
+
 ```text
 ZBrush
 ↓
@@ -126,3 +172,7 @@ Exact Texture-X（同じTexture Source Side）
 - Exact Texture-Xは事前に片側halfへ収まったUVを必要とします。
 - Atlas Packはmaterial統合、texture bake、画像統合を行いません。
 - 非一様Object Scaleや複雑なhero assetは手動確認が必要です。
+- Protection follows Mesh face attributes. If GoZ or another operation replaces
+  the entire mesh topology, protection may not survive and must be assigned
+  again. v1 intentionally performs no nearest-face, position, or projection
+  remapping after arbitrary topology replacement.

@@ -259,6 +259,10 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Padding Pixels", default=4, min=0, max=1024,
         description="Padding reserved around each packed island bound in pixels",
     )
+    weighted_allow_rotation: BoolProperty(
+        name="Allow 90° Island Rotation", default=False,
+        description="Allow movable weighted-layout islands to rotate by 90 degrees",
+    )
 
 
     atlas_texture_size: IntProperty(
