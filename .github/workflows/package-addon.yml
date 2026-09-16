@@ -60,6 +60,8 @@ jobs:
       BLENDER_VERSION: 5.1.2
     steps:
       - uses: actions/checkout@v4
+      - name: Build distribution zip
+        run: bash scripts/package.sh
       - name: Download Blender 5.1
         run: |
           curl -fL "https://download.blender.org/release/Blender5.1/blender-${BLENDER_VERSION}-linux-x64.tar.xz" -o blender.tar.xz
@@ -67,6 +69,11 @@ jobs:
           echo "$PWD/blender-${BLENDER_VERSION}-linux-x64" >> "$GITHUB_PATH"
       - name: Runtime and workflow tests
         run: blender --background --factory-startup --python blender_tests/test_integration.py
+      - name: Fresh ZIP install and disable-enable lifecycle
+        run: >-
+          blender --background --factory-startup
+          --python blender_tests/test_zip_install.py
+          -- auto_seam_uv_equalizer.zip
       - name: Ring and strip tests
         run: blender --background --factory-startup --python scripts/test_ring_strip_headless.py
       - name: Multi-object Edit selection test
