@@ -146,6 +146,84 @@ def test_importance_packer_all_target_regions_and_determinism():
         _assert_packing(module, [4, 2, 1], [6, 0.25, 1], root, 0.002)
 
 
+def test_rotation_off_is_identical_and_square_tie_prefers_zero_degrees():
+    module = _load_primitives()
+    boxes = [(0.7, 0.2), (0.2, 0.7), (0.1, 0.1)]
+    legacy = module._maxrects_pack(boxes, (0, 0, 1, 1), 0.01)
+    explicit_off = module._maxrects_pack(boxes, (0, 0, 1, 1), 0.01, False)
+    assert legacy == explicit_off
+    square = module._maxrects_pack([(0.4, 0.4)], (0, 0, 1, 1), 0, True)
+    assert square[0].rotated_90 is False
+
+
+def test_rotation_rescues_fit_and_swaps_padded_body_bbox():
+    module = _load_primitives()
+    assert module._maxrects_pack([(0.7, 0.2)], (0, 0, 0.3, 0.8), 0.01, False) is None
+    packed = module._maxrects_pack([(0.7, 0.2)], (0, 0, 0.3, 0.8), 0.01, True)[0]
+    assert packed.rotated_90 is True
+    assert math.isclose(packed.width, 0.2)
+    assert math.isclose(packed.height, 0.7)
+    assert packed.x >= 0.01 and packed.y >= 0.01
+    assert packed.x + packed.width <= 0.3 - 0.01 + 1e-12
+    assert packed.y + packed.height <= 0.8 - 0.01 + 1e-12
+
+
+def test_rotation_packer_is_deterministic_in_every_target_region():
+    module = _load_primitives()
+    for region in ("FULL", "LEFT_HALF", "RIGHT_HALF"):
+        root = module.target_rectangle(region)
+        args = ([5, 4, 3, 2], [8, 0.15, 5, 0.25], root, 0.002, True)
+        first = module.pack_importance_boxes(*args)
+        assert first == module.pack_importance_boxes(*args)
+        for packed in first[0]:
+            assert root[0] <= packed.x
+            assert packed.x + packed.width <= root[2] + 1e-9
+            assert root[1] <= packed.y
+            assert packed.y + packed.height <= root[3] + 1e-9
+
+
+def test_planner_rotates_real_uv_shape_without_area_or_edge_distortion():
+    module = _load_primitives()
+    class Vector:
+        def __init__(self, x, y): self.x, self.y = x, y
+    class Entry:
+        def __init__(self, vector): self.vector = Vector(*vector)
+    class Layer:
+        def __init__(self, width, height):
+            self.uv = [Entry(v) for v in ((0, 0), (width, 0),
+                                           (width, height), (0, height))]
+    aspects = (8, .15, 5, .25)
+    islands = []
+    for index, aspect in enumerate(aspects):
+        width, height = math.sqrt(aspect), 1 / math.sqrt(aspect)
+        item = module.IslandLayout((index,), tuple(range(4)), 1.0, 1, 1.0)
+        item.uv_layer = Layer(width, height)
+        item.source_bounds = (0, 0, width, height)
+        item.uv_aspect = aspect; item.uv_area = width * height
+        islands.append(item)
+    pending, report = module.plan_weighted_layout(
+        islands, 0, "ALLOCATE_BY_IMPORTANCE", 0, "FULL", True)
+    assert report.rotated_island_count > 0
+    transformed_areas = []
+    for item, coordinates in pending:
+        coords = [(u, v) for _, u, v in coordinates]
+        edges = [math.dist(coords[i], coords[(i + 1) % 4]) for i in range(4)]
+        assert math.isclose(edges[0] / edges[1], item.uv_aspect, rel_tol=1e-9)
+        bbox_aspect = ((max(u for u, _ in coords) - min(u for u, _ in coords)) /
+                       (max(v for _, v in coords) - min(v for _, v in coords)))
+        expected_aspect = 1 / item.uv_aspect if item.packed_rect.rotated_90 else item.uv_aspect
+        assert math.isclose(bbox_aspect, expected_aspect, rel_tol=1e-9)
+        # Shoelace area equals the plan's uniform-scale area prediction even
+        # for islands whose actual UV loops received the 90° CCW transform.
+        area = abs(sum(coords[i][0] * coords[(i + 1) % 4][1]
+                       - coords[(i + 1) % 4][0] * coords[i][1]
+                       for i in range(4))) * .5
+        transformed_areas.append(area)
+    assert all(math.isclose(area, transformed_areas[0], rel_tol=1e-9)
+               for area in transformed_areas)
+    assert report.maximum_area_ratio_error < 1e-9
+
+
 def test_shared_global_planner_area_ratio_regions_and_determinism():
     module = _load_primitives()
     class Vector:

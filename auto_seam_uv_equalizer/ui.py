@@ -206,6 +206,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         else:
             weighted.prop(settings, "weighted_padding_pixels", text="Padding")
             weighted.prop(settings, "weighted_texture_resolution", text="Texture Resolution")
+        weighted.separator()
+        weighted.label(text="Packing")
+        weighted.prop(settings, "weighted_allow_rotation")
         if settings.weighted_scope == "SELECTED_FACES" and not edit_mode:
             _warning(weighted, "Selected UV Islands requires Edit Mode.")
         action = weighted.row()

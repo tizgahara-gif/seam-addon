@@ -26,7 +26,23 @@ class IslandLayout:
     weight: float = 0.0
     uv_aspect: float = 1.0
     uv_area: float = 0.0
-    packed_rect: tuple[float, float, float, float] | None = None
+    packed_rect: PackedIsland | None = None
+
+
+@dataclass(frozen=True)
+class PackedIsland:
+    """A MaxRects placement, including the orientation selected by the planner."""
+    x: float
+    y: float
+    width: float
+    height: float
+    rotated_90: bool = False
+
+    def __iter__(self):
+        return iter((self.x, self.y, self.x + self.width, self.y + self.height))
+
+    def __getitem__(self, index):
+        return tuple(self)[index]
 
 
 @dataclass(frozen=True)
@@ -38,6 +54,7 @@ class LayoutReport:
     globally_scaled: bool = False
     maximum_area_ratio_error: float = 0.0
     uv_utilization: float = 0.0
+    rotated_island_count: int = 0
 
 
 def calculate_weights(areas, face_counts, density_influence: float):
@@ -78,8 +95,8 @@ def importance_boxes(weights, aspects):
             for weight, aspect in zip(weights, aspects)]
 
 
-def _maxrects_pack(boxes, rect, padding):
-    """Pack non-rotated boxes using deterministic MaxRects best-area-fit."""
+def _maxrects_pack(boxes, rect, padding, allow_rotation=False):
+    """Pack boxes using deterministic MaxRects best-area-fit and optional 90° turns."""
     x0, y0, x1, y1 = rect
     free = [(x0, y0, x1 - x0, y1 - y0)]
     placed = [None] * len(boxes)
@@ -87,19 +104,27 @@ def _maxrects_pack(boxes, rect, padding):
         -(boxes[i][0] + 2 * padding) * (boxes[i][1] + 2 * padding),
         -max(boxes[i]), i))
     for index in order:
-        width, height = boxes[index][0] + 2 * padding, boxes[index][1] + 2 * padding
         candidates = []
         for free_index, (fx, fy, fw, fh) in enumerate(free):
-            if width <= fw + EPSILON and height <= fh + EPSILON:
-                candidates.append((fw * fh - width * height,
-                                   min(fw - width, fh - height), fy, fx, free_index))
+            orientations = [(False, boxes[index][0], boxes[index][1])]
+            if allow_rotation and abs(boxes[index][0] - boxes[index][1]) > EPSILON:
+                orientations.append((True, boxes[index][1], boxes[index][0]))
+            for rotated_90, body_width, body_height in orientations:
+                width, height = body_width + 2 * padding, body_height + 2 * padding
+                if width <= fw + EPSILON and height <= fh + EPSILON:
+                    # Preserve best-area/short-side-fit scoring.  Rotation is
+                    # considered only after that score, with 0° winning ties.
+                    candidates.append((fw * fh - width * height,
+                                       min(fw - width, fh - height), rotated_90,
+                                       fy, fx, free_index, width, height,
+                                       body_width, body_height))
         if not candidates:
             return None
-        _, _, _, _, chosen = min(candidates)
+        _, _, rotated_90, _, _, chosen, width, height, body_width, body_height = min(candidates)
         fx, fy, fw, fh = free.pop(chosen)
         occupied = (fx, fy, width, height)
-        placed[index] = (fx + padding, fy + padding,
-                         fx + padding + boxes[index][0], fy + padding + boxes[index][1])
+        placed[index] = PackedIsland(
+            fx + padding, fy + padding, body_width, body_height, rotated_90)
         # MaxRects splitting: retain every portion of every free rectangle not
         # covered by the newly occupied rectangle, then prune contained pieces.
         remaining = []
@@ -122,7 +147,8 @@ def _maxrects_pack(boxes, rect, padding):
     return placed
 
 
-def pack_importance_boxes(weights, aspects, rect=(0.0, 0.0, 1.0, 1.0), padding=0.0):
+def pack_importance_boxes(weights, aspects, rect=(0.0, 0.0, 1.0, 1.0), padding=0.0,
+                          allow_rotation=False):
     """Find the largest shared scale and pack importance boxes transactionally."""
     unit = importance_boxes(weights, aspects)
     padding = max(0.0, float(padding))
@@ -131,7 +157,8 @@ def pack_importance_boxes(weights, aspects, rect=(0.0, 0.0, 1.0, 1.0), padding=0
     low, best = 0.0, None
     for _ in range(28):
         mid = (low + high) * 0.5
-        result = _maxrects_pack([(w * mid, h * mid) for w, h in unit], rect, padding)
+        result = _maxrects_pack([(w * mid, h * mid) for w, h in unit], rect, padding,
+                                allow_rotation)
         if result is None:
             high = mid
         else:
@@ -224,7 +251,7 @@ def resolve_weighted_padding(settings):
 
 
 def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
-                         target_region="FULL"):
+                         target_region="FULL", allow_rotation=False):
     """Build and validate a complete pending weighted layout without UV writes."""
     if not islands:
         raise RuntimeError("no non-zero-area UV islands are in the processing scope")
@@ -239,7 +266,8 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
                         for weight, bbox_area, item in zip(weights, bbox_areas, islands)]
                        if scale_mode == "ALLOCATE_BY_IMPORTANCE" else bbox_areas)
     rectangles, _ = pack_importance_boxes(
-        packing_weights, [item.uv_aspect for item in islands], root, padding)
+        packing_weights, [item.uv_aspect for item in islands], root, padding,
+        allow_rotation)
     for item, density, norm, weight, rectangle in zip(
             islands, densities, normalized, weights, rectangles):
         item.polygon_density, item.normalized_density = density, norm
@@ -248,22 +276,28 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
     fits = []
     for item in islands:
         bounds = item.source_bounds; rect = item.packed_rect
-        fits.append(min((rect[2] - rect[0]) / (bounds[2] - bounds[0]),
-                        (rect[3] - rect[1]) / (bounds[3] - bounds[1])))
+        source_width = bounds[3] - bounds[1] if rect.rotated_90 else bounds[2] - bounds[0]
+        source_height = bounds[2] - bounds[0] if rect.rotated_90 else bounds[3] - bounds[1]
+        fits.append(min(rect.width / source_width, rect.height / source_height))
     global_scale = min([1.0, *fits]) if scale_mode == "PRESERVE_TEXEL_DENSITY" else None
     actual_areas = []
     pending = []
     for index, item in enumerate(islands):
         bounds, rect = item.source_bounds, item.packed_rect
-        scale = ((rect[2] - rect[0]) / (bounds[2] - bounds[0])
+        source_width = bounds[3] - bounds[1] if rect.rotated_90 else bounds[2] - bounds[0]
+        scale = (rect.width / source_width
                  if global_scale is None else global_scale)
         source_center = ((bounds[0] + bounds[2]) * .5, (bounds[1] + bounds[3]) * .5)
         target_center = ((rect[0] + rect[2]) * .5, (rect[1] + rect[3]) * .5)
         coordinates = []
         for loop_index in item.loop_indices:
             uv = item.uv_layer.uv[loop_index].vector
-            u = target_center[0] + (uv.x - source_center[0]) * scale
-            v = target_center[1] + (uv.y - source_center[1]) * scale
+            local_x = (uv.x - source_center[0]) * scale
+            local_y = (uv.y - source_center[1]) * scale
+            if rect.rotated_90:
+                local_x, local_y = -local_y, local_x
+            u = target_center[0] + local_x
+            v = target_center[1] + local_y
             if not (math.isfinite(u) and math.isfinite(v) and
                     root[0] - 1e-9 <= u <= root[2] + 1e-9 and
                     root[1] - 1e-9 <= v <= root[3] + 1e-9):
@@ -271,6 +305,21 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
             coordinates.append((loop_index, u, v))
         pending.append((item, coordinates))
         actual_areas.append(item.uv_area * scale * scale)
+        actual_bounds = (min(value[1] for value in coordinates),
+                         min(value[2] for value in coordinates),
+                         max(value[1] for value in coordinates),
+                         max(value[2] for value in coordinates))
+        planned_width = ((bounds[3] - bounds[1]) if rect.rotated_90
+                         else (bounds[2] - bounds[0])) * scale
+        planned_height = ((bounds[2] - bounds[0]) if rect.rotated_90
+                          else (bounds[3] - bounds[1])) * scale
+        planned_bounds = (target_center[0] - planned_width * .5,
+                          target_center[1] - planned_height * .5,
+                          target_center[0] + planned_width * .5,
+                          target_center[1] + planned_height * .5)
+        if any(abs(actual - planned) > 1e-9
+               for actual, planned in zip(actual_bounds, planned_bounds)):
+            raise RuntimeError("weighted layout transform does not match its planned bounds")
     # MaxRects body rectangles must remain disjoint and maintain requested padding.
     for first in range(len(rectangles)):
         for second in range(first + 1, len(rectangles)):
@@ -286,7 +335,8 @@ def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
     report = LayoutReport(len(islands), sum(item.surface_area for item in islands),
                           min(weights), max(weights),
                           scale_mode == "PRESERVE_TEXEL_DENSITY" and global_scale < 1.0,
-                          maximum_error, utilization)
+                          maximum_error, utilization,
+                          sum(rect.rotated_90 for rect in rectangles))
     return pending, report
 
 
@@ -302,18 +352,19 @@ def apply_weighted_plan(pending):
 
 
 def weighted_layout_object(obj, density_influence, scale_mode, padding_uv,
-                           scope="SELECTED_FACES", target_region="FULL") -> LayoutReport:
+                           scope="SELECTED_FACES", target_region="FULL",
+                           allow_rotation=False) -> LayoutReport:
     """Lay out one object's active-map islands (the backward-compatible wrapper)."""
     islands = collect_weighted_islands(obj, scope)
     pending, report = plan_weighted_layout(
-        islands, density_influence, scale_mode, padding_uv, target_region)
+        islands, density_influence, scale_mode, padding_uv, target_region, allow_rotation)
     apply_weighted_plan(pending)
     return report
 
 
 def shared_weighted_layout(objects, density_influence, scale_mode, padding_uv,
                            scope="SELECTED_FACES", target_region="FULL",
-                           selected_faces_by_mesh=None):
+                           selected_faces_by_mesh=None, allow_rotation=False):
     """Collect every object's islands into one deterministic global atlas transaction."""
     selected_faces_by_mesh = selected_faces_by_mesh or {}
     ordered = sorted(objects, key=lambda obj: obj.name_full)
@@ -328,7 +379,8 @@ def shared_weighted_layout(objects, density_influence, scale_mode, padding_uv,
                  for mesh in meshes}
     try:
         pending, report = plan_weighted_layout(
-            islands, density_influence, scale_mode, padding_uv, target_region)
+            islands, density_influence, scale_mode, padding_uv, target_region,
+            allow_rotation)
         apply_weighted_plan(pending)
     except Exception:
         for mesh, values in snapshots.items():

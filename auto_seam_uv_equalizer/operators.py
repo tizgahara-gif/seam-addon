@@ -671,11 +671,14 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
             self, context, lambda obj, settings: reports.append(weighted_layout_object(
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings),
-                settings.weighted_scope, settings.weighted_target_region)), "Weighted Island Layout")
+                settings.weighted_scope, settings.weighted_target_region,
+                settings.weighted_allow_rotation)), "Weighted Island Layout")
         if reports:
             self.report({"INFO"}, iface_(
-                "Weighted Island Layout: Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV utilization %.1f%%.",
-                sum(item.island_count for item in reports), sum(item.total_surface_area for item in reports),
+                "Weighted Island Layout: Islands %d, Rotated Islands: %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV utilization %.1f%%.",
+                sum(item.island_count for item in reports),
+                sum(item.rotated_island_count for item in reports),
+                sum(item.total_surface_area for item in reports),
                 min(item.minimum_weight for item in reports), max(item.maximum_weight for item in reports),
                 100.0 * sum(item.uv_utilization for item in reports) / len(reports)))
             if any(item.globally_scaled for item in reports):
@@ -732,15 +735,17 @@ class AUTOSEAMUV_OT_shared_weighted_atlas(bpy.types.Operator):
             report = shared_weighted_layout(
                 objects, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings),
-                settings.weighted_scope, settings.weighted_target_region, selected_faces)
+                settings.weighted_scope, settings.weighted_target_region, selected_faces,
+                settings.weighted_allow_rotation)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Shared Weighted Atlas failed: %s", exc))
             return {"CANCELLED"}
         finally:
             _restore_context(context, active, selected, mode)
         self.report({"INFO"}, iface_(
-            "Shared Weighted Atlas: Mesh Targets %d, Islands %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.",
-            len(objects), report.island_count, report.total_surface_area,
+            "Shared Weighted Atlas: Mesh Targets %d, Islands %d, Rotated Islands: %d, Total Surface Area %.6g, Minimum Weight %.6g, Maximum Weight %.6g, UV Utilization %.1f%%.",
+            len(objects), report.island_count, report.rotated_island_count,
+            report.total_surface_area,
             report.minimum_weight, report.maximum_weight, report.uv_utilization * 100.0))
         return {"FINISHED"}
 
