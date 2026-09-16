@@ -75,15 +75,17 @@ def test_mark_and_unwrap_pack_preflight_precedes_seam_mutation():
     assert preflight < source.index("_auto_mark")
 
 
-def test_unwrap_selected_faces_reacquires_mesh_and_named_layer_after_mode_switch():
+def test_unwrap_selected_faces_reacquires_active_layer_after_mode_switch():
     function = _function("uv_tools.py", "unwrap_selected_faces")
     source = ast.unparse(function)
     last_object_mode = source.rindex("bpy.ops.object.mode_set(mode='OBJECT')")
     reacquire_mesh = source.index("mesh = obj.data", last_object_mode)
-    reacquire_layer = source.index("layer = mesh.uv_layers.get(layer_name)", reacquire_mesh)
+    reacquire_layer = source.index("layer = mesh.uv_layers.get(active_uv_name)", reacquire_mesh)
     restore_write = source.index("layer.uv[loop].vector = uv", reacquire_layer)
     assert last_object_mode < reacquire_mesh < reacquire_layer < restore_write
-    assert "layer_name = layer.name" in source
+    assert "active_uv_name = active_layer.name" in source
+    assert "ensure_uv_layer" not in source
+    assert len(function.args.args) == 3
     assert "before =" in source
     assert "for loop, uv in before.items()" in source
     assert "Blender UV unwrap was cancelled" in source

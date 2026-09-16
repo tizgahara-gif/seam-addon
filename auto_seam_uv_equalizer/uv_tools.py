@@ -101,18 +101,31 @@ def unwrap_object(
         raise RuntimeError(f"Failed to unwrap {obj.name}: {exc}") from exc
 
 
-def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
-    """Unwrap selected Edit Mode faces and leave every other UV loop exact."""
+def unwrap_selected_faces(obj, method, margin):
+    """Unwrap selected islands on the existing active UV map only.
+
+    Unlike the named-map unwrap workflows, this function never creates or
+    activates a UV map: island connectivity only has meaning on the map that
+    was active when the operation began.
+    """
     if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
         raise RuntimeError("Edit Mode with selected faces is required")
+    active_layer = obj.data.uv_layers.active
+    if active_layer is None:
+        raise RuntimeError(
+            "Unwrap Selected UV Islands requires an existing active UV map. "
+            "Create or select a UV map first.")
+    active_uv_name = active_layer.name
     bpy.ops.object.mode_set(mode="OBJECT")
     selected = {face.index for face in obj.data.polygons if face.select}
     if not selected:
         raise RuntimeError("no faces selected")
-    if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
-        raise RuntimeError(f"UV map '{uv_map_name}' is unavailable")
-    layer = obj.data.uv_layers.active
-    layer_name = layer.name
+    # Reacquire by name after the mode transition; retaining an RNA member
+    # across it is unsafe.  Do not fall back to another (possibly named) map.
+    layer = obj.data.uv_layers.get(active_uv_name)
+    if layer is None:
+        raise RuntimeError(f"Active UV map '{active_uv_name}' became unavailable")
+    obj.data.uv_layers.active = layer
     validate_protection_consistency(obj)
     selected = {face for island in selected_islands(obj, selected) for face in island}
     selected -= finished_face_indices(obj.data)
@@ -135,7 +148,7 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
             bpy.ops.object.mode_set(mode="OBJECT")
         # Do not retain RNA members acquired before the mode transition.
         rollback_mesh = obj.data
-        rollback_layer = rollback_mesh.uv_layers.get(layer_name)
+        rollback_layer = rollback_mesh.uv_layers.get(active_uv_name)
         if rollback_layer is not None:
             for loop, uv in before.items():
                 rollback_layer.uv[loop].vector = uv
@@ -144,9 +157,10 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
     # A mode transition may invalidate RNA collection members.  Reacquire the
     # Mesh and UV layer before restoring untouched loops.
     mesh = obj.data
-    layer = mesh.uv_layers.get(layer_name)
+    layer = mesh.uv_layers.get(active_uv_name)
     if layer is None:
-        raise RuntimeError(f"UV map '{layer_name}' became unavailable during unwrap")
+        raise RuntimeError(f"Active UV map '{active_uv_name}' became unavailable during unwrap")
+    mesh.uv_layers.active = layer
     for loop, uv in untouched.items():
         layer.uv[loop].vector = uv
     mesh.update()

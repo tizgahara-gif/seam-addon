@@ -57,10 +57,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             status.label(text=iface_("Selected Faces: %d") % _selected_face_count(context))
         status.label(text=iface_("Selected Objects: %d") % len(meshes))
         if active_uv is None:
-            if settings.create_uv_if_missing:
-                _info(status, "No active UV map. A UV map will be created when Unwrap runs.")
-            else:
-                _warning(status, "No active UV map. Enable Create UV If Missing or create a UV map manually.")
+            _warning(status, "No active UV map.")
+            _info(status, "Selected Objects unwrap can create the configured UV map.")
+            _info(status, "Selected UV Islands requires an existing active UV map.")
 
         processing = layout.box()
         processing.label(text="Processing")
@@ -155,21 +154,26 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.label(text="Scope: Selected UV Islands")
         selected_face_count = _selected_face_count(context)
         selected = box.column()
-        selected.enabled = (edit_mode and selected_face_count > 0 and
-                            (active_uv is not None or settings.create_uv_if_missing))
+        selected.enabled = edit_mode and selected_face_count > 0 and active_uv is not None
         selected.operator("autoseamuv.unwrap_selected_faces",
                           text="Unwrap Selected UV Islands", icon="FACESEL")
         if not edit_mode:
             _warning(box, "Selected UV Islands requires Edit Mode.")
         elif selected_face_count == 0:
             _info(box, "Select at least one face to seed UV islands.")
-        elif active_uv is None and not settings.create_uv_if_missing:
-            _warning(box, "No active UV map. Enable Create UV If Missing or create a UV map manually.")
+        elif active_uv is None:
+            _warning(box, "Unwrap Selected UV Islands requires an existing active UV map.")
+        box.label(text=iface_("Target UV Map: %s") % settings.uv_map_name, icon="INFO")
         box.operator("autoseamuv.unwrap_only", text="Unwrap Selected Objects", icon="UV")
 
         box.prop(settings, "show_unwrap_advanced", toggle=True)
         if settings.show_unwrap_advanced:
             post = box.column(align=True)
+            post.label(text="Selected Objects / Generated UV Map")
+            post.prop(settings, "uv_map_name", text="UV Map Name")
+            post.prop(settings, "create_uv_if_missing", text="Create UV If Missing")
+            post.label(text="Named settings apply to Selected Objects and Ring / Strip.", icon="INFO")
+            post.label(text="Selected UV Islands always uses Active UV and never creates one.", icon="INFO")
             post.label(text="Selected Objects Post-Unwrap")
             post.prop(settings, "average_islands", text="Average Island Scale")
             post.prop(settings, "straighten_circular_strip_islands", text="Straighten Circular Strip Islands")
@@ -177,6 +181,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.prop(settings, "show_ring_strip", toggle=True)
         if settings.show_ring_strip:
             ring = box.column(align=True)
+            ring.label(text="UV Target: Named UV Map", icon="INFO")
             ring.label(text=("Scope: Active Object / Selected Faces" if edit_mode else
                              "Scope: Selected Mesh Objects / Whole Objects"), icon="INFO")
             ring.prop(settings, "ring_seam_mode", text="Seam")
@@ -301,6 +306,11 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if settings.show_atlas_settings:
             atlas_settings = atlas.column(align=True)
             atlas_settings.prop(settings, "atlas_uv_source", text="UV Source")
+            if settings.atlas_uv_source == "NAMED":
+                atlas_settings.prop(settings, "uv_map_name", text="UV Map Name")
+                atlas_settings.prop(settings, "create_uv_if_missing", text="Create UV If Missing")
+            else:
+                atlas_settings.label(text="UV Target: each object's active UV map", icon="INFO")
             atlas_settings.prop(settings, "atlas_texture_resolution", text="Texture Resolution")
             atlas_settings.prop(settings, "atlas_pixel_margin", text="Pixel Margin")
             atlas_settings.prop(settings, "atlas_average_island_scale", text="Average Island Scale")

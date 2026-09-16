@@ -750,6 +750,55 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(tuple(tuple(current.uv[index].vector) for index in range(4, 8)),
                          untouched)
 
+    def test_selected_island_unwrap_uses_active_not_named_uv(self):
+        obj = mesh_object("ActiveOnlyUnwrap",
+                          [(0,0,0),(1,0,0),(1,1,0),(0,1,0),(2,0,0),(2,1,0)],
+                          [(0,1,2,3),(1,4,5,2)])
+        active = obj.data.uv_layers.new(name="UV_A")
+        named = obj.data.uv_layers.new(name="UV_B")
+        # UV_A splits the adjacent faces; UV_B joins them across their shared edge.
+        active_values = ((0,0),(1,0),(1,1),(0,1), (3,0),(4,0),(4,1),(3,1))
+        named_values = ((0,0),(1,0),(1,1),(0,1), (1,0),(2,0),(2,1),(1,1))
+        for datum, uv in zip(active.uv, active_values): datum.vector = uv
+        for datum, uv in zip(named.uv, named_values): datum.vector = uv
+        obj.data.uv_layers.active = active
+        named_before = tuple(tuple(datum.vector) for datum in named.uv)
+        active_obstacle = tuple(tuple(active.uv[index].vector) for index in range(4, 8))
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.uv_map_name = "UV_B"
+        settings.create_uv_if_missing = True
+        bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="DESELECT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        bm.faces[0].select_set(True); bmesh.update_edit_mesh(obj.data)
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_selected_faces(), {"FINISHED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual(obj.data.uv_layers.active.name, "UV_A")
+        self.assertEqual(tuple(tuple(datum.vector) for datum in named.uv), named_before)
+        self.assertEqual(tuple(tuple(active.uv[index].vector) for index in range(4, 8)),
+                         active_obstacle)
+
+    def test_selected_island_unwrap_never_creates_named_map_and_no_uv_is_safe(self):
+        obj = mesh_object("NoUVSelectedUnwrap",
+                          [(0,0,0),(1,0,0),(1,1,0),(0,1,0)], [(0,1,2,3)])
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.uv_map_name = "UV_NEW"; settings.create_uv_if_missing = True
+        bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="SELECT")
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_selected_faces(), {"CANCELLED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        self.assertEqual(len(obj.data.uv_layers), 0)
+        bm = bmesh.from_edit_mesh(obj.data)
+        self.assertTrue(all(face.select for face in bm.faces))
+
+        bpy.ops.object.mode_set(mode="OBJECT")
+        active = obj.data.uv_layers.new(name="UV_A")
+        obj.data.uv_layers.active = active
+        bpy.ops.object.mode_set(mode="EDIT")
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_selected_faces(), {"FINISHED"})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertIsNone(obj.data.uv_layers.get("UV_NEW"))
+        self.assertEqual(obj.data.uv_layers.active.name, "UV_A")
+
     def test_symmetric_uv_layouts_and_missing_map(self):
         obj = mesh_object("Symmetric", [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
                                          (1,0,0),(1,0,1),(1,1,1),(1,1,0)],
