@@ -4,6 +4,7 @@ import bmesh
 from .texel_density import measure_object, scale_for_density
 from .uv_validation import UVValidationError, validate_object
 from .translations import iface_
+from .mesh_utils import selected_visible_mesh_objects
 
 def _objects(c):return [o for o in c.selected_objects if o.type=='MESH' and o.data.uv_layers.active]
 class AUTOSEAMUV_OT_get_texel_density(bpy.types.Operator):
@@ -30,7 +31,7 @@ class AUTOSEAMUV_OT_validate_uv(bpy.types.Operator):
         s=c.scene.autoseamuv_settings; summaries=[]
         # Unlike texel-density operations, quality validation must inspect and
         # report selected meshes that are missing a usable active UV layer.
-        for obj in (o for o in c.selected_objects if o.type == 'MESH'):
+        for obj in selected_visible_mesh_objects(c):
             try:
                 result=validate_object(obj,s.uv_zero_tolerance,s.stretch_warning_threshold)
             except UVValidationError as exc:
@@ -52,4 +53,6 @@ class AUTOSEAMUV_OT_validate_uv(bpy.types.Operator):
                 obj.data.update()
             summaries.append(iface_("%s: seams %d, flipped %d, zero %d, stretched %d, stretch avg %.2f / max %.2f, summed UV area %.3f", obj.name, sum(e.use_seam for e in obj.data.edges), len(result['flipped']), len(result['zero']), len(result['stretched']), result['average_stretch'], result['max_stretch'], result['summed_uv_area']))
         s.report_summary=' | '.join(summaries) if summaries else iface_('No UV meshes selected');self.report({'INFO'},s.report_summary);return {'FINISHED'} if summaries else {'CANCELLED'}
-CLASSES=(AUTOSEAMUV_OT_get_texel_density,AUTOSEAMUV_OT_set_texel_density,AUTOSEAMUV_OT_validate_uv)
+# Texel-density implementations are retained for a future protection-aware
+# rewrite, but are deliberately outside the production registration surface.
+CLASSES = (AUTOSEAMUV_OT_validate_uv,)

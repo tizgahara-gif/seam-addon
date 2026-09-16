@@ -5,6 +5,15 @@ from __future__ import annotations
 from collections import defaultdict
 
 
+def selected_visible_mesh_objects(context):
+    """Return the selected, visible mesh objects targeted by public workflows."""
+    return [
+        obj
+        for obj in context.selected_objects
+        if obj.type == "MESH" and obj.visible_get(view_layer=context.view_layer)
+    ]
+
+
 def build_mesh_topology(mesh):
     """Return reusable edge/loop/face lookup tables for ``mesh``.
 
