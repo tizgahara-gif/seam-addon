@@ -79,7 +79,7 @@ class IntegrationTests(unittest.TestCase):
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
                      "validate_symmetry", "transfer_symmetric_uv",
                      "transfer_exact_texture_x_symmetry",
-                     "sync_mirrored_uv_island"):
+                     "sync_mirrored_uv_island", "flip_selected_uv_islands"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
     def test_registration_enable_disable_cycle_is_idempotent(self):
