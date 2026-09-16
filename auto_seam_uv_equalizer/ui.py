@@ -163,7 +163,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="2. Unwrap", icon="UV")
         box.prop(settings, "unwrap_method", text="Method")
-        box.prop(settings, "unwrap_margin", text="Unwrap Margin")
+        box.prop(settings, "unwrap_margin_percent", text="Unwrap Margin (%)")
         box.label(text="Scope: Selected UV Islands")
         selected_face_count = _selected_face_count(context)
         selected = box.column()
@@ -249,7 +249,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.label(text="Padding")
         weighted.prop(settings, "weighted_padding_mode", text="Mode")
         if settings.weighted_padding_mode == "RELATIVE":
-            weighted.prop(settings, "weighted_padding_uv", text="UV Margin")
+            weighted.prop(settings, "weighted_padding_uv_percent", text="UV Margin (%)")
         else:
             weighted.prop(settings, "weighted_padding_pixels", text="Padding")
             weighted.prop(settings, "weighted_texture_resolution", text="Texture Resolution")
@@ -296,9 +296,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         pack.label(text="Pack Islands")
         if settings.weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}:
             _warning(pack, "Half-region layout is active. Packing may break the Exact Texture-X workflow.")
-        pack.prop(settings, "pack_margin", text="Pack Margin")
         pack.prop(settings, "pack_rotation", text="Rotation")
         pack.prop(settings, "pack_margin_method", text="Margin Method")
+        if settings.pack_margin_method == "FRACTION":
+            pack.prop(settings, "pack_margin_percent", text="Pack Margin (%)")
+        else:
+            pack.prop(settings, "pack_margin", text="Pack Margin")
         pack.prop(settings, "show_pack_advanced", toggle=True)
         if settings.show_pack_advanced:
             advanced = pack.column(align=True)
@@ -372,7 +375,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         standard.label(text="Standard UV Transfer")
         standard.prop(settings, "symmetry_layout", text="Layout")
         if settings.symmetry_layout == "SEPARATE_MIRRORED":
-            standard.prop(settings, "symmetry_island_gap", text="Island Gap")
+            standard.prop(settings, "symmetry_island_gap_percent", text="Island Gap (%)")
         action = standard.row()
         action.enabled = active_uv is not None and symmetry_available
         action.operator("autoseamuv.transfer_symmetric_uv", text="Transfer Symmetric UV")

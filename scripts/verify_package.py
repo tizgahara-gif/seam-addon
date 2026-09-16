@@ -190,6 +190,20 @@ def _verify_modern_uv_api(sources: dict[str, str]) -> None:
             raise RuntimeError(f"Deprecated UV API pattern {pattern!r}: {hits}")
 
 
+def _verify_percentage_facade_routing(sources: dict[str, str]) -> None:
+    """Keep percentage properties at the RNA/UI boundary, never in backends."""
+    allowed = {
+        "auto_seam_uv_equalizer/properties.py",
+        "auto_seam_uv_equalizer/ui.py",
+        "auto_seam_uv_equalizer/percentage_facades.py",
+    }
+    hits = sorted(name for name, source in sources.items()
+                  if name not in allowed and "_percent" in source)
+    if hits:
+        raise RuntimeError(f"Backend reads percentage façade properties: {hits}")
+    print("OK: percentage façade properties are restricted to the UI boundary")
+
+
 def _read_zip_text(archive: zipfile.ZipFile, member_name: str) -> str:
     try:
         data = archive.read(member_name)
@@ -322,6 +336,7 @@ def verify_package(zip_path: Path) -> None:
         addon_sources = {name: _read_zip_text(archive, name) for name in names
                          if name.startswith("auto_seam_uv_equalizer/") and name.endswith(".py")}
         _verify_modern_uv_api(addon_sources)
+        _verify_percentage_facade_routing(addon_sources)
         for token in FORBIDDEN_TOKENS:
             hits = []
             for member_name in text_member_names:

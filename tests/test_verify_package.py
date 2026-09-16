@@ -93,3 +93,20 @@ def test_deprecated_uv_api_is_rejected():
 
 def test_blender_5_uv_api_is_accepted():
     verify_package._verify_modern_uv_api({"addon/good.py": "uv_layer.uv[i].vector"})
+
+
+def test_percentage_facades_are_accepted_at_ui_boundary():
+    verify_package._verify_percentage_facade_routing({
+        "auto_seam_uv_equalizer/properties.py": "weighted_padding_uv_percent",
+        "auto_seam_uv_equalizer/ui.py": "weighted_padding_uv_percent",
+        "auto_seam_uv_equalizer/percentage_facades.py": "def get_percent(): pass",
+        "auto_seam_uv_equalizer/weighted_layout.py": "settings.weighted_padding_uv",
+    })
+
+
+def test_percentage_facades_are_rejected_in_backends():
+    with pytest.raises(RuntimeError, match="Backend reads percentage"):
+        verify_package._verify_percentage_facade_routing({
+            "auto_seam_uv_equalizer/weighted_layout.py":
+                "settings.weighted_padding_uv_percent",
+        })

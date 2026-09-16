@@ -18,7 +18,7 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 **Unwrap Selected UV Islands** は、Edit Modeで選択した面をseedとして、その面を1枚以上含む**現在のActive UV Map上**のUVアイランド全体をアンラップします。この処理は **UV Map Name** を参照せず、Active UV Mapを切り替えず、UVマップも新規作成しません。Active UV Mapがない場合は、Create UV If Missingが有効でも副作用なくキャンセルします。未選択UVアイランドのUV座標は維持され、処理後は元のFace selection（頂点・辺・面のコンポーネント選択とMesh Select Modeを含む）へ復元されます。選択seedがFinished Islandに属する場合、そのアイランドはアンラップ対象外です。Finishedと編集可能なアイランドが混在する場合は編集可能なアイランドだけを処理し、すべてFinishedの場合は処理をキャンセルしてSelectionとModeを復元します。
 
-**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで、設定された **UV Map Name** へUV展開します。**Create UV If Missing** が有効なら、その名前のUVマップを作成できます。同じNamed UV設定は **Ring / Strip Unwrap**、**Atlas PackのUV Source = Named**、および該当するAuto / legacy unwrap workflowでも使用します。Atlasの **UV Source = Active** は各オブジェクトのActive UV Mapだけを使用し、Named設定を使用しません。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected UV Islandsには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
+**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで、設定された **UV Map Name** へUV展開します。**Create UV If Missing** が有効なら、その名前のUVマップを作成できます。同じNamed UV設定は **Ring / Strip Unwrap**、**Atlas PackのUV Source = Named**、および該当するAuto / legacy unwrap workflowでも使用します。Atlasの **UV Source = Active** は各オブジェクトのActive UV Mapだけを使用し、Named設定を使用しません。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected UV Islandsには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UIでは正規化された0–1 UV空間を100%とする割合で指定します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
 
 UV targetはoperatorごとに分離されています。Active-map workflowは **Unwrap Selected UV Islands、Weighted Island Layout、Pack Islands、Symmetry、Validation** です（各機能固有のScope規則は後述）。Named-map workflowでは上記のUV Map Name / Create UV If Missingを使用します。パネルのUnwrap AdvancedとAtlasのNamed設定は同じpropertyを表示するため、一方の変更は他方にも反映されます。
 
@@ -48,7 +48,9 @@ UVアイランドを完成済みとして設定すると、自動シーム、ア
 | 完成済み | ○ | ○ | ○ | ○ | ○ |
 | レイアウト固定 | × | × | ○ | ○ | ○ |
 
-**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Paddingを使用します。テクスチャ解像度はWeighted LayoutのUV面積配分には影響しません。ピクセル単位で余白を指定する場合のみ、UV空間への換算に使用します。Paddingの **Relative UV** は解像度非依存のUV空間マージンを直接指定し、**Pixels** は選択したTexture Resolutionでピクセル余白を換算します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
+**Weighted Island Layout** はScope、Target UV Region（FULL / LEFT_HALF / RIGHT_HALF）、Density Influence、Scale Mode、Paddingを使用します。テクスチャ解像度はWeighted LayoutのUV面積配分には影響しません。ピクセル単位で余白を指定する場合のみ、UV空間への換算に使用します。Paddingの **Relative UV** は解像度非依存のUV空間マージンを%で指定し、**Pixels** は選択したTexture Resolutionでピクセル余白を換算します。たとえばUIの **UV Margin = 0.4%** は内部値0.004に相当します。Scopeの **Selected UV Islands** はEdit Modeの面選択をseedとし、選択面を1枚以上含む既存UVアイランド全体を処理します。内部ID `SELECTED_FACES` は既存`.blend`互換のため維持しますが、面の一部分だけを移動しません。
+
+UV空間の%表示は、正規化された0–1 UV空間を100%として表します。`1% = 0.01 UV`、`0.5% = 0.005 UV`、`0.1% = 0.001 UV`です。保存値とすべてのbackend計算は従来どおりUV単位を使用し、%への変換はUIだけで行います。
 
 **アイランド回転 / Island Rotation** は **なし / Off**（回転なし、既定）、**90°単位 / 90° Steps**（0°と90°）、**15°単位 / 15° Steps**（0°から165°までの12方向）を選択できます。15°単位は斜めまたは細長いアイランドのパッキングを改善できますが、計算量が増え、テクスチャ方向を変える場合があります。重要度、UV面積配分、相対スケール、Paddingの意味は変わりません。15°単位だけが、最大5種類の決定的な並び順を比較します。
 
@@ -66,7 +68,7 @@ Texture resolution does not affect weighted UV-area allocation. It is only requi
 
 linked objectはProcess Shared Mesh Data Onceが有効ならMesh datablockごとに決定的な代表を一つ処理します。無効な状態で同じMesh datablockが複数対象に含まれる場合は、独立したUV配置が不可能なため処理を中止します。全対象を検証してpending UVを生成してから一括commitし、失敗時は全対象の元UVへrollbackします。
 
-**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認でき、これらはすべてBlender標準Pack Islandsへ渡されます。UV Protectionが1アイランドでも有効な場合、Standard Pack Islandsは保護を維持できないため実行前に停止します（値がすべて0の保護Attributeは有効な保護とは扱いません）。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックしますが、選択対象にUV Protectionがあれば全体を実行前に停止します。その場合はProtection-awareな **Shared Weighted Atlas** を使用してください。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Selected UV Islands scopeはEdit Modeで選択面をseedにし、全対象でseedが0なら実行しません。seedを持たないオブジェクトは変更せずにスキップします。Process Shared Mesh Data Onceはパネル上部の共通Processing設定です。有効ならlinked duplicateはChart Analyze / Generateを含む各工程を通して固有Mesh datablockごとに1回だけ処理され、複数選択時はUIに選択数と固有数を表示します。AtlasのAverage Island ScaleはWeightedのAllocate by Importanceが作った相対スケールを上書きする可能性があるため、該当する現在設定の組合せでは警告します（実行は禁止しません）。
+**Pack Islands** は選択メッシュオブジェクトを個別にパックします。Pack Margin、Rotation、Margin Methodに加え、Pack AdvancedでShape Method、Lock Pinned Islands、Pin Method、Merge Overlapping、Pack Targetを確認でき、これらはすべてBlender標準Pack Islandsへ渡されます。Margin Methodが **Fraction** の場合だけPack Marginを0–1 UV空間基準の%で表示します。**Scaled** と **Add** はBlenderの方式固有の数値として従来表示を維持します。UV Protectionが1アイランドでも有効な場合、Standard Pack Islandsは保護を維持できないため実行前に停止します（値がすべて0の保護Attributeは有効な保護とは扱いません）。**Atlas Pack Selected Objects** は選択オブジェクトを一つの共有アトラスへパックしますが、選択対象にUV Protectionがあれば全体を実行前に停止します。その場合はProtection-awareな **Shared Weighted Atlas** を使用してください。Weighted Layout / Packは全対象に使用可能なUVが必要で、欠落時はUIとoperatorの双方で実行せず、silent skipしません。Selected UV Islands scopeはEdit Modeで選択面をseedにし、全対象でseedが0なら実行しません。seedを持たないオブジェクトは変更せずにスキップします。Process Shared Mesh Data Onceはパネル上部の共通Processing設定です。有効ならlinked duplicateはChart Analyze / Generateを含む各工程を通して固有Mesh datablockごとに1回だけ処理され、複数選択時はUIに選択数と固有数を表示します。AtlasのAverage Island ScaleはWeightedのAllocate by Importanceが作った相対スケールを上書きする可能性があるため、該当する現在設定の組合せでは警告します（実行は禁止しません）。
 
 Unwrap Advancedには、UV Map Name / Create UV If Missingをまとめた **Named UV Settings** と、Average Island Scale / Straighten Circular Strip Islandsをまとめた **Selected Objects Post-Unwrap** があります。
 
@@ -84,7 +86,7 @@ Distortion guidance refines anchored charts. Anchorless closed charts still boot
 
 ### 4. Symmetry
 
-**Mesh Symmetry Axis** と **Mesh Symmetry Tolerance** はProfessional Garment Prior、Mirror Seam、Validate Symmetry、Standard UV Transfer、Exact Texture-Xのジオメトリ対応付けで共通です。Direction / Source Sideは用途別のままです。対称処理のTargetは常にActive Objectで、Scopeはそのオブジェクト内のSelected FacesまたはWhole Meshを意味します。Selected Facesの場合はEdit Modeが必須です。
+**Mesh Symmetry Axis** と **Mesh Symmetry Tolerance** はProfessional Garment Prior、Mirror Seam、Validate Symmetry、Standard UV Transfer、Exact Texture-Xのジオメトリ対応付けで共通です。Mesh Symmetry Toleranceは正規化値ではなく、オブジェクト変換適用前のメッシュ座標（object-space Blender Units）間の距離なので%へ変換しません。Standard UV TransferをSeparate Mirroredで使用する際の **Island Gap** は0–1 UV空間基準の%で指定します。Direction / Source Sideは用途別のままです。対称処理のTargetは常にActive Objectで、Scopeはそのオブジェクト内のSelected FacesまたはWhole Meshを意味します。Selected Facesの場合はEdit Modeが必須です。
 
 Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立しています。転送元UVは指定したLeft HalfまたはRight Halfと0–1領域内に完全に収まる必要があります。Weighted TargetとTexture Sourceが一致しない場合、パネルが実行前に警告します。「Layout settings match Exact Texture-X.」は設定値の一致だけを示し、UVや対称対応の検証成功を保証しません。本当の検証はOperator実行時に行います。
 

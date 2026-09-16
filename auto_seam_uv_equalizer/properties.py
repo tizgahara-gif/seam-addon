@@ -5,6 +5,17 @@ from __future__ import annotations
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
+from .percentage_facades import (
+    get_pack_margin_percent,
+    get_symmetry_island_gap_percent,
+    get_unwrap_margin_percent,
+    get_weighted_padding_uv_percent,
+    set_pack_margin_percent,
+    set_symmetry_island_gap_percent,
+    set_unwrap_margin_percent,
+    set_weighted_padding_uv_percent,
+)
+
 
 class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     """Scene-level settings used by the Auto Seam UV Equalizer operators."""
@@ -46,7 +57,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
     mirror_axis: EnumProperty(name="Mirror Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
     mirror_tolerance: FloatProperty(name="Mirror Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
-    mesh_symmetry_tolerance: FloatProperty(name="Mesh Symmetry Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
+    mesh_symmetry_tolerance: FloatProperty(
+        name="Mesh Symmetry Tolerance",
+        description=("Maximum object-space distance in Blender units when matching "
+                     "mirrored mesh coordinates"),
+        default=0.0001, min=1e-7, max=0.1, precision=6,
+    )
     mirror_direction: EnumProperty(name="Direction", items=(("POSITIVE", "Positive to Negative", ""), ("NEGATIVE", "Negative to Positive", ""), ("SELECTED", "Selected Side to Opposite", "")), default="POSITIVE")
     # Legacy compatibility only. New backend code uses mesh_symmetry_axis.
     symmetry_axis: EnumProperty(name="Axis", items=(("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", "")), default="X")
@@ -55,6 +71,15 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     symmetry_layout: EnumProperty(name="Layout", items=(("OVERLAP", "Overlap", ""), ("SEPARATE_MIRRORED", "Separate Mirrored", "")), default="OVERLAP")
     symmetry_tolerance: FloatProperty(name="Tolerance", default=0.0001, min=1e-7, max=0.1, precision=6)
     symmetry_island_gap: FloatProperty(name="Island Gap", default=0.02, min=0.0, max=10.0)
+    symmetry_island_gap_percent: FloatProperty(
+        name="Island Gap (%)",
+        description=("Gap relative to the normalized 0-1 UV space. "
+                     "For example, 3% corresponds to 0.03 UV units"),
+        min=0.0, max=1000.0, soft_min=0.0, soft_max=10.0,
+        precision=3, step=10,
+        get=get_symmetry_island_gap_percent,
+        set=set_symmetry_island_gap_percent,
+    )
     texture_source_side: EnumProperty(
         name="Texture Source Side",
         items=(("LEFT_HALF", "Left Half", "Use UVs in the left texture half as the source"),
@@ -66,9 +91,28 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Unwrap Margin", description="Island margin used by UV unwrap operations",
         default=0.015, min=0.0, max=0.2,
     )
+    unwrap_margin_percent: FloatProperty(
+        name="Unwrap Margin (%)",
+        description=("Island margin relative to the normalized 0-1 UV space. "
+                     "For example, 0.5% corresponds to 0.005 UV units"),
+        min=0.0, max=20.0, soft_min=0.0, soft_max=5.0,
+        precision=3, step=10,
+        get=get_unwrap_margin_percent,
+        set=set_unwrap_margin_percent,
+    )
     pack_margin: FloatProperty(
         name="Pack Margin", description="Island margin used by Pack Islands",
         default=0.015, min=0.0, max=0.2,
+    )
+    pack_margin_percent: FloatProperty(
+        name="Pack Margin (%)",
+        description=("Fraction margin relative to the normalized 0-1 UV space. "
+                     "For example, 0.5% corresponds to 0.005 UV units. "
+                     "Used only when Margin Method is Fraction"),
+        min=0.0, max=20.0, soft_min=0.0, soft_max=5.0,
+        precision=3, step=10,
+        get=get_pack_margin_percent,
+        set=set_pack_margin_percent,
     )
     # Legacy compatibility only. New backend code uses the two margins above.
     margin: FloatProperty(
@@ -253,6 +297,15 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     weighted_padding_uv: FloatProperty(
         name="UV Margin", default=0.004, min=0.0, max=0.5, precision=6,
         description="Resolution-independent margin in UV space",
+    )
+    weighted_padding_uv_percent: FloatProperty(
+        name="UV Margin (%)",
+        description=("Margin relative to the normalized 0-1 UV space. "
+                     "For example, 0.5% corresponds to 0.005 UV units"),
+        min=0.0, max=50.0, soft_min=0.0, soft_max=5.0,
+        precision=3, step=10,
+        get=get_weighted_padding_uv_percent,
+        set=set_weighted_padding_uv_percent,
     )
     weighted_texture_resolution: EnumProperty(
         name="Texture Resolution",
