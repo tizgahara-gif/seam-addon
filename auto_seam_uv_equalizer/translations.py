@@ -9,6 +9,7 @@ from bpy.app.translations import pgettext_iface
 # This identifier deliberately does not depend on import aliases or Blender's
 # reload order.  register() and unregister() must always use the same value.
 TRANSLATION_DOMAIN = "auto_seam_uv_equalizer.translations"
+_TRANSLATION_STATE_KEY = f"{TRANSLATION_DOMAIN}.registered"
 
 
 _JA_JP = {
@@ -359,13 +360,15 @@ def iface_(message: str, *values):
 
 def register() -> None:
     """Register translations, first removing a stale reload registration."""
-    unregister()
+    if bpy.app.driver_namespace.get(_TRANSLATION_STATE_KEY, False):
+        bpy.app.translations.unregister(TRANSLATION_DOMAIN)
+        bpy.app.driver_namespace[_TRANSLATION_STATE_KEY] = False
     bpy.app.translations.register(TRANSLATION_DOMAIN, TRANSLATIONS)
+    bpy.app.driver_namespace[_TRANSLATION_STATE_KEY] = True
 
 
 def unregister() -> None:
     """Remove translations; repeated add-on disable calls are harmless."""
-    try:
+    if bpy.app.driver_namespace.get(_TRANSLATION_STATE_KEY, False):
         bpy.app.translations.unregister(TRANSLATION_DOMAIN)
-    except RuntimeError:
-        pass
+        bpy.app.driver_namespace[_TRANSLATION_STATE_KEY] = False

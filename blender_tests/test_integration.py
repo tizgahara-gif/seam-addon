@@ -80,6 +80,38 @@ class IntegrationTests(unittest.TestCase):
                      "transfer_exact_texture_x_symmetry"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
+    def test_registration_enable_disable_cycle_is_idempotent(self):
+        addon.unregister()
+        addon.unregister()
+        self.assertFalse(hasattr(bpy.types.Scene, "autoseamuv_settings"))
+        self.assertTrue(all(getattr(bpy.types, item.__name__, None) is not item
+                            for item in addon.CLASSES))
+        addon.register()
+        addon.unregister()
+        addon.register()
+        self.assertIs(getattr(bpy.types, "AUTOSEAMUV_PG_settings"),
+                      addon.properties.AUTOSEAMUV_PG_settings)
+
+    def test_registration_replaces_stale_property_group(self):
+        addon.unregister()
+        stale = type(
+            "AUTOSEAMUV_PG_settings",
+            (bpy.types.PropertyGroup,),
+            {"__module__": "auto_seam_uv_equalizer.stale_test"},
+        )
+        bpy.utils.register_class(stale)
+        # Blender 5.1 must expose the exact object accepted by unregister_class.
+        registered = getattr(bpy.types, stale.__name__)
+        self.assertIs(registered, stale)
+        bpy.types.Scene.autoseamuv_settings = bpy.props.PointerProperty(type=stale)
+
+        addon.register()
+
+        current = addon.properties.AUTOSEAMUV_PG_settings
+        self.assertIs(getattr(bpy.types, current.__name__), current)
+        scene_property = bpy.types.Scene.bl_rna.properties["autoseamuv_settings"]
+        self.assertEqual(scene_property.fixed_type.identifier, current.bl_rna.identifier)
+
     def test_mirror_seam_edit_bmesh_preserves_selection_and_selected_requires_edit(self):
         obj = mesh_object("Mirror", [(-1,0,0),(-1,1,0),(1,0,0),(1,1,0)],
                           [(0,1,3,2)])
