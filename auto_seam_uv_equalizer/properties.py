@@ -208,6 +208,17 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
                      "when doing so improves placement efficiency. Island scale and "
                      "importance are preserved"),
     )
+    weighted_rotation_mode: EnumProperty(
+        name="Island Rotation",
+        description=("Controls which rotation angles the weighted packer may test. "
+                     "15° Steps may rotate UV islands away from their original orientation "
+                     "to improve packing efficiency. Disable rotation when texture direction "
+                     "must be preserved"),
+        items=(("NONE", "Off", "Preserve the current UV orientation"),
+               ("STEP_90", "90° Steps", "Test 0° and 90°"),
+               ("STEP_15", "15° Steps", "Test 0° through 165° in 15° increments")),
+        default="NONE",
+    )
     weighted_target_region: EnumProperty(
         name="Target UV Region",
         description="Choose which part of the 0-1 UV space the weighted layout may use.",
@@ -371,6 +382,9 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 def migrate_legacy_settings(settings):
     """Copy stored v0.7 values once; untouched defaults remain independent."""
     keys = set(settings.keys())
+    if "weighted_rotation_mode" not in keys and "weighted_allow_rotation" in keys:
+        settings.weighted_rotation_mode = (
+            "STEP_90" if settings.weighted_allow_rotation else "NONE")
     if "weighted_padding_mode" not in keys and (
             "weighted_texture_size" in keys or "weighted_padding_pixels" in keys):
         settings.weighted_padding_mode = "PIXELS"

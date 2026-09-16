@@ -17,7 +17,8 @@ from .seam_detection import (
 )
 from .uv_tools import ensure_uv_layer, pack_object, unwrap_object, unwrap_selected_faces
 from .weighted_layout import (incremental_pack_object, resolve_weighted_padding,
-                              shared_weighted_layout, weighted_layout_object)
+                              rotation_steps_for_mode, shared_weighted_layout,
+                              weighted_layout_object)
 from .uv_validation import find_overlaps, triangles_from_object
 from .ring_topology import TopologyError, analyze_ring_topology
 from .ring_uv import assign_uv_loops, build_uv_coordinates, choose_seam
@@ -726,7 +727,7 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings),
                 settings.weighted_scope, settings.weighted_target_region,
-                settings.weighted_allow_rotation,
+                rotation_steps_for_mode(settings.weighted_rotation_mode),
                 seeds.get(_mesh_datablock_key(obj)))), "Weighted Island Layout", targets)
         if reports:
             self.report({"INFO"}, iface_(
@@ -788,7 +789,7 @@ class AUTOSEAMUV_OT_shared_weighted_atlas(bpy.types.Operator):
                 objects, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings),
                 settings.weighted_scope, settings.weighted_target_region, selected_faces,
-                settings.weighted_allow_rotation)
+                rotation_steps_for_mode(settings.weighted_rotation_mode))
         except Exception as exc:
             self.report({"ERROR"}, iface_("Shared Weighted Atlas failed: %s", exc))
             return {"CANCELLED"}
@@ -855,7 +856,7 @@ class AUTOSEAMUV_OT_pack_selected_into_free_space(bpy.types.Operator):
             report = incremental_pack_object(
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings), settings.weighted_target_region,
-                settings.weighted_allow_rotation,
+                rotation_steps_for_mode(settings.weighted_rotation_mode),
                 selected_face_indices=selected_faces)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Pack Selected Into Free Space failed: %s", exc))
