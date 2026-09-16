@@ -110,6 +110,17 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "class AUTOSEAMUV_OT_sync_mirrored_uv_island",
         'bl_idname = "autoseamuv.sync_mirrored_uv_island"',
     ),
+    "auto_seam_uv_equalizer/operators_uv.py": (
+        "class AUTOSEAMUV_OT_flip_selected_uv_islands",
+        'bl_idname = "autoseamuv.flip_selected_uv_islands"',
+        'bl_options = {"REGISTER", "UNDO"}',
+    ),
+    "auto_seam_uv_equalizer/uv_island_flip.py": (
+        "def collect_selected_uv_islands",
+        "def plan_horizontal_uv_flip",
+        "def apply_uv_plan",
+        "find_uv_islands",
+    ),
     "auto_seam_uv_equalizer/mesh_utils.py": (
         "def build_mesh_topology",
         "def build_edge_to_faces",

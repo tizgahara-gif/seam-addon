@@ -54,6 +54,15 @@ Exact Texture-Xの **Texture Source Side** は3D Mesh Source Sideとは独立し
 
 This operation requires a complete one-to-one symmetric face, edge, vertex, and loop topology mapping using the shared **Mesh Symmetry Axis** and **Mesh Symmetry Tolerance**. It never guesses a missing correspondence. Centerline/cross-plane islands, ambiguous matches, multiple selected islands, and incomplete topology are cancelled without modifying seams or UVs. Target seams and UV coordinates are snapshotted and rolled back together if committing fails. UV pin and UV/mesh selection states are preserved.
 
+#### Flip Selected UV Islands
+
+**Flip Selected UV Islands** horizontally flips each selected UV island around
+its own bounding-box center. It is Edit Mode-only and affects only the active
+object. Selecting any face expands the operation internally to that complete UV
+island, while mesh and UV selection remain unchanged. Each island uses its own
+pivot, so its position is preserved. Seams are not modified and packing is not
+performed. UVs outside the 0–1 range and zero-width islands are supported.
+
 ### 5. Validation
 
 **Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、coverageなどを検査してLast Quality Reportへ表示し、flipped / zero-area面を結果として選択します。

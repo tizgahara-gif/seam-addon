@@ -304,6 +304,16 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.operator("autoseamuv.sync_mirrored_uv_island",
                         text="Synchronize Mirrored UV Island")
 
+        transform = box.column(align=True)
+        transform.separator()
+        transform.label(text="Island Transform")
+        transform.label(text="Target: Active Object")
+        transform.label(text="Scope: Selected UV Islands")
+        action = transform.row()
+        action.enabled = edit_mode and active_uv is not None
+        action.operator("autoseamuv.flip_selected_uv_islands",
+                        text="Flip Selected UV Islands")
+
         exact = box.column(align=True)
         exact.separator()
         exact.label(text="Exact Texture-X")
