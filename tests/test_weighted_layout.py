@@ -146,6 +146,36 @@ def test_importance_packer_all_target_regions_and_determinism():
         _assert_packing(module, [4, 2, 1], [6, 0.25, 1], root, 0.002)
 
 
+def test_fixed_obstacle_subtraction_padding_and_overlap_are_safe():
+    module = _load_primitives()
+    padding = 0.01
+    obstacles = [(0.35, 0.35, 0.65, 0.65), (0.45, 0.45, 0.75, 0.75)]
+    rectangles, scale = module.pack_importance_boxes(
+        [1, 1], [1, 1], padding=padding, obstacles=obstacles)
+    assert scale > 0
+    for rect in rectangles:
+        for obstacle in obstacles:
+            # Both bodies carry one padding side, matching existing island
+            # separation rather than accidentally adding obstacle padding twice.
+            assert (rect[2] + padding <= obstacle[0] - padding + 1e-9
+                    or obstacle[2] + padding <= rect[0] - padding + 1e-9
+                    or rect[3] + padding <= obstacle[1] - padding + 1e-9
+                    or obstacle[3] + padding <= rect[1] - padding + 1e-9)
+
+
+def test_obstacles_are_clipped_to_each_target_region_and_rotation_is_optional():
+    module = _load_primitives()
+    for region in ("FULL", "LEFT_HALF", "RIGHT_HALF"):
+        root = module.target_rectangle(region)
+        rectangles, _ = module.pack_importance_boxes(
+            [1], [4], root, 0.0,
+            obstacles=[(-1, 0.4, root[0] + 0.1, 0.6)], allow_rotation=True)
+        assert len(rectangles[0]) == 5
+        assert root[0] <= rectangles[0][0] < rectangles[0][2] <= root[2]
+    plain, _ = module.pack_importance_boxes([1], [4], allow_rotation=False)
+    assert len(plain[0]) == 4
+
+
 def test_shared_global_planner_area_ratio_regions_and_determinism():
     module = _load_primitives()
     class Vector:

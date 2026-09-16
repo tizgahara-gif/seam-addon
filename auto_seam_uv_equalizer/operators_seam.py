@@ -7,6 +7,8 @@ from .seam_groups import save, apply, delete
 from .translations import iface_
 from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 from .seam_mirror import seam_state_assignments
+from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
+                            protected_edge_indices, validate_protection_consistency)
 
 def _active_mesh(context):
     obj=context.active_object
@@ -87,6 +89,12 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
         assignments, conflicts = seam_state_assignments(
             mapping, source_states, midpoints, s.mirror_direction, tolerance, selected,
         )
+        try:
+            if edit_mode: obj.update_from_editmode()
+            validate_protection_consistency(obj)
+            assert_plan_does_not_modify_finished(mesh, edge_indices=assignments)
+        except ProtectionError as exc:
+            self.report({'ERROR'}, iface_(str(exc))); return {'CANCELLED'}
         changed=0
         for target, source_state in assignments.items():
             target_edge = edges[target]
@@ -103,8 +111,9 @@ class AUTOSEAMUV_OT_seams_from_sharp(bpy.types.Operator):
     def execute(self,context):
         obj=_active_mesh(context)
         if not obj:return {'CANCELLED'}
+        protected = protected_edge_indices(obj.data)
         for e in obj.data.edges:
-            if e.use_edge_sharp:e.use_seam=True
+            if e.index not in protected and e.use_edge_sharp:e.use_seam=True
         obj.data.update();return {'FINISHED'}
 class AUTOSEAMUV_OT_sharp_from_seams(bpy.types.Operator):
     bl_idname='autoseamuv.sharp_from_seams'; bl_label='Mark Sharp From Seams'; bl_options={'REGISTER','UNDO'}
@@ -153,8 +162,12 @@ class AUTOSEAMUV_OT_apply_seam_group(_GroupBase):
     def execute(self,c):
         m=self.mesh(c);s=c.scene.autoseamuv_settings
         if not m:return {'CANCELLED'}
+        protected = protected_edge_indices(m)
+        previous = {index: bool(m.edges[index].use_seam) for index in protected}
         try:apply(m,s.seam_group_name,s.seam_group_apply_mode=='MERGE')
         except KeyError:self.report({'ERROR'}, iface_('Seam group not found'));return {'CANCELLED'}
+        for index, state in previous.items(): m.edges[index].use_seam = state
+        m.update()
         return {'FINISHED'}
 class AUTOSEAMUV_OT_delete_seam_group(_GroupBase):
     bl_idname='autoseamuv.delete_seam_group';bl_label='Delete Seam Group'

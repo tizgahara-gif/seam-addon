@@ -10,6 +10,7 @@ from .constants import FORCE_SEAM_ATTRIBUTE, PROTECT_SEAM_ATTRIBUTE
 from .chart_seam import analyze
 from .symmetry import mirror_edge_map
 from .ring_topology import TopologyError, analyze_ring_topology
+from .uv_protection import protected_edge_indices, validate_protection_consistency
 
 
 MIN_MESH_FACE_COUNT = 1
@@ -63,8 +64,14 @@ def mark_selected_region_boundary_seams(bm, include_open_boundaries: bool = True
 
 def clear_seams(mesh) -> int:
     """Clear all seam flags on a mesh and return the number of changed edges."""
+    # Consistency validation needs an Object for UV connectivity and is
+    # performed by operator entry points; this primitive still enforces the
+    # immutable-edge barrier when used independently.
     cleared_count = 0
+    protected = protected_edge_indices(mesh)
     for edge in mesh.edges:
+        if edge.index in protected:
+            continue
         if edge.use_seam:
             edge.use_seam = False
             cleared_count += 1
@@ -104,9 +111,12 @@ def mark_auto_seams(
 
     threshold_radians = radians(angle_threshold_degrees)
     edge_to_faces = build_edge_to_faces(mesh)
+    protected = protected_edge_indices(mesh, edge_to_faces)
     marked_count = 0
 
     for edge in mesh.edges:
+        if edge.index in protected:
+            continue
         face_indices = edge_to_faces.get(edge.index, [])
         face_count = len(face_indices)
         should_mark = False
@@ -141,10 +151,15 @@ def _bool_edge_attribute(mesh, name: str) -> list[bool]:
 def analyze_chart_seams(obj, settings, quality_evaluator=None, distortion_evaluator=None):
     """Return a non-destructive chart plan for an object."""
     mesh = obj.data
+    if mesh.uv_layers.active is not None:
+        validate_protection_consistency(obj)
     mesh.update(calc_edges=True)
     edge_faces = build_edge_to_faces(mesh)
     force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
     protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
+    for index in protected_edge_indices(mesh, edge_faces):
+        protect[index] = True
+        force[index] = False  # Finished is a hard barrier and outranks Force.
     preferred_paths, topology_rings = (), ()
     if settings.seam_preset == "CYLINDER":
         try:
@@ -204,10 +219,13 @@ def apply_chart_seams(obj, result) -> int:
     if signature != result_topology:
         raise ValueError("Mesh topology changed after seam analysis")
     original = [edge.use_seam for edge in mesh.edges]
+    protected = protected_edge_indices(mesh)
     target = result.pending_seams
     before = sum(edge.use_seam for edge in mesh.edges)
     try:
         for edge in mesh.edges:
+            if edge.index in protected:
+                continue
             edge.use_seam = edge.index in target
         mesh.update()
     except Exception:
@@ -258,7 +276,10 @@ def _edge_side_score(mesh, edge, minor_axes: list[int], mins: list[float], exten
 
 def _find_longitudinal_candidates(mesh, edge_to_faces: dict[int, list[int]], axis: int) -> list[int]:
     candidates = []
+    protected = protected_edge_indices(mesh, edge_to_faces)
     for edge in mesh.edges:
+        if edge.index in protected:
+            continue
         if edge.use_seam:
             continue
         if len(edge_to_faces.get(edge.index, [])) != 2:
