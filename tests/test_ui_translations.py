@@ -76,6 +76,19 @@ def test_workflow_scope_labels_and_warning_conditions_are_explicit():
     assert '("SELECTED_FACES", "Selected UV Islands"' in properties
 
 
+def test_unwrap_selected_label_and_incremental_scope_match_implementation():
+    ui = (ROOT / "ui.py").read_text(encoding="utf-8")
+    operators = (ROOT / "operators.py").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert 'text="Unwrap Selected UV Islands"' in ui
+    assert 'bl_label = "Unwrap Selected UV Islands"' in operators
+    assert 'bl_idname = "autoseamuv.unwrap_selected_faces"' in operators
+    assert 'text="Only the active object is modified."' in ui
+    assert 'incremental.enabled = preflight["all_ready"]' not in ui
+    assert "Unwrap Selected UV Islands" in readme
+    assert "選択面だけを変更します" not in readme
+
+
 def _japanese_translations():
     tree = ast.parse((ROOT / "translations.py").read_text(encoding="utf-8"))
     dictionary = next(node.value for node in tree.body if isinstance(node, ast.Assign)

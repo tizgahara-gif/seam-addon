@@ -16,7 +16,7 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 ### 2. Unwrap
 
-**Unwrap Selected Faces** はEdit Modeの選択面だけを変更します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームでUV展開します。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected Facesには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
+**Unwrap Selected UV Islands** は、Edit Modeで選択した面をseedとして、その面を1枚以上含む現在のUVアイランド全体をアンラップします。未選択UVアイランドのUV座標は維持され、処理後は元のFace selection（頂点・辺・面のコンポーネント選択とMesh Select Modeを含む）へ復元されます。選択seedがFinished Islandに属する場合、そのアイランドはアンラップ対象外です。Finishedと編集可能なアイランドが混在する場合は編集可能なアイランドだけを処理し、すべてFinishedの場合は処理をキャンセルしてSelectionとModeを復元します。**Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームでUV展開します。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected UV Islandsには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。UVがなくCreate UV If Missingが有効な場合は、UV展開時に新規作成します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
 
 ### 3. Layout
 

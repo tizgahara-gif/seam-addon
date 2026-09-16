@@ -84,3 +84,26 @@ def test_unwrap_selected_faces_reacquires_mesh_and_named_layer_after_mode_switch
     restore_write = source.index("layer.uv[loop].vector = uv", reacquire_layer)
     assert last_object_mode < reacquire_mesh < reacquire_layer < restore_write
     assert "layer_name = layer.name" in source
+    assert "before =" in source
+    assert "for loop, uv in before.items()" in source
+    assert "Blender UV unwrap was cancelled" in source
+
+
+def test_unwrap_selected_operator_always_restores_component_context():
+    method = _method("operators.py", "AUTOSEAMUV_OT_unwrap_selected_faces")
+    source = ast.unparse(method)
+    snapshot = source.index("_snapshot_context(context)")
+    unwrap = source.index("unwrap_selected_faces(")
+    restore = source.index(
+        "_restore_context(context, active, selected_objects, original_mode)")
+    assert snapshot < unwrap < restore
+    assert "finally:" in source
+
+
+def test_incremental_operator_has_active_object_preflight_before_transaction():
+    method = _method("operators.py", "AUTOSEAMUV_OT_pack_selected_into_free_space")
+    source = ast.unparse(method)
+    snapshot = source.index("_snapshot_context(context)")
+    assert source.index("context.mode != 'EDIT_MESH'") < snapshot
+    assert source.index("obj.data.uv_layers.active is None") < snapshot
+    assert source.index("if not selected_faces") < snapshot
