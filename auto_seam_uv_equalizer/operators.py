@@ -660,6 +660,10 @@ class AUTOSEAMUV_OT_weighted_island_layout(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        settings = _get_settings(context)
+        if settings.weighted_scope == "SELECTED_FACES" and context.mode != "EDIT_MESH":
+            self.report({"ERROR"}, iface_("Selected UV Islands requires Edit Mode."))
+            return {"CANCELLED"}
         reports = []
         result = _run_existing_uv_operation(
             self, context, lambda obj, settings: reports.append(weighted_layout_object(

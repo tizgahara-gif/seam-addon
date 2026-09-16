@@ -123,13 +123,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     average_islands: BoolProperty(
         name="Average Island Scale",
-        description="Normalize UV island texel density after unwrapping",
+        description="Runs after Unwrap Selected Objects only. Does not affect Unwrap Selected Faces",
         default=False,
     )
 
     straighten_circular_strip_islands: BoolProperty(
         name="Straighten Circular Strip Islands",
-        description="Straighten circular or arc-shaped UV strip islands after unwrap",
+        description="Runs after Unwrap Selected Objects only. Does not affect Unwrap Selected Faces",
         default=False,
     )
 
@@ -214,7 +214,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         default="ALLOCATE_BY_IMPORTANCE",
     )
     weighted_scope: EnumProperty(
-        name="Scope", items=(("SELECTED_FACES", "Selected Faces", "Only change selected faces"),
+        name="Scope", items=(("SELECTED_FACES", "Selected UV Islands", "Process every UV island containing at least one selected mesh face"),
                              ("WHOLE_OBJECT", "Whole Object", "Change all faces")),
         default="WHOLE_OBJECT",
     )
@@ -319,7 +319,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     process_shared_mesh_once: BoolProperty(
         name="Process Shared Mesh Data Once",
-        description="Process only the first selected object for each shared mesh datablock",
+        description="When selected objects share the same Mesh datablock, process that shared mesh only once. Applies across seam, unwrap and layout operations",
         default=True,
     )
 

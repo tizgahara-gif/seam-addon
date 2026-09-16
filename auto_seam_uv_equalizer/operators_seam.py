@@ -1,6 +1,7 @@
 """Seam authoring, mirroring, conversion, and group operators."""
 from __future__ import annotations
 import bpy
+import bmesh
 from .symmetry import mirror_edge_map
 from .seam_groups import save, apply, delete
 from .translations import iface_
@@ -38,7 +39,7 @@ class AUTOSEAMUV_OT_force_seam(_TagBase):
 class AUTOSEAMUV_OT_protect_seam(_TagBase):
     bl_idname='autoseamuv.protect_seam'; bl_label='Protect From Auto Seam'; attribute=PROTECT_SEAM_ATTRIBUTE
 class AUTOSEAMUV_OT_clear_edge_tags(bpy.types.Operator):
-    bl_idname='autoseamuv.clear_edge_tags'; bl_label='Clear Auto Seam Tags'; bl_options={'REGISTER','UNDO'}; bl_description='Applies to the active mesh object.'
+    bl_idname='autoseamuv.clear_edge_tags'; bl_label='Clear All Tags'; bl_options={'REGISTER','UNDO'}; bl_description='Clears all Auto Seam Force and Protect tags from the active mesh object.'
     def execute(self,context):
         obj=_active_mesh(context)
         if not obj:return {'CANCELLED'}
@@ -51,15 +52,37 @@ class AUTOSEAMUV_OT_mirror_seams(bpy.types.Operator):
     def execute(self,context):
         obj=_active_mesh(context); s=context.scene.autoseamuv_settings
         if not obj:return {'CANCELLED'}
+        if s.mirror_direction == 'SELECTED' and context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, iface_("Selected Side mirroring requires Edit Mode with selected edges."))
+            return {'CANCELLED'}
         axis='XYZ'.index(s.mesh_symmetry_axis); mesh=obj.data
         tolerance=s.mesh_symmetry_tolerance
-        mapping,skipped=mirror_edge_map([tuple(v.co) for v in mesh.vertices],[tuple(e.vertices) for e in mesh.edges],axis,tolerance)
+        edit_mode = context.mode == 'EDIT_MESH'
+        if edit_mode:
+            bm = bmesh.from_edit_mesh(mesh)
+            bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table()
+            vertices, edges = bm.verts, bm.edges
+            coordinates = [tuple(v.co) for v in vertices]
+            edge_vertices = [tuple(v.index for v in edge.verts) for edge in edges]
+        else:
+            bm = None; vertices, edges = mesh.vertices, mesh.edges
+            coordinates = [tuple(v.co) for v in vertices]
+            edge_vertices = [tuple(e.vertices) for e in edges]
+        mapping,skipped=mirror_edge_map(coordinates,edge_vertices,axis,tolerance)
         changed=0
         for source,target in mapping.items():
-            mid=(mesh.vertices[mesh.edges[source].vertices[0]].co[axis]+mesh.vertices[mesh.edges[source].vertices[1]].co[axis])*.5
-            allowed=(s.mirror_direction=='SELECTED' and mesh.edges[source].select) or (s.mirror_direction=='POSITIVE' and mid>tolerance) or (s.mirror_direction=='NEGATIVE' and mid < -tolerance) or abs(mid)<=tolerance
-            if allowed and mesh.edges[source].use_seam and not mesh.edges[target].use_seam: mesh.edges[target].use_seam=True; changed+=1
-        mesh.update(); self.report({'INFO'}, iface_("Mirrored %d; skipped %d ambiguous/unmatched edge(s)", changed, skipped)); return {'FINISHED'}
+            edge = edges[source]; target_edge = edges[target]
+            mid=(edge.verts[0].co[axis]+edge.verts[1].co[axis])*.5 if edit_mode else (vertices[edge.vertices[0]].co[axis]+vertices[edge.vertices[1]].co[axis])*.5
+            allowed=(s.mirror_direction=='SELECTED' and edge.select) or (s.mirror_direction=='POSITIVE' and mid>tolerance) or (s.mirror_direction=='NEGATIVE' and mid < -tolerance) or abs(mid)<=tolerance
+            source_seam = edge.seam if edit_mode else edge.use_seam
+            target_seam = target_edge.seam if edit_mode else target_edge.use_seam
+            if allowed and source_seam and not target_seam:
+                if edit_mode: target_edge.seam=True
+                else: target_edge.use_seam=True
+                changed+=1
+        if edit_mode: bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+        else: mesh.update()
+        self.report({'INFO'}, iface_("Mirrored %d; skipped %d ambiguous/unmatched edge(s)", changed, skipped)); return {'FINISHED'}
 class AUTOSEAMUV_OT_seams_from_sharp(bpy.types.Operator):
     bl_idname='autoseamuv.seams_from_sharp'; bl_label='Mark Seams From Sharp'; bl_options={'REGISTER','UNDO'}
     def execute(self,context):
