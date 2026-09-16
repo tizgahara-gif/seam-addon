@@ -42,26 +42,129 @@ CLASSES = (
     *ui.CLASSES,
 )
 
+_SCENE_PROPERTY = "autoseamuv_settings"
+_LIFECYCLE_KEY = "auto_seam_uv_equalizer.registration"
+_GENERATION = object()
+_registered_classes: list[type] = []
+_translations_registered = False
+
+
+def _registered_class(name: str):
+    """Return Blender's registered RNA class with *name*, if one exists."""
+    return getattr(bpy.types, name, None)
+
+
+def _remove_scene_property() -> None:
+    """Remove the RNA pointer before its PropertyGroup can be unregistered."""
+    if hasattr(bpy.types.Scene, _SCENE_PROPERTY):
+        delattr(bpy.types.Scene, _SCENE_PROPERTY)
+
+
+def _make_cleanup(classes: tuple[type, ...], translations_are_registered: bool):
+    """Capture one generation's objects so module reload cannot change them."""
+    def cleanup() -> None:
+        _remove_scene_property()
+        if translations_are_registered:
+            translations.unregister()
+        for cls in reversed(classes):
+            if _registered_class(cls.__name__) is cls:
+                bpy.utils.unregister_class(cls)
+
+    return cleanup
+
+
+def _cleanup_previous_generation() -> None:
+    """Prefer the previous generation's complete lifecycle when available."""
+    previous = bpy.app.driver_namespace.get(_LIFECYCLE_KEY)
+    if previous and previous.get("generation") is not _GENERATION:
+        previous["cleanup"]()
+        bpy.app.driver_namespace.pop(_LIFECYCLE_KEY, None)
+
+
+def _validate_classes() -> None:
+    if len(CLASSES) != len(set(CLASSES)):
+        raise RuntimeError("Auto Seam UV Equalizer CLASSES contains duplicate class objects")
+    names = [cls.__name__ for cls in CLASSES]
+    if len(names) != len(set(names)):
+        raise RuntimeError("Auto Seam UV Equalizer CLASSES contains duplicate class names")
+
 
 def register() -> None:
     """Register add-on classes and scene properties."""
-    for cls in CLASSES:
-        bpy.utils.register_class(cls)
+    global _registered_classes, _translations_registered
 
-    bpy.types.Scene.autoseamuv_settings = PointerProperty(type=properties.AUTOSEAMUV_PG_settings)
-    for scene in bpy.data.scenes:
-        properties.migrate_legacy_settings(scene.autoseamuv_settings)
-    translations.register()
+    _validate_classes()
+    # The pointer owns an RNA reference to the old PropertyGroup and therefore
+    # must always disappear before any stale class is unregistered.
+    _remove_scene_property()
+    _cleanup_previous_generation()
+
+    # Remove a generation that predates lifecycle tracking.  bpy.types returns
+    # the actual registered Python class and is safe to pass to unregister_class.
+    for cls in reversed(CLASSES):
+        registered = _registered_class(cls.__name__)
+        if registered is not None and registered is not cls:
+            bpy.utils.unregister_class(registered)
+
+    registered_now: list[type] = []
+    pointer_created = False
+    translations_now = False
+    try:
+        for cls in CLASSES:
+            if _registered_class(cls.__name__) is cls:
+                continue
+            bpy.utils.register_class(cls)
+            registered_now.append(cls)
+
+        setattr(
+            bpy.types.Scene,
+            _SCENE_PROPERTY,
+            PointerProperty(type=properties.AUTOSEAMUV_PG_settings),
+        )
+        pointer_created = True
+        for scene in bpy.data.scenes:
+            properties.migrate_legacy_settings(getattr(scene, _SCENE_PROPERTY))
+        translations.register()
+        translations_now = True
+    except Exception:
+        if pointer_created:
+            _remove_scene_property()
+        if translations_now:
+            translations.unregister()
+        for cls in reversed(registered_now):
+            if _registered_class(cls.__name__) is cls:
+                bpy.utils.unregister_class(cls)
+        _registered_classes = []
+        _translations_registered = False
+        bpy.app.driver_namespace.pop(_LIFECYCLE_KEY, None)
+        raise
+
+    _registered_classes = list(CLASSES)
+    _translations_registered = True
+    bpy.app.driver_namespace[_LIFECYCLE_KEY] = {
+        "generation": _GENERATION,
+        "cleanup": _make_cleanup(tuple(CLASSES), True),
+    }
 
 
 def unregister() -> None:
     """Unregister add-on classes and scene properties."""
-    translations.unregister()
-    if hasattr(bpy.types.Scene, "autoseamuv_settings"):
-        del bpy.types.Scene.autoseamuv_settings
+    global _registered_classes, _translations_registered
+
+    _remove_scene_property()
+    state = bpy.app.driver_namespace.get(_LIFECYCLE_KEY)
+    if state:
+        state["cleanup"]()
+        bpy.app.driver_namespace.pop(_LIFECYCLE_KEY, None)
+        _translations_registered = False
+    elif _translations_registered:
+        translations.unregister()
+        _translations_registered = False
 
     for cls in reversed(CLASSES):
-        bpy.utils.unregister_class(cls)
+        if _registered_class(cls.__name__) is cls:
+            bpy.utils.unregister_class(cls)
+    _registered_classes = []
 
 
 if __name__ == "__main__":
