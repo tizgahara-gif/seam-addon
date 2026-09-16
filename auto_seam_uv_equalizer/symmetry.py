@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from itertools import product
 from math import floor, isfinite
+from collections import defaultdict, deque
 from typing import NamedTuple
 
 
@@ -21,6 +22,14 @@ class SymmetryPlan(NamedTuple):
     face_pairs: dict[int, int]
     loop_pairs: tuple[tuple[int, int], ...]
     source_faces: tuple[int, ...]
+
+
+class MirroredIslandSyncPlan(NamedTuple):
+    """A fully validated, immutable write plan for one mirrored UV island."""
+
+    symmetry: SymmetryPlan
+    seam_writes: dict[int, bool]
+    uv_writes: dict[int, tuple[float, float]]
 
 
 def _cell(co, tolerance):
@@ -143,7 +152,102 @@ def build_symmetry_plan(coordinates, edges, faces, source_faces, axis=0,
             if len(source_edges) != 1 or len(target_edges) != 1:
                 raise SymmetryError(f"ambiguous or missing edge on face {source_face}")
             edge_pairs[source_edges[0]] = target_edges[0]
+    if len(face_pairs) != len(source_faces) or len(set(face_pairs.values())) != len(source_faces):
+        raise SymmetryError("duplicate mirrored face mapping")
+    if len(set(edge_pairs.values())) != len(edge_pairs):
+        raise SymmetryError("duplicate mirrored edge mapping")
+    destination_loops = [destination for _source, destination in loop_pairs]
+    if len(set(destination_loops)) != len(destination_loops):
+        raise SymmetryError("duplicate mirrored loop mapping")
     return SymmetryPlan(vertex_pairs, edge_pairs, face_pairs, tuple(loop_pairs), source_faces)
+
+
+def find_uv_face_islands(faces, uvs, tolerance=1e-6):
+    """Return face-index sets connected by coincident UVs along mesh edges.
+
+    ``uvs`` follows polygon-loop order.  This pure equivalent of Blender's UV
+    island connectivity is used by both tests and the edit-BMesh operator.
+    """
+    loop_starts, cursor = [], 0
+    edge_uses = defaultdict(list)
+    for face_index, face in enumerate(faces):
+        loop_starts.append(cursor)
+        for offset, vertex in enumerate(face):
+            next_offset = (offset + 1) % len(face)
+            edge_uses[tuple(sorted((vertex, face[next_offset])))].append(
+                (face_index, cursor + offset, cursor + next_offset))
+        cursor += len(face)
+    if cursor != len(uvs):
+        raise SymmetryError("UV loop count does not match mesh topology")
+
+    tolerance_squared = tolerance * tolerance
+    neighbors = defaultdict(set)
+
+    def close(a, b):
+        return sum((float(a[i]) - float(b[i])) ** 2 for i in range(2)) <= tolerance_squared
+
+    for uses in edge_uses.values():
+        for index, (face_a, loop_a, next_a) in enumerate(uses):
+            for face_b, loop_b, next_b in uses[index + 1:]:
+                if ((close(uvs[loop_a], uvs[loop_b]) and close(uvs[next_a], uvs[next_b]))
+                        or (close(uvs[loop_a], uvs[next_b]) and close(uvs[next_a], uvs[loop_b]))):
+                    neighbors[face_a].add(face_b)
+                    neighbors[face_b].add(face_a)
+
+    islands, remaining = [], set(range(len(faces)))
+    while remaining:
+        start = remaining.pop()
+        island, queue = {start}, deque((start,))
+        while queue:
+            for neighbor in neighbors[queue.popleft()]:
+                if neighbor in remaining:
+                    remaining.remove(neighbor)
+                    island.add(neighbor)
+                    queue.append(neighbor)
+        islands.append(island)
+    return islands
+
+
+def collect_selected_source_uv_island(faces, uvs, selected_faces, tolerance=1e-6):
+    """Expand selected face seeds to exactly one complete UV island."""
+    selected_faces = set(selected_faces)
+    hit = [island for island in find_uv_face_islands(faces, uvs, tolerance)
+           if island & selected_faces]
+    if len(hit) != 1:
+        raise SymmetryError("Exactly one source UV island must be selected.")
+    return hit[0]
+
+
+def plan_mirrored_island_sync(coordinates, edges, faces, source_faces, seams, uvs,
+                              axis=0, tolerance=1e-4):
+    """Validate topology and snapshot exact seam/UV destination writes."""
+    source_faces = tuple(sorted(source_faces))
+    vertices = {vertex for face_index in source_faces for vertex in faces[face_index]}
+    axis_values = [float(coordinates[vertex][axis]) for vertex in vertices]
+    if not axis_values:
+        raise SymmetryError("Exactly one source UV island must be selected.")
+    has_positive = any(value > tolerance for value in axis_values)
+    has_negative = any(value < -tolerance for value in axis_values)
+    if has_positive and has_negative:
+        raise SymmetryError("The selected UV island crosses the mesh symmetry plane.")
+    representative = sum(axis_values) / len(axis_values)
+    if abs(representative) <= tolerance or not (has_positive or has_negative):
+        raise SymmetryError("The selected island crosses or touches the symmetry centerline.")
+    source_sign = 1 if representative > 0 else -1
+    plan = build_symmetry_plan(coordinates, edges, faces, source_faces, axis,
+                               source_sign, tolerance)
+    if set(plan.face_pairs.values()) & set(source_faces):
+        raise SymmetryError("The selected island crosses or touches the symmetry centerline.")
+    if any(source == target for source, target in plan.edge_pairs.items()):
+        raise SymmetryError("The selected island crosses or touches the symmetry centerline.")
+    source_loops = [source for source, _target in plan.loop_pairs]
+    if len(source_loops) != len(set(source_loops)):
+        raise SymmetryError("duplicate source loop mapping")
+    seam_writes = {target: bool(seams[source])
+                   for source, target in plan.edge_pairs.items()}
+    uv_writes = {target: tuple(float(value) for value in uvs[source][:2])
+                 for source, target in plan.loop_pairs}
+    return MirroredIslandSyncPlan(plan, seam_writes, uv_writes)
 
 
 def transferred_uvs(source_uvs, loop_pairs, layout="OVERLAP", island_gap=0.02):

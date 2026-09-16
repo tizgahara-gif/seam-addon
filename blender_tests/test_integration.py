@@ -78,7 +78,8 @@ class IntegrationTests(unittest.TestCase):
                      "shared_weighted_atlas",
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
                      "validate_symmetry", "transfer_symmetric_uv",
-                     "transfer_exact_texture_x_symmetry"):
+                     "transfer_exact_texture_x_symmetry",
+                     "sync_mirrored_uv_island"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
     def test_registration_enable_disable_cycle_is_idempotent(self):
@@ -195,6 +196,50 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual({edge.index for edge in bm.edges if edge.select}, selected)
         bpy.ops.object.mode_set(mode="OBJECT")
         self.assertTrue(obj.data.edges[target.index].use_seam)
+
+    def test_sync_mirrored_uv_island_exact_seams_uvs_and_selection(self):
+        obj = mesh_object(
+            "MirroredIsland",
+            [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
+             (1,0,0),(1,0,1),(1,1,1),(1,1,0)],
+            [(0,1,2,3), (4,5,6,7)])
+        layer = obj.data.uv_layers.new(name="UVMap")
+        source_uvs = ((0.1,0.2),(0.4,0.2),(0.4,0.7),(0.1,0.7))
+        for item, uv in zip(layer.uv, source_uvs + ((0.7,0.1),) * 4):
+            item.vector = uv
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.mesh_symmetry_axis = "X"
+        settings.mesh_symmetry_tolerance = 0.0001
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table(); bm.edges.ensure_lookup_table()
+        for face in bm.faces: face.select = False
+        bm.faces[0].select = True
+        source_edges = sorted(bm.faces[0].edges, key=lambda edge: edge.index)
+        for index, edge in enumerate(source_edges): edge.seam = index % 2 == 0
+        for edge in bm.faces[1].edges: edge.seam = not source_edges[0].seam
+        selection_before = {face.index for face in bm.faces if face.select}
+        bmesh.update_edit_mesh(obj.data)
+
+        self.assertEqual(bpy.ops.autoseamuv.sync_mirrored_uv_island(), {"FINISHED"})
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table(); bm.edges.ensure_lookup_table()
+        self.assertEqual({face.index for face in bm.faces if face.select}, selection_before)
+        uv_layer = bm.loops.layers.uv.active
+        source_by_vertex = {loop.vert.index: tuple(loop[uv_layer].uv)
+                            for loop in bm.faces[0].loops}
+        vertex_map = {0: 4, 1: 7, 2: 6, 3: 5}
+        target_by_vertex = {loop.vert.index: tuple(loop[uv_layer].uv)
+                            for loop in bm.faces[1].loops}
+        for source, target in vertex_map.items():
+            self.assertEqual(target_by_vertex[target], source_by_vertex[source])
+        source_seams = {frozenset(vertex.index for vertex in edge.verts): edge.seam
+                        for edge in bm.faces[0].edges}
+        target_seams = {frozenset(vertex.index for vertex in edge.verts): edge.seam
+                        for edge in bm.faces[1].edges}
+        for edge_vertices, state in source_seams.items():
+            mirrored = frozenset(vertex_map[index] for index in edge_vertices)
+            self.assertEqual(target_seams[mirrored], state)
 
     def test_uv_quality_edit_mode_replaces_problem_face_selection(self):
         obj = mesh_object("Quality", [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
