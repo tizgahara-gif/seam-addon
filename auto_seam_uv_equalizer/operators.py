@@ -804,15 +804,21 @@ class AUTOSEAMUV_OT_pack_selected_into_free_space(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         bm.faces.ensure_lookup_table(); bm.faces.index_update()
         selected_faces = frozenset(face.index for face in bm.faces if face.select)
-        obj.update_from_editmode()
+        # Edit Mesh is authoritative until this point.  From here onward the
+        # weighted backend operates exclusively on Object Mode Mesh data.
+        active, selected, mode = _snapshot_context(context)
         try:
+            _ensure_object_mode()
             report = incremental_pack_object(
                 obj, settings.weighted_density_influence, settings.weighted_scale_mode,
                 resolve_weighted_padding(settings), settings.weighted_target_region,
-                settings.weighted_allow_rotation, selected_faces)
+                settings.weighted_allow_rotation,
+                selected_face_indices=selected_faces)
         except Exception as exc:
             self.report({"ERROR"}, iface_("Pack Selected Into Free Space failed: %s", exc))
             return {"CANCELLED"}
+        finally:
+            _restore_context(context, active, selected, mode)
         self.report({"INFO"}, iface_("Packed %d selected UV island(s).", report.island_count))
         return {"FINISHED"}
 
@@ -833,6 +839,10 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
 
         settings = _get_settings(context)
         objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
+        if any(has_active_uv_protection(obj.data) for obj in objects):
+            self.report({"ERROR"}, iface_(
+                "Auto Unwrap + Pack cannot preserve UV Protection because its Pack stage uses Standard Pack Islands. Use Unwrap and a Protection-aware layout operation separately."))
+            return {"CANCELLED"}
         active, selected, mode = _snapshot_context(context)
         processed = 0
         skipped_empty = 0
@@ -890,6 +900,11 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
 
         settings = _get_settings(context)
         objects, skipped_shared = _objects_for_processing(self, selected_objects, settings.process_shared_mesh_once)
+        if settings.pack_islands and any(
+                has_active_uv_protection(obj.data) for obj in objects):
+            self.report({"ERROR"}, iface_(
+                "Auto Seam + Unwrap cannot preserve UV Protection while Pack Islands is enabled because its Pack stage uses Standard Pack Islands. Disable Pack Islands, or use a Protection-aware layout operation separately."))
+            return {"CANCELLED"}
         active, selected, mode = _snapshot_context(context)
         processed = 0
         total_marked = 0

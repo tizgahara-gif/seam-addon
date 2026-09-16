@@ -658,6 +658,98 @@ class IntegrationTests(unittest.TestCase):
         restored_faces = {face.index for face in restored_bm.faces if face.select}
         self.assertEqual(restored_faces, original_faces)
 
+    def test_incremental_pack_object_mode_transaction_and_rollback(self):
+        obj = mesh_object(
+            "IncrementalTransaction",
+            [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+             (2,0,0),(3,0,0),(3,1,0),(2,1,0)],
+            [(0,1,2,3), (4,5,6,7)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        initial = ((2,2),(2.25,2),(2.25,2.25),(2,2.25),
+                   (0.35,0.35),(0.65,0.35),(0.65,0.65),(0.35,0.65))
+        for datum, uv in zip(layer.uv, initial):
+            datum.vector = uv
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.weighted_padding_mode = "RELATIVE"
+        settings.weighted_padding_uv = 0.01
+        settings.weighted_scale_mode = "PRESERVE_TEXEL_DENSITY"
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        bm.faces[0].select_set(True)
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        obstacle_before = tuple(tuple(layer.uv[index].vector) for index in range(4, 8))
+
+        self.assertEqual(bpy.ops.autoseamuv.pack_selected_into_free_space(), {"FINISHED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        restored = bmesh.from_edit_mesh(obj.data); restored.faces.ensure_lookup_table()
+        self.assertEqual({face.index for face in restored.faces if face.select}, {0})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual(tuple(tuple(layer.uv[index].vector) for index in range(4, 8)),
+                         obstacle_before)
+        self.assertNotEqual(tuple(tuple(layer.uv[index].vector) for index in range(4)),
+                            initial[:4])
+
+        # A full-tile obstacle leaves no legal rectangle: cancellation must be
+        # bit-identical and restore the original Edit Mode selection.
+        for datum, uv in zip(layer.uv,
+                             ((2,2),(2.25,2),(2.25,2.25),(2,2.25),
+                              (0,0),(1,0),(1,1),(0,1))):
+            datum.vector = uv
+        before_failure = tuple(tuple(datum.vector) for datum in layer.uv)
+        bpy.ops.object.mode_set(mode="EDIT")
+        self.assertEqual(bpy.ops.autoseamuv.pack_selected_into_free_space(), {"CANCELLED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        restored = bmesh.from_edit_mesh(obj.data); restored.faces.ensure_lookup_table()
+        self.assertEqual({face.index for face in restored.faces if face.select}, {0})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual(tuple(tuple(datum.vector) for datum in layer.uv), before_failure)
+
+    def test_composite_pack_protection_preflight_has_no_partial_mutation(self):
+        obj = mesh_object("CompositeProtection",
+                          [(0,0,0),(1,0,0),(1,1,0),(0,1,0)], [(0,1,2,3)])
+        layer = obj.data.uv_layers.new(name="UVMap")
+        for datum, uv in zip(layer.uv, ((0.1,0.2),(0.6,0.2),(0.6,0.7),(0.1,0.7))):
+            datum.vector = uv
+        finished = obj.data.attributes.new("autoseam_finished_group", "INT", "FACE")
+        finished.data[0].value = 1
+        settings = bpy.context.scene.autoseamuv_settings
+        before_uv = tuple(tuple(datum.vector) for datum in layer.uv)
+        before_seams = tuple(edge.use_seam for edge in obj.data.edges)
+
+        self.assertEqual(bpy.ops.autoseamuv.auto_unwrap_pack(), {"CANCELLED"})
+        self.assertEqual(tuple(tuple(datum.vector) for datum in layer.uv), before_uv)
+        settings.pack_islands = True
+        self.assertEqual(bpy.ops.autoseamuv.mark_and_unwrap(), {"CANCELLED"})
+        self.assertEqual(tuple(edge.use_seam for edge in obj.data.edges), before_seams)
+        self.assertEqual(tuple(tuple(datum.vector) for datum in layer.uv), before_uv)
+
+    def test_unwrap_selected_faces_reacquires_uv_layer_and_preserves_obstacle(self):
+        obj = mesh_object("SelectedUnwrapRNA",
+                          [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+                           (2,0,0),(3,0,0),(3,1,0),(2,1,0)],
+                          [(0,1,2,3),(4,5,6,7)])
+        layer = obj.data.uv_layers.new(name="UVMap")
+        for datum, uv in zip(layer.uv, ((0,0),(1,0),(1,1),(0,1),
+                                        (3,3),(4,3),(4,4),(3,4))):
+            datum.vector = uv
+        untouched = tuple(tuple(layer.uv[index].vector) for index in range(4, 8))
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        bm.faces[0].select_set(True)
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+        self.assertEqual(bpy.ops.autoseamuv.unwrap_selected_faces(), {"FINISHED"})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        self.assertEqual({face.index for face in bm.faces if face.select}, {0})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        current = obj.data.uv_layers.get("UVMap")
+        self.assertEqual(tuple(tuple(current.uv[index].vector) for index in range(4, 8)),
+                         untouched)
+
     def test_symmetric_uv_layouts_and_missing_map(self):
         obj = mesh_object("Symmetric", [(-1,0,0),(-1,1,0),(-1,1,1),(-1,0,1),
                                          (1,0,0),(1,0,1),(1,1,1),(1,1,0)],
