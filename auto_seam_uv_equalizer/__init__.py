@@ -13,6 +13,7 @@ bl_info = {
 }
 
 import bpy  # noqa: E402
+from bpy.app.handlers import persistent  # noqa: E402
 from bpy.props import PointerProperty  # noqa: E402
 
 from . import operators, operators_seam, operators_symmetry, operators_validation, properties, translations, ui
@@ -47,6 +48,9 @@ _LIFECYCLE_KEY = "auto_seam_uv_equalizer.registration"
 _GENERATION = object()
 _registered_classes: list[type] = []
 _translations_registered = False
+_migration_retry_attempts = 0
+_MIGRATION_MAX_RETRIES = 20
+_MIGRATION_RETRY_INTERVAL = 0.1
 
 
 def _registered_class(name: str):
@@ -60,9 +64,85 @@ def _remove_scene_property() -> None:
         delattr(bpy.types.Scene, _SCENE_PROPERTY)
 
 
-def _make_cleanup(classes: tuple[type, ...], translations_are_registered: bool):
+def _migration_available() -> bool:
+    """Return whether this generation's Scene settings RNA still exists."""
+    return hasattr(bpy.types.Scene, _SCENE_PROPERTY)
+
+
+def _migrate_loaded_scenes() -> None:
+    """Migrate every loaded Scene, without making one bad Scene stop the rest."""
+    if not _migration_available():
+        return
+
+    for scene in bpy.data.scenes:
+        settings = getattr(scene, _SCENE_PROPERTY, None)
+        if settings is None:
+            continue
+        try:
+            properties.migrate_legacy_settings(settings)
+        except Exception as exc:
+            # Migration is a compatibility aid, not a condition of add-on use.
+            print(
+                "Auto Seam UV Equalizer: failed to migrate legacy settings "
+                f"for Scene {scene.name!r}: {exc!r}"
+            )
+
+
+def _restricted_data_is_active() -> bool:
+    """Detect Blender's registration-time data proxy without parsing errors."""
+    return type(bpy.data).__name__ == "_RestrictData"
+
+
+def _deferred_migrate_current_file():
+    """Timer callback which waits until Blender releases its data API."""
+    global _migration_retry_attempts
+
+    if not _migration_available():
+        _migration_retry_attempts = 0
+        return None
+    if _restricted_data_is_active():
+        _migration_retry_attempts += 1
+        if _migration_retry_attempts < _MIGRATION_MAX_RETRIES:
+            return _MIGRATION_RETRY_INTERVAL
+        print(
+            "Auto Seam UV Equalizer: legacy settings migration was deferred; "
+            "it will retry when a .blend file is loaded."
+        )
+        _migration_retry_attempts = 0
+        return None
+
+    _migration_retry_attempts = 0
+    try:
+        _migrate_loaded_scenes()
+    except Exception as exc:
+        # In particular, do not turn optional migration into an enable failure.
+        print(f"Auto Seam UV Equalizer: deferred legacy migration failed: {exc!r}")
+    return None
+
+
+@persistent
+def _on_load_post(_filepath) -> None:
+    """Migrate legacy settings whenever another blend file is loaded."""
+    if not _migration_available():
+        return
+    try:
+        _migrate_loaded_scenes()
+    except Exception as exc:
+        print(f"Auto Seam UV Equalizer: load_post legacy migration failed: {exc!r}")
+
+
+def _make_cleanup(
+    classes: tuple[type, ...],
+    translations_are_registered: bool,
+    load_handler,
+    migration_timer,
+):
     """Capture one generation's objects so module reload cannot change them."""
     def cleanup() -> None:
+        if bpy.app.timers.is_registered(migration_timer):
+            bpy.app.timers.unregister(migration_timer)
+        if load_handler in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.remove(load_handler)
         _remove_scene_property()
         if translations_are_registered:
             translations.unregister()
@@ -91,16 +171,15 @@ def _validate_classes() -> None:
 
 def register() -> None:
     """Register add-on classes and scene properties."""
-    global _registered_classes, _translations_registered
+    global _migration_retry_attempts, _registered_classes, _translations_registered
 
     _validate_classes()
-    # The pointer owns an RNA reference to the old PropertyGroup and therefore
-    # must always disappear before any stale class is unregistered.
-    _remove_scene_property()
     _cleanup_previous_generation()
 
     # Remove a generation that predates lifecycle tracking.  bpy.types returns
     # the actual registered Python class and is safe to pass to unregister_class.
+    # Its pointer owns an RNA reference and must disappear before the class.
+    _remove_scene_property()
     for cls in reversed(CLASSES):
         registered = _registered_class(cls.__name__)
         if registered is not None and registered is not cls:
@@ -109,6 +188,8 @@ def register() -> None:
     registered_now: list[type] = []
     pointer_created = False
     translations_now = False
+    handler_added = False
+    timer_added = False
     try:
         for cls in CLASSES:
             if _registered_class(cls.__name__) is cls:
@@ -122,11 +203,20 @@ def register() -> None:
             PointerProperty(type=properties.AUTOSEAMUV_PG_settings),
         )
         pointer_created = True
-        for scene in bpy.data.scenes:
-            properties.migrate_legacy_settings(getattr(scene, _SCENE_PROPERTY))
         translations.register()
         translations_now = True
+        if _on_load_post not in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.append(_on_load_post)
+            handler_added = True
+        _migration_retry_attempts = 0
+        if not bpy.app.timers.is_registered(_deferred_migrate_current_file):
+            bpy.app.timers.register(_deferred_migrate_current_file, first_interval=0.0)
+            timer_added = True
     except Exception:
+        if timer_added and bpy.app.timers.is_registered(_deferred_migrate_current_file):
+            bpy.app.timers.unregister(_deferred_migrate_current_file)
+        if handler_added and _on_load_post in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.remove(_on_load_post)
         if pointer_created:
             _remove_scene_property()
         if translations_now:
@@ -143,7 +233,11 @@ def register() -> None:
     _translations_registered = True
     bpy.app.driver_namespace[_LIFECYCLE_KEY] = {
         "generation": _GENERATION,
-        "cleanup": _make_cleanup(tuple(CLASSES), True),
+        "cleanup": _make_cleanup(
+            tuple(CLASSES), True, _on_load_post, _deferred_migrate_current_file
+        ),
+        "load_handler": _on_load_post,
+        "migration_timer": _deferred_migrate_current_file,
     }
 
 
@@ -151,15 +245,20 @@ def unregister() -> None:
     """Unregister add-on classes and scene properties."""
     global _registered_classes, _translations_registered
 
-    _remove_scene_property()
     state = bpy.app.driver_namespace.get(_LIFECYCLE_KEY)
     if state:
         state["cleanup"]()
         bpy.app.driver_namespace.pop(_LIFECYCLE_KEY, None)
         _translations_registered = False
-    elif _translations_registered:
-        translations.unregister()
-        _translations_registered = False
+    else:
+        if bpy.app.timers.is_registered(_deferred_migrate_current_file):
+            bpy.app.timers.unregister(_deferred_migrate_current_file)
+        if _on_load_post in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.remove(_on_load_post)
+        _remove_scene_property()
+        if _translations_registered:
+            translations.unregister()
+            _translations_registered = False
 
     for cls in reversed(CLASSES):
         if _registered_class(cls.__name__) is cls:

@@ -1,5 +1,6 @@
 """Blender 5.1 runtime/registration and core-workflow smoke tests."""
 import math
+import importlib
 import pathlib
 import sys
 import unittest
@@ -81,9 +82,13 @@ class IntegrationTests(unittest.TestCase):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
     def test_registration_enable_disable_cycle_is_idempotent(self):
+        self.assertIn(addon._on_load_post, bpy.app.handlers.load_post)
         addon.unregister()
         addon.unregister()
         self.assertFalse(hasattr(bpy.types.Scene, "autoseamuv_settings"))
+        self.assertNotIn(addon._on_load_post, bpy.app.handlers.load_post)
+        self.assertFalse(bpy.app.timers.is_registered(
+            addon._deferred_migrate_current_file))
         self.assertTrue(all(getattr(bpy.types, item.__name__, None) is not item
                             for item in addon.CLASSES))
         addon.register()
@@ -91,6 +96,45 @@ class IntegrationTests(unittest.TestCase):
         addon.register()
         self.assertIs(getattr(bpy.types, "AUTOSEAMUV_PG_settings"),
                       addon.properties.AUTOSEAMUV_PG_settings)
+
+    def test_deferred_and_load_post_migrate_all_scenes_idempotently(self):
+        scenes = [bpy.context.scene]
+        scenes.extend(bpy.data.scenes.new(f"LegacyMigration{index}")
+                      for index in range(2))
+        try:
+            for index, scene in enumerate(scenes):
+                settings = scene.autoseamuv_settings
+                settings["margin"] = 0.01 + index * 0.01
+                settings["mirror_axis"] = "Y"
+                settings["symmetry_tolerance"] = 0.002 + index * 0.001
+
+            self.assertIsNone(addon._deferred_migrate_current_file())
+            for index, scene in enumerate(scenes):
+                settings = scene.autoseamuv_settings
+                self.assertAlmostEqual(settings.unwrap_margin, 0.01 + index * 0.01)
+                self.assertAlmostEqual(settings.pack_margin, 0.01 + index * 0.01)
+                self.assertEqual(settings.mesh_symmetry_axis, "Y")
+                self.assertAlmostEqual(settings.mesh_symmetry_tolerance,
+                                       0.002 + index * 0.001)
+
+            # Stored current values win on every later migration invocation.
+            scenes[0].autoseamuv_settings.unwrap_margin = 0.25
+            addon._on_load_post("")
+            self.assertAlmostEqual(
+                scenes[0].autoseamuv_settings.unwrap_margin, 0.25)
+        finally:
+            for scene in scenes[1:]:
+                bpy.data.scenes.remove(scene)
+
+    def test_migration_does_not_store_defaults_for_a_fresh_scene(self):
+        scene = bpy.data.scenes.new("FreshMigration")
+        try:
+            settings = scene.autoseamuv_settings
+            self.assertEqual(set(settings.keys()), set())
+            addon._migrate_loaded_scenes()
+            self.assertEqual(set(settings.keys()), set())
+        finally:
+            bpy.data.scenes.remove(scene)
 
     def test_registration_replaces_stale_property_group(self):
         addon.unregister()
@@ -111,6 +155,22 @@ class IntegrationTests(unittest.TestCase):
         self.assertIs(getattr(bpy.types, current.__name__), current)
         scene_property = bpy.types.Scene.bl_rna.properties["autoseamuv_settings"]
         self.assertEqual(scene_property.fixed_type.identifier, current.bl_rna.identifier)
+
+    def test_module_reload_removes_previous_generation_runtime_hooks(self):
+        old_handler = addon._on_load_post
+        old_timer = addon._deferred_migrate_current_file
+        self.assertIn(old_handler, bpy.app.handlers.load_post)
+
+        importlib.reload(addon)
+        addon.register()
+
+        self.assertNotIn(old_handler, bpy.app.handlers.load_post)
+        self.assertFalse(bpy.app.timers.is_registered(old_timer))
+        self.assertIn(addon._on_load_post, bpy.app.handlers.load_post)
+        self.assertIs(
+            bpy.app.driver_namespace[addon._LIFECYCLE_KEY]["load_handler"],
+            addon._on_load_post,
+        )
 
     def test_mirror_seam_edit_bmesh_preserves_selection_and_selected_requires_edit(self):
         obj = mesh_object("Mirror", [(-1,0,0),(-1,1,0),(1,0,0),(1,1,0)],

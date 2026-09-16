@@ -30,3 +30,27 @@ def test_registration_manifest_has_unique_class_names():
     names = _class_names(ROOT / "__init__.py")
     assert len(names) == len(set(names))
     assert names.count("AUTOSEAMUV_PG_settings") == 1
+
+
+def test_register_does_not_access_blender_datablocks_or_context_scene():
+    """Registration runs while Blender may expose ``bpy.data`` as _RestrictData."""
+    tree = ast.parse((ROOT / "__init__.py").read_text(encoding="utf-8"))
+    register = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "register"
+    )
+
+    def dotted_name(node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if isinstance(node, ast.Name):
+            parts.append(node.id)
+        return ".".join(reversed(parts))
+
+    accesses = {dotted_name(node) for node in ast.walk(register)
+                if isinstance(node, ast.Attribute)}
+    assert not any(name == "bpy.data" or name.startswith("bpy.data.")
+                   for name in accesses)
+    assert "bpy.context.scene" not in accesses
