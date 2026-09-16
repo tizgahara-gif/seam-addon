@@ -610,10 +610,14 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
 
 
 class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
-    """Unwrap only the current Edit Mode face selection."""
+    """Unwrap complete UV islands seeded by the Edit Mode face selection."""
 
     bl_idname = "autoseamuv.unwrap_selected_faces"
-    bl_label = "Unwrap Selected Faces"
+    bl_label = "Unwrap Selected UV Islands"
+    bl_description = (
+        "Unwraps complete UV islands seeded by the current Edit Mode face selection. "
+        "The original component selection is restored after the operation"
+    )
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -623,13 +627,16 @@ class AUTOSEAMUV_OT_unwrap_selected_faces(bpy.types.Operator):
 
     def execute(self, context):
         obj, settings = context.active_object, _get_settings(context)
+        active, selected_objects, original_mode = _snapshot_context(context)
         try:
             unwrap_selected_faces(obj, settings.uv_map_name,
                                   settings.create_uv_if_missing,
                                   settings.unwrap_method, settings.unwrap_margin)
         except Exception as exc:
-            self.report({"ERROR"}, iface_("Unwrap Selected Faces failed: %s", exc))
+            self.report({"ERROR"}, iface_("Unwrap Selected UV Islands failed: %s", exc))
             return {"CANCELLED"}
+        finally:
+            _restore_context(context, active, selected_objects, original_mode)
         return {"FINISHED"}
 
 
@@ -801,9 +808,21 @@ class AUTOSEAMUV_OT_pack_selected_into_free_space(bpy.types.Operator):
 
     def execute(self, context):
         obj, settings = context.active_object, _get_settings(context)
+        if obj is None or obj.type != "MESH" or context.mode != "EDIT_MESH":
+            self.report({"ERROR"}, iface_("Pack Selected Into Free Space requires an active mesh in Edit Mode."))
+            return {"CANCELLED"}
+        if not obj.data.polygons:
+            self.report({"ERROR"}, iface_("The active mesh has no faces."))
+            return {"CANCELLED"}
+        if obj.data.uv_layers.active is None:
+            self.report({"ERROR"}, iface_("Pack Selected Into Free Space requires an active UV map."))
+            return {"CANCELLED"}
         bm = bmesh.from_edit_mesh(obj.data)
         bm.faces.ensure_lookup_table(); bm.faces.index_update()
         selected_faces = frozenset(face.index for face in bm.faces if face.select)
+        if not selected_faces:
+            self.report({"ERROR"}, iface_("Select at least one face to seed UV islands."))
+            return {"CANCELLED"}
         # Edit Mesh is authoritative until this point.  From here onward the
         # weighted backend operates exclusively on Object Mode Mesh data.
         active, selected, mode = _snapshot_context(context)

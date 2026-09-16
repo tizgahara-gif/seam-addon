@@ -129,13 +129,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     average_islands: BoolProperty(
         name="Average Island Scale",
-        description="Runs after Unwrap Selected Objects only. Does not affect Unwrap Selected Faces",
+        description="Runs after Unwrap Selected Objects only. Does not affect Unwrap Selected UV Islands",
         default=False,
     )
 
     straighten_circular_strip_islands: BoolProperty(
         name="Straighten Circular Strip Islands",
-        description="Runs after Unwrap Selected Objects only. Does not affect Unwrap Selected Faces",
+        description="Runs after Unwrap Selected Objects only. Does not affect Unwrap Selected UV Islands",
         default=False,
     )
 

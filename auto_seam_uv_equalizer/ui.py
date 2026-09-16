@@ -71,7 +71,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         processing.prop(settings, "process_shared_mesh_once", text="Process Shared Mesh Data Once")
 
         self._draw_seam(layout, settings, context, edit_mode)
-        self._draw_unwrap(layout, settings, edit_mode)
+        self._draw_unwrap(layout, settings, edit_mode, active_uv, context)
         self._draw_layout(layout, settings, meshes, active_uv, edit_mode, context)
         self._draw_symmetry(layout, settings, active_uv, edit_mode)
         self._draw_validation(layout, settings)
@@ -147,17 +147,24 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 advanced.prop(settings, "use_edge_loop_completion")
 
     @staticmethod
-    def _draw_unwrap(layout, settings, edit_mode):
+    def _draw_unwrap(layout, settings, edit_mode, active_uv, context):
         box = layout.box()
         box.label(text="2. Unwrap", icon="UV")
         box.prop(settings, "unwrap_method", text="Method")
         box.prop(settings, "unwrap_margin", text="Unwrap Margin")
-        box.label(text="Scope")
+        box.label(text="Scope: Selected UV Islands")
+        selected_face_count = _selected_face_count(context)
         selected = box.column()
-        selected.enabled = edit_mode
-        selected.operator("autoseamuv.unwrap_selected_faces", text="Unwrap Selected Faces", icon="FACESEL")
+        selected.enabled = (edit_mode and selected_face_count > 0 and
+                            (active_uv is not None or settings.create_uv_if_missing))
+        selected.operator("autoseamuv.unwrap_selected_faces",
+                          text="Unwrap Selected UV Islands", icon="FACESEL")
         if not edit_mode:
-            _warning(box, "Selected Faces requires Edit Mode.")
+            _warning(box, "Selected UV Islands requires Edit Mode.")
+        elif selected_face_count == 0:
+            _info(box, "Select at least one face to seed UV islands.")
+        elif active_uv is None and not settings.create_uv_if_missing:
+            _warning(box, "No active UV map. Enable Create UV If Missing or create a UV map manually.")
         box.operator("autoseamuv.unwrap_only", text="Unwrap Selected Objects", icon="UV")
 
         box.prop(settings, "show_unwrap_advanced", toggle=True)
@@ -242,10 +249,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.label(text="Target: Active Object", icon="INFO")
         weighted.label(text="Scope: Selected UV Islands", icon="INFO")
         incremental = weighted.row()
-        incremental.enabled = preflight["all_ready"] and edit_mode and has_faces
+        active = getattr(context, "active_object", None)
+        incremental.enabled = bool(active and active.type == "MESH" and edit_mode and
+                                   active.data.polygons and active_uv is not None and has_faces)
         incremental.operator("autoseamuv.pack_selected_into_free_space",
                              text="Pack Selected Into Free Space")
-        weighted.label(text="Each object is laid out independently.", icon="INFO")
+        weighted.label(text="Only the active object is modified.", icon="INFO")
         weighted.separator()
         weighted.label(text="Shared Atlas")
         shared = weighted.row()

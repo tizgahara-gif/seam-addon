@@ -106,28 +106,41 @@ def unwrap_selected_faces(obj, uv_map_name, create_if_missing, method, margin):
     if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
         raise RuntimeError("Edit Mode with selected faces is required")
     bpy.ops.object.mode_set(mode="OBJECT")
+    selected = {face.index for face in obj.data.polygons if face.select}
+    if not selected:
+        raise RuntimeError("no faces selected")
     if not ensure_uv_layer(obj, uv_map_name, create_if_missing):
         raise RuntimeError(f"UV map '{uv_map_name}' is unavailable")
     layer = obj.data.uv_layers.active
     layer_name = layer.name
-    selected = {face.index for face in obj.data.polygons if face.select}
-    if not selected:
-        bpy.ops.object.mode_set(mode="EDIT")
-        raise RuntimeError("no faces selected")
     validate_protection_consistency(obj)
     selected = {face for island in selected_islands(obj, selected) for face in island}
     selected -= finished_face_indices(obj.data)
     if not selected:
-        bpy.ops.object.mode_set(mode="EDIT")
         raise RuntimeError("all selected UV islands are Finished")
     for face in obj.data.polygons:
         face.select = face.index in selected
     untouched = {loop: layer.uv[loop].vector.copy()
                  for face in obj.data.polygons if face.index not in selected
                  for loop in face.loop_indices}
+    before = {loop: datum.vector.copy() for loop, datum in enumerate(layer.uv)}
     bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.uv.unwrap(method=method, margin=margin)
-    bpy.ops.object.mode_set(mode="OBJECT")
+    try:
+        result = bpy.ops.uv.unwrap(method=method, margin=margin)
+        if "FINISHED" not in result:
+            raise RuntimeError("Blender UV unwrap was cancelled")
+        bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode="OBJECT")
+        # Do not retain RNA members acquired before the mode transition.
+        rollback_mesh = obj.data
+        rollback_layer = rollback_mesh.uv_layers.get(layer_name)
+        if rollback_layer is not None:
+            for loop, uv in before.items():
+                rollback_layer.uv[loop].vector = uv
+            rollback_mesh.update()
+        raise
     # A mode transition may invalidate RNA collection members.  Reacquire the
     # Mesh and UV layer before restoring untouched loops.
     mesh = obj.data
