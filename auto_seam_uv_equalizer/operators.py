@@ -28,6 +28,7 @@ from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finishe
                             validate_protection_consistency)
 from .chart_seam import (PRESETS, cached_uv_analysis_evaluators,
                          uv_chart_quality_from_snapshot, uv_face_distortion_from_snapshot)
+from .mesh_utils import selected_visible_mesh_objects
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -35,17 +36,9 @@ _EDIT_SELECTION_SNAPSHOTS = {}
 _CHART_ANALYSIS_CACHE = {}
 
 
-def _selected_visible_mesh_objects(context) -> list[bpy.types.Object]:
-    return [
-        obj
-        for obj in context.selected_objects
-        if obj.type == "MESH" and obj.visible_get(view_layer=context.view_layer)
-    ]
-
-
 def resolve_layout_targets(context, require_uv=True):
     """Return the single source of truth used by layout UI and operators."""
-    objects = _selected_visible_mesh_objects(context)
+    objects = selected_visible_mesh_objects(context)
     ready = [obj for obj in objects if obj.data.polygons and
              (not require_uv or obj.data.uv_layers.active is not None)]
     missing_uv = [obj for obj in objects if not obj.data.polygons or
@@ -63,7 +56,7 @@ def selected_face_seeds_by_mesh(context, objects=None):
     """Snapshot Edit Mode face seeds for visible operator targets, by Mesh."""
     if context.mode != "EDIT_MESH":
         return {}
-    targets = objects if objects is not None else _selected_visible_mesh_objects(context)
+    targets = objects if objects is not None else selected_visible_mesh_objects(context)
     target_keys = {_mesh_datablock_key(obj) for obj in targets}
     seeds = {}
     for obj in getattr(context, "objects_in_mode", ()):
@@ -125,7 +118,7 @@ def _snapshot_context(context) -> tuple[bpy.types.Object | None, list[bpy.types.
         # Object Mode still stores component selection in each Mesh datablock.
         # Operators that temporarily select all faces must not leak that state.
         select_mode = tuple(context.tool_settings.mesh_select_mode)
-        for obj in _selected_visible_mesh_objects(context):
+        for obj in selected_visible_mesh_objects(context):
             mesh_key = obj.data.as_pointer()
             if mesh_key in _EDIT_SELECTION_SNAPSHOTS:
                 continue
@@ -303,7 +296,7 @@ class AUTOSEAMUV_OT_analyze_seams(bpy.types.Operator):
     def execute(self, context):
         settings = _get_settings(context)
         objects, skipped_shared = _objects_for_processing(
-            self, _selected_visible_mesh_objects(context), settings.process_shared_mesh_once)
+            self, selected_visible_mesh_objects(context), settings.process_shared_mesh_once)
         if not objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -335,7 +328,7 @@ class AUTOSEAMUV_OT_generate_seams(bpy.types.Operator):
     def execute(self, context):
         settings = _get_settings(context)
         objects, skipped_shared = _objects_for_processing(
-            self, _selected_visible_mesh_objects(context), settings.process_shared_mesh_once)
+            self, selected_visible_mesh_objects(context), settings.process_shared_mesh_once)
         if not objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -461,7 +454,7 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
         # In Edit Mode this operation is intentionally scoped to the active
         # object's selected face component.  Object Mode retains batch support.
         selected = ([context.active_object] if context.mode == "EDIT_MESH"
-                    and context.active_object is not None else _selected_visible_mesh_objects(context))
+                    and context.active_object is not None else selected_visible_mesh_objects(context))
         if not selected:
             self.report({"ERROR"}, iface_("Ring / Strip: no visible mesh object selected."))
             return {"CANCELLED"}
@@ -536,7 +529,7 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -582,7 +575,7 @@ class AUTOSEAMUV_OT_unwrap_only(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -819,7 +812,7 @@ class AUTOSEAMUV_OT_pack_islands(bpy.types.Operator):
 
     def execute(self, context):
         if any(has_active_uv_protection(obj.data)
-               for obj in _selected_visible_mesh_objects(context)):
+               for obj in selected_visible_mesh_objects(context)):
             self.report({"ERROR"}, iface_(
                 "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout or Pack Selected Into Free Space, or clear UV Protection first."))
             return {"CANCELLED"}
@@ -879,10 +872,10 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
     bl_idname = "autoseamuv.auto_unwrap_pack"
     bl_label = "Auto Unwrap + Pack"
     bl_description = "Unwrap selected mesh objects using existing settings, then pack UV islands efficiently into the 0-1 UV space"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -940,10 +933,10 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
 
     bl_idname = "autoseamuv.mark_and_unwrap"
     bl_label = "Auto Seam + Unwrap"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -1112,7 +1105,7 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -1168,7 +1161,7 @@ class AUTOSEAMUV_OT_clear_uv_overlap_highlight(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
@@ -1196,7 +1189,7 @@ class AUTOSEAMUV_OT_clear_seams(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected_objects = _selected_visible_mesh_objects(context)
+        selected_objects = selected_visible_mesh_objects(context)
         if not selected_objects:
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}

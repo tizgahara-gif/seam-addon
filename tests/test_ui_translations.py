@@ -47,6 +47,36 @@ def test_all_literal_ui_text_has_a_japanese_translation():
     assert visible <= translated, f"Missing Japanese UI translations: {sorted(visible - translated)}"
 
 
+def test_public_operator_and_runtime_literals_have_japanese_translations():
+    translated = set(_japanese_translations())
+    registered = set(__import__("test_registration_manifest")._class_names(
+        ROOT / "__init__.py"
+    ))
+    visible = set()
+    for path in ROOT.glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id in {"iface_", "tip_"} and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                visible.add(node.args[0].value)
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef) or node.name not in registered:
+                continue
+            for statement in node.body:
+                if (isinstance(statement, ast.Assign)
+                        and any(isinstance(target, ast.Name)
+                                and target.id in {"bl_label", "bl_description"}
+                                for target in statement.targets)
+                        and isinstance(statement.value, ast.Constant)
+                        and isinstance(statement.value.value, str)):
+                    visible.add(statement.value.value)
+    assert visible <= translated, (
+        f"Missing Japanese public translations: {sorted(visible - translated)}"
+    )
+
+
 def test_dynamic_warning_translates_template_before_formatting():
     source = (ROOT / "ui.py").read_text(encoding="utf-8")
     assert '_warning(box, "%d selected mesh object(s) have no usable UV map.",' in source

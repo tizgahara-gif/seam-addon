@@ -1,10 +1,10 @@
 # Auto Seam UV Equalizer v0.8.x
 
-Blender 5.1向けに、ZBrush / GoZから来たメッシュのシーム作成、UV展開、配置、対称転送、検証を段階的に行うアドオンです。新しいサイドバーは複合的な Quick Actions ではなく、現在の工程と作用範囲が分かる5つのセクションで構成されています。
+Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。新しいサイドバーは複合的な Quick Actions ではなく、現在の工程と作用範囲が分かる5つのセクションで構成されています。
 
 ## Installation
 
-`auto_seam_uv_equalizer.zip` を **Edit > Preferences > Add-ons > Install...** からインストールし、3D Viewの **N > Auto UV** を開きます。GitHubのソースアーカイブではなく、リリース用zipを使用してください。
+`auto_seam_uv_equalizer.zip` を **Edit > Preferences > Add-ons > Install from Disk** からインストールし、3D Viewの **N > Auto UV** を開きます。GitHubのソースアーカイブではなく、リリース用zipを使用してください。
 
 ## Five-stage panel
 
@@ -193,7 +193,7 @@ Exact Texture-X（同じTexture Source Side）
 
 ## Compatibility
 
-旧 **Auto Seam + Unwrap** と **Auto Unwrap + Pack** operator IDは`.blend`やスクリプト互換用backendとして残りますが、通常パネルには表示されません。アルゴリズム（Classic、Chart-Based、Professional Prior、Ring / Strip、Weighted BBox packing、Symmetry pairing、Exact Texture-X、Overlap detection）は変更していません。
+旧 **Auto Seam + Unwrap** と **Auto Unwrap + Pack** operator IDは`.blend`やスクリプト互換用のlegacy backendとしてのみ残ります。新規利用は推奨しません。通常の作業では5段階UIを使用してください。アルゴリズム（Classic、Chart-Based、Professional Prior、Ring / Strip、Weighted BBox packing、Symmetry pairing、Exact Texture-X、Overlap detection）は変更していません。
 
 ## Known limitations
 

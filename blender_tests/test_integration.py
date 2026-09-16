@@ -83,6 +83,35 @@ class IntegrationTests(unittest.TestCase):
                      "sync_mirrored_uv_island", "flip_selected_uv_islands"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
 
+    def test_production_operator_surface_is_exact(self):
+        registered_ids = {
+            item.bl_idname for item in addon.CLASSES
+            if getattr(item, "bl_idname", "").startswith("autoseamuv.")
+        }
+        expected_ids = {
+            "autoseamuv.analyze_seams", "autoseamuv.atlas_pack_selected_objects",
+            "autoseamuv.auto_unwrap_pack", "autoseamuv.check_uv_overlap",
+            "autoseamuv.clear_edge_tags", "autoseamuv.clear_uv_overlap_highlight",
+            "autoseamuv.clear_uv_protection", "autoseamuv.detect_ring_strip",
+            "autoseamuv.flip_selected_uv_islands", "autoseamuv.force_seam",
+            "autoseamuv.generate_seams", "autoseamuv.lock_layout_islands",
+            "autoseamuv.mark_and_unwrap", "autoseamuv.mark_finished_islands",
+            "autoseamuv.mark_only", "autoseamuv.mark_selected_region_boundary",
+            "autoseamuv.mirror_seams", "autoseamuv.pack_islands",
+            "autoseamuv.pack_selected_into_free_space", "autoseamuv.protect_seam",
+            "autoseamuv.select_finished_islands",
+            "autoseamuv.select_layout_locked_islands",
+            "autoseamuv.shared_weighted_atlas", "autoseamuv.sync_mirrored_uv_island",
+            "autoseamuv.transfer_exact_texture_x_symmetry",
+            "autoseamuv.transfer_symmetric_uv", "autoseamuv.unlock_layout_islands",
+            "autoseamuv.unmark_finished_islands", "autoseamuv.unwrap_only",
+            "autoseamuv.unwrap_ring_strip", "autoseamuv.unwrap_selected_faces",
+            "autoseamuv.validate_symmetry", "autoseamuv.validate_uv",
+            "autoseamuv.weighted_island_layout",
+        }
+        self.assertEqual(registered_ids, expected_ids)
+        self.assertEqual(len(registered_ids), 34)
+
     def test_registration_enable_disable_cycle_is_idempotent(self):
         self.assertIn(addon._on_load_post, bpy.app.handlers.load_post)
         addon.unregister()

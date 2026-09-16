@@ -177,4 +177,11 @@ class AUTOSEAMUV_OT_delete_seam_group(_GroupBase):
         m=self.mesh(c)
         if not m:return {'CANCELLED'}
         delete(m,c.scene.autoseamuv_settings.seam_group_name);return {'FINISHED'}
-CLASSES=(AUTOSEAMUV_OT_force_seam,AUTOSEAMUV_OT_protect_seam,AUTOSEAMUV_OT_clear_edge_tags,AUTOSEAMUV_OT_mirror_seams,AUTOSEAMUV_OT_seams_from_sharp,AUTOSEAMUV_OT_sharp_from_seams,AUTOSEAMUV_OT_select_seams,AUTOSEAMUV_OT_select_open_edges,AUTOSEAMUV_OT_create_seam_group,AUTOSEAMUV_OT_update_seam_group,AUTOSEAMUV_OT_apply_seam_group,AUTOSEAMUV_OT_delete_seam_group)
+# Only operators used by the five-stage production UI are registered.  The
+# legacy utility implementations above remain available for a future safe rewrite.
+CLASSES = (
+    AUTOSEAMUV_OT_force_seam,
+    AUTOSEAMUV_OT_protect_seam,
+    AUTOSEAMUV_OT_clear_edge_tags,
+    AUTOSEAMUV_OT_mirror_seams,
+)
