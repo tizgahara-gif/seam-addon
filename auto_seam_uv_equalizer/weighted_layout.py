@@ -215,8 +215,16 @@ def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=
     return result
 
 
-def plan_weighted_layout(islands, density_influence, scale_mode, texture_size,
-                         padding_pixels, target_region="FULL"):
+def resolve_weighted_padding(settings):
+    """Return the configured weighted-layout margin in UV-space units."""
+    if settings.weighted_padding_mode == "RELATIVE":
+        return max(0.0, float(settings.weighted_padding_uv))
+    resolution = max(1, int(settings.weighted_texture_resolution))
+    return max(0.0, float(settings.weighted_padding_pixels)) / resolution
+
+
+def plan_weighted_layout(islands, density_influence, scale_mode, padding_uv,
+                         target_region="FULL"):
     """Build and validate a complete pending weighted layout without UV writes."""
     if not islands:
         raise RuntimeError("no non-zero-area UV islands are in the processing scope")
@@ -224,7 +232,7 @@ def plan_weighted_layout(islands, density_influence, scale_mode, texture_size,
         [item.surface_area for item in islands], [item.face_count for item in islands],
         density_influence)
     root = target_rectangle(target_region)
-    padding = max(0.0, float(padding_pixels)) / max(1, int(texture_size))
+    padding = max(0.0, float(padding_uv))
     bbox_areas = [(item.source_bounds[2] - item.source_bounds[0]) *
                   (item.source_bounds[3] - item.source_bounds[1]) for item in islands]
     packing_weights = ([weight * bbox_area / item.uv_area
@@ -293,18 +301,18 @@ def apply_weighted_plan(pending):
         mesh.update()
 
 
-def weighted_layout_object(obj, density_influence, scale_mode, texture_size,
-                           padding_pixels, scope="SELECTED_FACES", target_region="FULL") -> LayoutReport:
+def weighted_layout_object(obj, density_influence, scale_mode, padding_uv,
+                           scope="SELECTED_FACES", target_region="FULL") -> LayoutReport:
     """Lay out one object's active-map islands (the backward-compatible wrapper)."""
     islands = collect_weighted_islands(obj, scope)
     pending, report = plan_weighted_layout(
-        islands, density_influence, scale_mode, texture_size, padding_pixels, target_region)
+        islands, density_influence, scale_mode, padding_uv, target_region)
     apply_weighted_plan(pending)
     return report
 
 
-def shared_weighted_layout(objects, density_influence, scale_mode, texture_size,
-                           padding_pixels, scope="SELECTED_FACES", target_region="FULL",
+def shared_weighted_layout(objects, density_influence, scale_mode, padding_uv,
+                           scope="SELECTED_FACES", target_region="FULL",
                            selected_faces_by_mesh=None):
     """Collect every object's islands into one deterministic global atlas transaction."""
     selected_faces_by_mesh = selected_faces_by_mesh or {}
@@ -320,7 +328,7 @@ def shared_weighted_layout(objects, density_influence, scale_mode, texture_size,
                  for mesh in meshes}
     try:
         pending, report = plan_weighted_layout(
-            islands, density_influence, scale_mode, texture_size, padding_pixels, target_region)
+            islands, density_influence, scale_mode, padding_uv, target_region)
         apply_weighted_plan(pending)
     except Exception:
         for mesh, values in snapshots.items():

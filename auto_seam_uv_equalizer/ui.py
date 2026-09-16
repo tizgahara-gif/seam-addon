@@ -196,10 +196,16 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         weighted.label(text="Weighted Island Layout")
         weighted.prop(settings, "weighted_scope", text="Scope")
         weighted.prop(settings, "weighted_target_region", text="Target UV Region")
-        weighted.prop(settings, "weighted_density_influence", text="Density Influence")
         weighted.prop(settings, "weighted_scale_mode", text="Scale Mode")
-        weighted.prop(settings, "weighted_texture_size", text="Texture Size")
-        weighted.prop(settings, "weighted_padding_pixels", text="Padding Pixels")
+        weighted.prop(settings, "weighted_density_influence", text="Density Influence")
+        weighted.separator()
+        weighted.label(text="Padding")
+        weighted.prop(settings, "weighted_padding_mode", text="Mode")
+        if settings.weighted_padding_mode == "RELATIVE":
+            weighted.prop(settings, "weighted_padding_uv", text="UV Margin")
+        else:
+            weighted.prop(settings, "weighted_padding_pixels", text="Padding")
+            weighted.prop(settings, "weighted_texture_resolution", text="Texture Resolution")
         if settings.weighted_scope == "SELECTED_FACES" and not edit_mode:
             _warning(weighted, "Selected UV Islands requires Edit Mode.")
         action = weighted.row()

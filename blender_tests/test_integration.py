@@ -108,6 +108,8 @@ class IntegrationTests(unittest.TestCase):
                 settings["margin"] = 0.01 + index * 0.01
                 settings["mirror_axis"] = "Y"
                 settings["symmetry_tolerance"] = 0.002 + index * 0.001
+                settings["weighted_texture_size"] = 2048
+                settings["weighted_padding_pixels"] = 8
 
             self.assertIsNone(addon._deferred_migrate_current_file())
             for index, scene in enumerate(scenes):
@@ -117,6 +119,9 @@ class IntegrationTests(unittest.TestCase):
                 self.assertEqual(settings.mesh_symmetry_axis, "Y")
                 self.assertAlmostEqual(settings.mesh_symmetry_tolerance,
                                        0.002 + index * 0.001)
+                self.assertEqual(settings.weighted_padding_mode, "PIXELS")
+                self.assertEqual(settings.weighted_padding_pixels, 8)
+                self.assertEqual(settings.weighted_texture_resolution, "2048")
 
             # Stored current values win on every later migration invocation.
             scenes[0].autoseamuv_settings.unwrap_margin = 0.25
@@ -329,7 +334,9 @@ class IntegrationTests(unittest.TestCase):
         settings.weighted_density_influence = 0.0
         settings.weighted_scale_mode = "ALLOCATE_BY_IMPORTANCE"
         settings.weighted_target_region = "LEFT_HALF"
-        settings.weighted_padding_pixels = 0
+        settings.weighted_padding_mode = "PIXELS"
+        settings.weighted_padding_pixels = 8
+        settings.weighted_texture_resolution = "2048"
         self.assertEqual(bpy.ops.autoseamuv.shared_weighted_atlas(), {"FINISHED"})
         areas, bounds = [], []
         for obj in (large, small):
@@ -343,6 +350,25 @@ class IntegrationTests(unittest.TestCase):
         a, b = bounds
         self.assertTrue(a[1] <= b[0] + 1.0e-7 or b[1] <= a[0] + 1.0e-7
                         or a[3] <= b[2] + 1.0e-7 or b[3] <= a[2] + 1.0e-7)
+
+        pixel_result = tuple(
+            tuple(tuple(item.vector) for item in obj.data.uv_layers.active.uv)
+            for obj in (large, small))
+        for obj in (large, small):
+            for item, uv in zip(obj.data.uv_layers.active.uv,
+                                ((0,0),(1,0),(1,1),(0,1))):
+                item.vector = uv
+        settings.weighted_padding_mode = "RELATIVE"
+        settings.weighted_padding_uv = 8 / 2048
+        settings.weighted_texture_resolution = "8192"
+        self.assertEqual(bpy.ops.autoseamuv.shared_weighted_atlas(), {"FINISHED"})
+        relative_result = tuple(
+            tuple(tuple(item.vector) for item in obj.data.uv_layers.active.uv)
+            for obj in (large, small))
+        for pixel_object, relative_object in zip(pixel_result, relative_result):
+            for pixel_uv, relative_uv in zip(pixel_object, relative_object):
+                self.assertAlmostEqual(pixel_uv[0], relative_uv[0], places=6)
+                self.assertAlmostEqual(pixel_uv[1], relative_uv[1], places=6)
 
     def test_shared_weighted_atlas_transaction_and_linked_mesh_policy(self):
         first = mesh_object("SharedRollbackA", [(0,0,0),(1,0,0),(1,1,0),(0,1,0)],

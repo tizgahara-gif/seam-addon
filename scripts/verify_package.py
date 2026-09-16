@@ -28,6 +28,9 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "weighted_density_influence",
         "weighted_target_region",
         "weighted_scale_mode",
+        "weighted_padding_mode",
+        "weighted_padding_uv",
+        "weighted_texture_resolution",
         "weighted_padding_pixels",
         "include_open_boundaries",
         "symmetry_layout",
@@ -59,6 +62,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "def calculate_weights", "def importance_boxes", "def pack_importance_boxes",
         "def _maxrects_pack", "def weighted_layout_object", "def collect_weighted_islands",
         "def plan_weighted_layout", "def apply_weighted_plan", "def shared_weighted_layout",
+        "def resolve_weighted_padding",
         "DENSITY_MIN = 0.25", "DENSITY_MAX = 4.0", "find_uv_islands",
     ),
     "auto_seam_uv_equalizer/operators.py": (
