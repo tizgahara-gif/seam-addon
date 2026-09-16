@@ -201,6 +201,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Density Influence", default=0.25, min=0.0, max=1.0,
         description="Influence of median-normalized polygon density on island importance",
     )
+    weighted_allow_rotation: BoolProperty(
+        name="Allow 90° Island Rotation",
+        default=False,
+        description=("Allows UV islands to rotate by 90 degrees during weighted packing "
+                     "when doing so improves placement efficiency. Island scale and "
+                     "importance are preserved"),
+    )
     weighted_target_region: EnumProperty(
         name="Target UV Region",
         description="Choose which part of the 0-1 UV space the weighted layout may use.",
