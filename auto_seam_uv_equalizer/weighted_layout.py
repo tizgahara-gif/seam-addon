@@ -161,13 +161,16 @@ def target_rectangle(target_region):
         raise ValueError(f"unknown target UV region: {target_region}") from exc
 
 
-def _world_polygon_area(obj, polygon):
-    points = [obj.matrix_world @ obj.data.vertices[index].co for index in polygon.vertices]
-    if len(points) < 3:
-        return 0.0
-    origin = points[0]
-    return sum((points[index] - origin).cross(points[index + 1] - origin).length * 0.5
-               for index in range(1, len(points) - 1))
+def world_polygon_areas(obj):
+    """Return robust world-space areas using Blender's n-gon tessellation."""
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    world_positions = [obj.matrix_world @ vertex.co for vertex in mesh.vertices]
+    areas = [0.0] * len(mesh.polygons)
+    for triangle in mesh.loop_triangles:
+        p0, p1, p2 = (world_positions[index] for index in triangle.vertices)
+        areas[triangle.polygon_index] += (p1 - p0).cross(p2 - p0).length * 0.5
+    return areas
 
 
 def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=None):
@@ -177,6 +180,7 @@ def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=
     if uv_layer is None:
         raise RuntimeError("Weighted Island Layout requires an active UV map.")
     _, _, loop_to_face, _ = build_mesh_topology(mesh)
+    polygon_areas = world_polygon_areas(obj)
     selected = (set(selected_face_indices) if selected_face_indices is not None else
                 {polygon.index for polygon in mesh.polygons if polygon.select})
     result = []
@@ -186,7 +190,7 @@ def collect_weighted_islands(obj, scope="SELECTED_FACES", selected_face_indices=
             continue
         if not faces:
             continue
-        area = sum(_world_polygon_area(obj, mesh.polygons[index]) for index in faces)
+        area = sum(polygon_areas[index] for index in faces)
         if not math.isfinite(area) or area <= EPSILON:
             continue
         island = IslandLayout(faces, tuple(sorted(loops)), area, len(faces), len(faces) / area)

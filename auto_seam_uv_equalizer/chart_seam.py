@@ -203,6 +203,7 @@ class ChartAnalysis:
     cut_costs: dict[int, float]
     quality: dict[int, float]
     iterations: int = 0
+    debug_metrics: dict[str, int] | None = None
 
 
 def face_adjacency(mesh, edge_faces):
@@ -357,6 +358,17 @@ def cached_uv_analysis_evaluators(unwrap_snapshot, quality_from_snapshot,
         if key not in distortion_cache:
             distortion_cache[key] = distortion_from_snapshot(state, chart)
         return distortion_cache[key]
+    stats = {"unique_cut_states_unwrapped": 0}
+    original_snapshot = snapshot
+    def measured_snapshot(cuts):
+        before = len(uv_state_cache)
+        result = original_snapshot(cuts)
+        stats["unique_cut_states_unwrapped"] += len(uv_state_cache) - before
+        return result
+    # Both evaluators close over the same cell only when it is rebound here.
+    snapshot = measured_snapshot
+    quality.cache_stats = stats
+    distortion.cache_stats = stats
     return quality, distortion
 
 
@@ -470,10 +482,12 @@ def _edge_distance(graph, sources, limit):
 
 
 def structural_candidate_paths(mesh, chart, edge_faces, force_set, protect_set,
-                               settings, minimum_length=2):
+                               settings, minimum_length=2, candidate_edges=None):
     """Return unbranched connected material/30-degree/Force structural chains."""
     selected = set()
-    for index, faces in edge_faces.items():
+    indices = edge_faces if candidate_edges is None else candidate_edges
+    for index in indices:
+        faces = edge_faces.get(index, ())
         if (index in protect_set or len(faces) != 2 or
                 not set(faces).issubset(chart)):
             continue
@@ -506,6 +520,29 @@ def structural_candidate_paths(mesh, chart, edge_faces, force_set, protect_set,
         if len(component) >= minimum_length and max(degrees_by_vertex.values(), default=0) <= 2:
             components.append(frozenset(component))
     return tuple(sorted(components, key=lambda path: (min(path), len(path))))
+
+
+def candidate_path_to_anchor(mesh, seed_edge, chart_edges, chart_anchors,
+                             vertex_graph, costs, max_hops, straightness_bias):
+    """Complete *seed_edge* to this chart's anchor without leaving the chart.
+
+    An empty path is meaningful only when the seed already touches an anchor;
+    otherwise it denotes a failed Dijkstra search and must not consume a trial.
+    """
+    seed_vertices = set(seed_edge.vertices)
+    if seed_vertices & chart_anchors:
+        return {seed_edge.index}
+    goals = chart_anchors - seed_vertices
+    if not goals:
+        return None
+    path = shortest_path(
+        vertex_graph, seed_edge.vertices, goals,
+        lambda index: (costs.get(index, float("inf"))
+                       if index in chart_edges else float("inf")),
+        max_hops, [vertex.co for vertex in mesh.vertices], straightness_bias)
+    if not path:
+        return None
+    return {seed_edge.index, *path}
 
 
 def path_professional_prior(mesh, path, edge_faces, settings, visibility_override=None):
@@ -569,6 +606,24 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
     preset = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"])
     effective_edge_penalty = settings.seam_count_penalty * (1.0 + preset.seam_penalty)
     graph = face_adjacency(mesh, edge_faces)
+    face_edges = defaultdict(set)
+    for edge_index, faces in edge_faces.items():
+        for face_index in faces:
+            face_edges[face_index].add(edge_index)
+    eligible_manifold_edges = frozenset(
+        index for index, faces in edge_faces.items() if len(faces) == 2)
+    open_boundary_vertices = {
+        vertex for edge_index, faces in edge_faces.items() if len(faces) != 2
+        for vertex in mesh.edges[edge_index].vertices
+    }
+    metrics = {
+        "candidate_edge_scans": 0,
+        "distortion_candidate_edge_scans": 0,
+        "distortion_candidates_generated": 0,
+        "distortion_candidates_trialed": 0,
+        "standard_candidates_trialed": 0,
+        "unique_cut_states_unwrapped": 0,
+    }
     vertex_graph = defaultdict(list)
     for edge in mesh.edges:
         a, b = edge.vertices
@@ -606,6 +661,12 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
             distortion_paths = []
             professional = getattr(settings, "use_professional_garment_prior", True)
             sleeve = settings.seam_preset == "CYLINDER" and bool(preferred_paths)
+            chart_edge_candidates = set().union(
+                *(face_edges.get(face, ()) for face in chart)) if chart else set()
+            chart_edges = {
+                index for index in chart_edge_candidates
+                if edge_faces.get(index) and set(edge_faces[index]).issubset(chart)
+            }
             for path in preferred_paths:
                 path = set(path)
                 if path and not path & protect_set and path - cuts and all(
@@ -620,12 +681,14 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
             if professional:
                 for path in structural_candidate_paths(
                         mesh, chart, edge_faces, force_set, protect_set, settings,
-                        max(2, min(3, settings.seam_minimum_spacing))):
+                        max(2, min(3, settings.seam_minimum_spacing)), chart_edges):
                     if path - cuts:
                         score = path_professional_prior(mesh, path, edge_faces, settings)
                         professional_paths.append((
                             completed_path_rank(path, costs, score), min(path), set(path)))
-            for edge_index, faces in edge_faces.items():
+            metrics["candidate_edge_scans"] += len(chart_edges)
+            for edge_index in chart_edges:
+                faces = edge_faces[edge_index]
                 if len(faces) != 2 or not set(faces).issubset(chart) or edge_index in cuts or edge_index in protect_set:
                     continue
                 if min(distance.get(faces[0], 10**9), distance.get(faces[1], 10**9)) < max(settings.seam_minimum_spacing, preset.spacing):
@@ -636,19 +699,22 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                 ranked.append((costs[edge_index] + length * .01 - prior, edge_index))
             before = qualities[min(chart)]
             anchors = {vertex for edge_index in cuts for vertex in mesh.edges[edge_index].vertices}
-            anchors.update(vertex for edge_index, faces in edge_faces.items() if len(faces) != 2
-                           for vertex in mesh.edges[edge_index].vertices)
-            chart_anchors = {vertex for vertex in anchors if any(
-                edge_index in {index for index, faces in edge_faces.items()
-                               if set(faces).issubset(chart)}
-                for _other, edge_index in vertex_graph.get(vertex, ()))}
+            anchors.update(open_boundary_vertices)
+            chart_vertices = {vertex for index in chart_edges
+                              for vertex in mesh.edges[index].vertices}
+            chart_anchors = anchors & chart_vertices
             if (getattr(settings, "use_distortion_guided_candidates", True) and
                     distortion_evaluator is not None and chart_anchors):
                 scores = distortion_evaluator(chart, cuts)
                 for cluster in distortion_hot_clusters(scores, graph, cuts):
                     boundary = []
                     incident = []
-                    for edge_index, faces in edge_faces.items():
+                    cluster_edges = set().union(
+                        *(face_edges.get(face, ()) for face in cluster)) if cluster else set()
+                    cluster_edges.intersection_update(chart_edges)
+                    metrics["distortion_candidate_edge_scans"] += len(cluster_edges)
+                    for edge_index in cluster_edges:
+                        faces = edge_faces[edge_index]
                         if (len(faces) != 2 or not set(faces).issubset(chart) or
                                 edge_index in cuts or edge_index in protect_set):
                             continue
@@ -667,14 +733,16 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     if not pool:
                         continue
                     chosen = min(pool)[2]; seed = mesh.edges[chosen]
-                    path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
-                                         lambda index: costs.get(index, 1.0), settings.seam_search_radius,
-                                         [vertex.co for vertex in mesh.vertices],
-                                         settings.straightness_bias * preset.straightness)
-                    split = {chosen, *path}
+                    split = candidate_path_to_anchor(
+                        mesh, seed, chart_edges, chart_anchors, vertex_graph, costs,
+                        settings.seam_search_radius,
+                        settings.straightness_bias * preset.straightness)
+                    if split is None:
+                        continue
                     if split - cuts and not split & protect_set:
                         score = path_professional_prior(mesh, split, edge_faces, settings) if professional else 0.0
                         distortion_paths.append((completed_path_rank(split, costs, score), chosen, split))
+                        metrics["distortion_candidates_generated"] += 1
             # Tier 2 is deliberately kept separate: professional candidates can
             # never starve a closed-chart geodesic fallback.
             bootstrap = set()
@@ -685,11 +753,12 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     settings.straightness_bias * preset.straightness)
             for _seed_prefilter_rank, chosen in sorted(ranked)[:SEED_POOL_LIMIT]:
                 seed = mesh.edges[chosen]
-                path = shortest_path(vertex_graph, seed.vertices, anchors - set(seed.vertices),
-                                     lambda index: costs.get(index, 1.0), settings.seam_search_radius,
-                                     [vertex.co for vertex in mesh.vertices],
-                                     settings.straightness_bias * preset.straightness)
-                split = {chosen, *path}
+                split = candidate_path_to_anchor(
+                    mesh, seed, chart_edges, chart_anchors, vertex_graph, costs,
+                    settings.seam_search_radius,
+                    settings.straightness_bias * preset.straightness)
+                if split is None:
+                    continue
                 path_prior = path_professional_prior(mesh, split, edge_faces, settings) if professional else 0.0
                 professional_paths.append((
                     completed_path_rank(split, costs, path_prior), chosen, split))
@@ -701,9 +770,14 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                     for rank, chosen, path in professional_paths
                 ]
 
+            distortion_sets = {frozenset(item[2]) for item in distortion_paths}
             def try_paths(paths):
                 nonlocal best_trial
                 for _rank, chosen, original_split in paths:
+                    metric = ("distortion_candidates_trialed"
+                              if frozenset(original_split) in distortion_sets
+                              else "standard_candidates_trialed")
+                    metrics[metric] += 1
                     split, is_pair = mirror_pair_path(
                         original_split, mirror_edges if professional else None, protect_set)
                     # Non-paired candidates may discard only their own protected
@@ -727,8 +801,8 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
                         descendants = [part for part in trial_charts if part.issubset(chart)]
                         after = max((evaluator(part, trial_cuts) for part in descendants),
                                     default=before_trial)
-                    eligible_edges = {index for index, faces in edge_faces.items() if len(faces) == 2}
-                    seam_ratio = len((cuts | new_edges) & eligible_edges) / max(1, len(eligible_edges))
+                    seam_ratio = (len((cuts | new_edges) & eligible_manifold_edges) /
+                                  max(1, len(eligible_manifold_edges)))
                     sparse = (garment_sparsity_penalty(seam_ratio)
                               if professional and settings.seam_preset in {"ORGANIC", "CYLINDER"}
                               else 0.0)
@@ -760,6 +834,9 @@ def analyze(mesh, edge_faces, force, protect, settings, quality_evaluator=None,
     charts = segment_faces(len(mesh.polygons), graph, cuts)
     qualities = {min(chart): evaluator(chart, cuts) for chart in charts}
     bad = [chart for chart in charts if qualities[min(chart)] > settings.max_chart_distortion]
+    stats = getattr(evaluator, "cache_stats", None)
+    if stats:
+        metrics["unique_cut_states_unwrapped"] = stats["unique_cut_states_unwrapped"]
     return ChartAnalysis((len(mesh.vertices), len(mesh.edges), len(mesh.polygons)), charts, bad,
                          candidates | force_set, cuts, protect_set, force_set, costs,
-                         qualities, completed_iterations)
+                         qualities, completed_iterations, metrics)

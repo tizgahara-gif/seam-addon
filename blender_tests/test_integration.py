@@ -9,7 +9,7 @@ import bmesh
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
-from auto_seam_uv_equalizer import operators
+from auto_seam_uv_equalizer import operators, weighted_layout
 from auto_seam_uv_equalizer.symmetry import build_symmetry_plan
 from auto_seam_uv_equalizer.weighted_layout import pack_importance_boxes
 
@@ -74,6 +74,7 @@ class IntegrationTests(unittest.TestCase):
     def test_operator_registration(self):
         for name in ("mark_selected_region_boundary", "mark_only", "mark_and_unwrap",
                      "unwrap_only", "weighted_island_layout", "pack_islands", "auto_unwrap_pack",
+                     "shared_weighted_atlas",
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
                      "validate_symmetry", "transfer_symmetric_uv",
                      "transfer_exact_texture_x_symmetry"):
@@ -156,6 +157,66 @@ class IntegrationTests(unittest.TestCase):
             self.assertAlmostEqual(areas[0] / areas[1], 4.0, places=6)
             self.assertGreater(sum(areas), minimum_utilization)
             self.assertLessEqual(rectangles[0][2], rectangles[1][0] + 1e-9)
+
+    def test_shared_weighted_atlas_area_ratio_left_half_and_no_overlap(self):
+        large = mesh_object("SharedLarge", [(0,0,0),(2,0,0),(2,2,0),(0,2,0)],
+                            [(0,1,2,3)])
+        small = mesh_object("SharedSmall", [(3,0,0),(4,0,0),(4,1,0),(3,1,0)],
+                            [(0,1,2,3)])
+        for obj in (large, small):
+            layer = obj.data.uv_layers.new(name="UVMap")
+            for item, uv in zip(layer.uv, ((0,0),(1,0),(1,1),(0,1))):
+                item.vector = uv
+            obj.select_set(True)
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.weighted_scope = "WHOLE_OBJECT"
+        settings.weighted_density_influence = 0.0
+        settings.weighted_scale_mode = "ALLOCATE_BY_IMPORTANCE"
+        settings.weighted_target_region = "LEFT_HALF"
+        settings.weighted_padding_pixels = 0
+        self.assertEqual(bpy.ops.autoseamuv.shared_weighted_atlas(), {"FINISHED"})
+        areas, bounds = [], []
+        for obj in (large, small):
+            uvs = tuple(tuple(item.vector) for item in obj.data.uv_layers.active.uv)
+            areas.append(uv_area(uvs)); bounds.append(uv_bounds(uvs))
+            self.assertGreaterEqual(bounds[-1][0], -1.0e-7)
+            self.assertLessEqual(bounds[-1][1], 0.5 + 1.0e-7)
+            self.assertGreaterEqual(bounds[-1][2], -1.0e-7)
+            self.assertLessEqual(bounds[-1][3], 1.0 + 1.0e-7)
+        self.assertAlmostEqual(areas[0] / areas[1], 4.0, places=5)
+        a, b = bounds
+        self.assertTrue(a[1] <= b[0] + 1.0e-7 or b[1] <= a[0] + 1.0e-7
+                        or a[3] <= b[2] + 1.0e-7 or b[3] <= a[2] + 1.0e-7)
+
+    def test_shared_weighted_atlas_transaction_and_linked_mesh_policy(self):
+        first = mesh_object("SharedRollbackA", [(0,0,0),(1,0,0),(1,1,0),(0,1,0)],
+                            [(0,1,2,3)])
+        second = mesh_object("SharedRollbackB", [(2,0,0),(3,0,0),(3,1,0),(2,1,0)],
+                             [(0,1,2,3)])
+        for obj in (first, second):
+            layer = obj.data.uv_layers.new(name="UVMap")
+            for item, uv in zip(layer.uv, ((0,0),(1,0),(1,1),(0,1))): item.vector = uv
+            obj.select_set(True)
+        before = {obj.name: tuple(tuple(item.vector) for item in obj.data.uv_layers.active.uv)
+                  for obj in (first, second)}
+        original_apply = weighted_layout.apply_weighted_plan
+        weighted_layout.apply_weighted_plan = lambda _pending: (_ for _ in ()).throw(
+            RuntimeError("intentional shared rollback fixture"))
+        try:
+            self.assertEqual(bpy.ops.autoseamuv.shared_weighted_atlas(), {"CANCELLED"})
+        finally:
+            weighted_layout.apply_weighted_plan = original_apply
+        self.assertEqual(before, {
+            obj.name: tuple(tuple(item.vector) for item in obj.data.uv_layers.active.uv)
+            for obj in (first, second)})
+
+        linked = bpy.data.objects.new("SharedLinked", first.data)
+        bpy.context.collection.objects.link(linked); linked.select_set(True)
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.process_shared_mesh_once = False
+        self.assertEqual(bpy.ops.autoseamuv.shared_weighted_atlas(), {"CANCELLED"})
+        settings.process_shared_mesh_once = True
+        self.assertEqual(bpy.ops.autoseamuv.shared_weighted_atlas(), {"FINISHED"})
 
     def test_weighted_layout_and_pack_preserve_mesh_and_edit_selection(self):
         obj = mesh_object(

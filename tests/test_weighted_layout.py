@@ -37,6 +37,43 @@ def test_density_influence_zero():
     assert weights == [2.0, 2.0]
 
 
+def test_world_polygon_areas_uses_loop_triangles_for_concave_ngon():
+    module = _load_primitives()
+
+    class Identity:
+        def __matmul__(self, value):
+            return value
+
+    class Vec:
+        def __init__(self, x, y, z=0.0):
+            self.x, self.y, self.z = x, y, z
+        def __sub__(self, other):
+            return Vec(self.x - other.x, self.y - other.y, self.z - other.z)
+        def cross(self, other):
+            return Vec(self.y * other.z - self.z * other.y,
+                       self.z * other.x - self.x * other.z,
+                       self.x * other.y - self.y * other.x)
+        @property
+        def length(self):
+            return math.sqrt(self.x ** 2 + self.y ** 2 + self.z ** 2)
+
+    # Concave arrow: a fan from vertex zero would overlap; Blender's supplied
+    # tessellation covers it as three non-overlapping triangles (area 3).
+    vertices = [(0, 0), (2, 0), (2, 2), (1, 1), (0, 2)]
+    mesh = types.SimpleNamespace(
+        vertices=[types.SimpleNamespace(co=Vec(*co)) for co in vertices],
+        polygons=[object()],
+        loop_triangles=[
+            types.SimpleNamespace(vertices=(0, 1, 3), polygon_index=0),
+            types.SimpleNamespace(vertices=(1, 2, 3), polygon_index=0),
+            types.SimpleNamespace(vertices=(0, 3, 4), polygon_index=0),
+        ],
+        calc_loop_triangles=lambda: None,
+    )
+    obj = types.SimpleNamespace(data=mesh, matrix_world=Identity())
+    assert module.world_polygon_areas(obj) == [3.0]
+
+
 def test_density_normalization_is_clamped():
     module = _load_primitives()
     _, normalized, _ = module.calculate_weights([1.0, 1.0], [1, 1_000_000], 1.0)
