@@ -12,6 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
 from auto_seam_uv_equalizer import operators, weighted_layout
 from auto_seam_uv_equalizer.symmetry import build_symmetry_plan
+from auto_seam_uv_equalizer.uv_validation import triangles_from_object, validate_object
 from auto_seam_uv_equalizer.weighted_layout import pack_importance_boxes
 
 
@@ -280,6 +281,51 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.autoseamuv.validate_uv(), {"FINISHED"})
         bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
         self.assertEqual({face.index for face in bm.faces if face.select}, {1})
+
+    def test_uv_snapshot_object_edit_equality_scale_metrics_and_concave_ngon(self):
+        """Exercise Blender 5.1 RNA snapshots, including Edit Mode flushing."""
+        obj = mesh_object(
+            "SnapshotQuality",
+            [(0, 0, 0), (1, 0, 0), (0, 1, 0),
+             (2, 0, 0), (3, 0, 0), (2, 1, 0),
+             (4, 0, 0), (5, 0, 0), (6, 0, 0)],
+            [(0, 1, 2), (3, 4, 5), (6, 7, 8)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        values = ((0, 0), (1, 0), (0, 1),       # perfect
+                  (0, 0), (0, 1), (1, 0),       # flipped
+                  (0, 0), (1, 0), (2, 0))       # zero area
+        for item, uv in zip(layer.uv, values):
+            item.vector = uv
+        object_result = validate_object(obj)
+        self.assertEqual(object_result["flipped"], {1})
+        self.assertEqual(object_result["zero"], {2})
+        self.assertAlmostEqual(object_result["average_stretch"], 1.0)
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        edit_result = validate_object(obj)
+        for key in ("flipped", "zero", "average_stretch", "max_stretch",
+                    "summed_uv_area"):
+            self.assertEqual(edit_result[key], object_result[key])
+        # Overlap validation consumes the exact same Edit Mode-safe snapshot.
+        self.assertEqual(len(triangles_from_object(obj, 1.0e-10)), 2)
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        concave = mesh_object(
+            "ConcaveSnapshot",
+            [(0, 0, 0), (2, 0, 0), (2, 2, 0), (1, 1, 0), (0, 2, 0)],
+            [(0, 1, 2, 3, 4)],
+        )
+        concave_layer = concave.data.uv_layers.new(name="UVMap")
+        for item, uv in zip(concave_layer.uv,
+                            ((0, 0), (2, 0), (2, 2), (1, 1), (0, 2))):
+            item.vector = uv
+        concave.data.calc_loop_triangles()
+        expected_count = len(concave.data.loop_triangles)
+        self.assertGreater(expected_count, 1)
+        self.assertEqual(len(triangles_from_object(concave, 1.0e-10)),
+                         expected_count)
+        self.assertEqual(validate_object(concave)["zero"], set())
 
     def test_weighted_selected_uv_islands_expands_partial_face_seed(self):
         obj = mesh_object("IslandScope",

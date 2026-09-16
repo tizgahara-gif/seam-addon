@@ -131,6 +131,9 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
     ),
     "auto_seam_uv_equalizer/uv_validation.py": (
         "mesh.loop_triangles",
+        "def build_uv_triangle_snapshot",
+        "def validate_snapshot",
+        "class UVValidationError",
         "def find_overlaps",
         "def _candidate_pairs",
     ),

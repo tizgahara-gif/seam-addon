@@ -73,7 +73,7 @@ performed. UVs outside the 0–1 range and zero-width islands are supported.
 
 ### 5. Validation
 
-**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、coverageなどを検査してLast Quality Reportへ表示し、flipped / zero-area面を結果として選択します。
+**Check Overlap** は問題面を非破壊的に選択し、マテリアルを変更しません。Check Across ObjectsがONなら共有atlasを想定して異なる選択オブジェクト間も比較し、OFFなら各オブジェクト内部だけを検査します。結果は **Clear Overlap Selection** で解除できます。**Run UV Quality Check** はstretch、flipped face、zero-area face、UV triangle面積合計などを検査してLast Quality Reportへ表示し、flipped / zero-area面を結果として選択します。
 
 ## Recommended workflow
 
