@@ -14,6 +14,7 @@ _TRANSLATION_STATE_KEY = f"{TRANSLATION_DOMAIN}.registered"
 
 _JA_JP = {
     "Processing Options": "処理設定",
+    "Show Helper Comments": "補助コメントを表示",
     "Candidate Search": "候補探索",
     "Garment Prior": "衣装事前評価",
     "Seam Assist": "シーム補助",

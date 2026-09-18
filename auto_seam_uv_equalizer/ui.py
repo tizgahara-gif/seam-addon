@@ -40,8 +40,30 @@ def _warning(layout, text, *values):
     row.label(text=iface_(text, *values), icon="ERROR")
 
 
-def _info(layout, text):
-    layout.label(text=iface_(text), icon="INFO")
+def _error(layout, text, *values):
+    """Draw an unconditional blocking/error state."""
+    row = layout.row()
+    row.alert = True
+    row.label(text=iface_(text, *values), icon="CANCEL")
+
+
+def _helper_comment(layout, settings, text, icon="INFO"):
+    """Draw optional explanatory copy, never safety or state information."""
+    if settings.show_helper_comments:
+        layout.label(text=iface_(text), icon=icon)
+
+
+def _stage_header(box, settings, property_name, text):
+    """Draw a standard disclosure header and return its independent state."""
+    expanded = getattr(settings, property_name)
+    box.prop(
+        settings,
+        property_name,
+        text=text,
+        icon="TRIA_DOWN" if expanded else "TRIA_RIGHT",
+        emboss=False,
+    )
+    return expanded
 
 
 class AUTOSEAMUV_PT_panel(bpy.types.Panel):
@@ -67,9 +89,11 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         status.label(text=iface_("Unique Mesh Data: %d") %
                      len({obj.data.as_pointer() for obj in meshes}))
         if active_uv is None:
-            _warning(status, "No active UV map.")
-            _info(status, "Selected Objects unwrap can create the configured UV map.")
-            _info(status, "Selected UV Islands requires an existing active UV map.")
+            _error(status, "No active UV map.")
+            _helper_comment(status, settings, "Selected Objects unwrap can create the configured UV map.")
+            _helper_comment(status, settings, "Selected UV Islands requires an existing active UV map.")
+
+        status.prop(settings, "show_helper_comments")
 
         status.prop(settings, "show_processing_options", toggle=True)
         if settings.show_processing_options:
@@ -85,7 +109,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     @staticmethod
     def _draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges):
         box = layout.box()
-        box.label(text="1. Seam", icon="MOD_UVPROJECT")
+        if not _stage_header(box, settings, "show_stage_seam", "1. Seam"):
+            return
         box.prop(settings, "seam_mode", text="Mode")
         box.label(text="Scope: Selected Objects")
         if settings.seam_mode == "CLASSIC":
@@ -105,7 +130,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 "CYLINDER": "Topology-flow longitudinal seams prioritized.",
                 "MANUAL": "Force / Protect / existing seams prioritized.",
             }
-            box.label(text=iface_(descriptions[settings.seam_preset]), icon="INFO")
+            _helper_comment(box, settings, descriptions[settings.seam_preset])
             row = box.row(align=True)
             row.operator("autoseamuv.analyze_seams", text="Analyze Seams", icon="VIEWZOOM")
             row.operator("autoseamuv.generate_seams", text="Generate Seams", icon="MOD_UVPROJECT")
@@ -176,7 +201,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     @staticmethod
     def _draw_unwrap(layout, settings, edit_mode, active_uv, context):
         box = layout.box()
-        box.label(text="2. Unwrap", icon="UV")
+        if not _stage_header(box, settings, "show_stage_unwrap", "2. Unwrap"):
+            return
         box.prop(settings, "unwrap_method", text="Method")
         box.prop(settings, "unwrap_margin_method", text="Margin Method")
         if settings.unwrap_margin_method == "FRACTION":
@@ -192,7 +218,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if not edit_mode:
             _warning(box, "Selected UV Islands requires Edit Mode.")
         elif selected_face_count == 0:
-            _info(box, "Select at least one face to seed UV islands.")
+            _warning(box, "Select at least one face to seed UV islands.")
         elif active_uv is None:
             _warning(box, "Unwrap Selected UV Islands requires an existing active UV map.")
         box.operator("autoseamuv.unwrap_only", text="Unwrap Selected Objects", icon="UV")
@@ -202,8 +228,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             post = box.column(align=True)
             post.prop(settings, "uv_map_name", text="UV Map Name")
             post.prop(settings, "create_uv_if_missing", text="Create UV If Missing")
-            post.label(text="Named settings apply to Selected Objects and Ring / Strip.", icon="INFO")
-            post.label(text="Selected UV Islands always uses Active UV and never creates one.", icon="INFO")
+            _helper_comment(post, settings, "Named settings apply to Selected Objects and Ring / Strip.")
+            _helper_comment(post, settings, "Selected UV Islands always uses Active UV and never creates one.")
 
         box.prop(settings, "show_post_unwrap", toggle=True)
         if settings.show_post_unwrap:
@@ -229,7 +255,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     @staticmethod
     def _draw_layout(layout, settings, meshes, active_uv, edit_mode, context):
         box = layout.box()
-        box.label(text="3. Layout", icon="UV")
+        if not _stage_header(box, settings, "show_stage_layout", "3. Layout"):
+            return
         protection = box.column(align=True)
         protection.label(text="UV Protection", icon="LOCKED")
         protection.label(text="Target: Active Object", icon="INFO")
@@ -249,7 +276,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             row.operator("autoseamuv.select_layout_locked_islands", text="Select Layout Locked")
             protection.operator("autoseamuv.clear_uv_protection", text="Clear UV Protection")
         if edit_mode and active_uv is not None and not has_faces:
-            _info(protection, "Select at least one face to seed UV islands.")
+            _warning(protection, "Select at least one face to seed UV islands.")
         protection.separator()
         preflight = resolve_layout_targets(context)
         if len(meshes) > 1 or preflight["missing_uv_count"]:
@@ -284,7 +311,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if settings.weighted_scope == "SELECTED_FACES" and not edit_mode:
             _warning(weighted, "Selected UV Islands requires Edit Mode.")
         elif settings.weighted_scope == "SELECTED_FACES" and not has_weighted_seeds:
-            _info(weighted, "Select at least one face to seed UV islands.")
+            _warning(weighted, "Select at least one face to seed UV islands.")
         action = weighted.row()
         action.enabled = (preflight["all_ready"] if settings.weighted_scope != "SELECTED_FACES"
                           else edit_mode and selected_scope_ready)
@@ -310,7 +337,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                               not (settings.weighted_scope == "SELECTED_FACES" and
                                    (not edit_mode or not has_weighted_seeds)))
             shared.operator("autoseamuv.shared_weighted_atlas", text="Shared Weighted Atlas")
-            shared_box.label(text="All selected objects share one weighted atlas.", icon="INFO")
+            _helper_comment(shared_box, settings, "All selected objects share one weighted atlas.")
 
         pack = box.column(align=True)
         pack.prop(settings, "show_standard_pack", toggle=True)
@@ -349,7 +376,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             atlas_settings = atlas.column(align=True)
             atlas_settings.prop(settings, "atlas_uv_source", text="UV Source")
             if settings.atlas_uv_source == "NAMED":
-                atlas_settings.label(text="Named UV details are configured in UV Map.", icon="INFO")
+                _helper_comment(atlas_settings, settings, "Named UV details are configured in UV Map.")
             else:
                 atlas_settings.label(text="UV Target: each object's active UV map", icon="INFO")
             atlas_settings.prop(settings, "atlas_texture_resolution", text="Texture Resolution")
@@ -373,7 +400,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     @staticmethod
     def _draw_symmetry(layout, settings, active_uv, edit_mode, selected_faces):
         box = layout.box()
-        box.label(text="4. Symmetry")
+        if not _stage_header(box, settings, "show_stage_symmetry", "4. Symmetry"):
+            return
         mesh = box.column(align=True)
         mesh.label(text="Mesh Symmetry")
         mesh.label(text="Target: Active Object", icon="INFO")
@@ -405,10 +433,9 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         island_sync.label(text="Source: Selected UV Island")
         island_sync.label(text="Mode: Copy Exact")
         island_sync.label(text="Synchronize Seams", icon="CHECKMARK")
-        island_sync.label(text=(
-            "Copies the selected island's UV coordinates and seam ON/OFF state "
-            "to its mesh-symmetric counterpart."), icon="INFO")
-        island_sync.label(text="The UV islands will overlap exactly.", icon="INFO")
+        _helper_comment(island_sync, settings,
+                        "Copies the selected island's UV coordinates and seam ON/OFF state to its mesh-symmetric counterpart.")
+        _helper_comment(island_sync, settings, "The UV islands will overlap exactly.")
         action = island_sync.row()
         action.enabled = edit_mode and active_uv is not None and selected_faces > 0
         action.operator("autoseamuv.sync_mirrored_uv_island",
@@ -431,7 +458,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             target = settings.weighted_target_region
             source = settings.texture_source_side
             if target == "FULL":
-                exact.label(text="Exact Texture-X requires source UVs inside one texture half.", icon="INFO")
+                _warning(exact, "Exact Texture-X requires source UVs inside one texture half.")
             elif target != source:
                 _warning(exact, "Target region does not match Exact Texture-X source.")
             else:
@@ -443,7 +470,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     @staticmethod
     def _draw_validation(layout, settings):
         box = layout.box()
-        box.label(text="5. Validation", icon="CHECKMARK")
+        if not _stage_header(box, settings, "show_stage_validation", "5. Validation"):
+            return
         overlap = box.column(align=True)
         overlap.operator("autoseamuv.check_uv_overlap", text="Check Overlap")
         quality = box.column(align=True)

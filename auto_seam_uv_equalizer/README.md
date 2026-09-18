@@ -15,10 +15,17 @@ Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェ�
 - Low-frequency and advanced controls are now collapsible. / 低頻度・詳細設定を折りたたみ可能にしました。
 - Reduced panel height and visual density. / パネルの高さと視覚密度を削減しました。
 - Core processing behavior is unchanged. / コア処理の挙動は変更していません。
+- Main five workflow stages can now be collapsed independently. / 5つの主要工程を個別に折りたためるようにしました。
+- Added a Processing option to show or hide helper comments. / Processingに補助コメント表示切替を追加しました。
+- Warnings, errors and important status messages remain visible. / 警告・エラー・重要な状態表示は常に表示されます。
 
 ## Five-stage panel
 
-v0.9では5工程を維持したまま、毎回使う操作だけを常時表示します。Processing Options、Candidate Search、Garment Prior、Seam Assist、UV Map、Post-Unwrap、Ring / Strip、Incremental Layout、Shared Atlas、Standard Pack、Atlas Pack、Exact Texture-X、Island Transform、Validation Settingsは既定で折りたたまれています。UV ProtectionのMark / Unmark FinishedとLock / Unlock Layoutは常時表示され、選択・保守操作だけが折りたたまれます。折りたたみ状態は処理設定やbackend結果に影響しません。
+v0.9では5工程を維持したまま、各工程を独立して折りたためます。既定ではSeam、Unwrap、Layoutを展開し、SymmetryとValidationを折りたたむため、主要制作工程へすぐアクセスしながらパネルの高さを抑えられます。Processing Options、Candidate Search、Garment Prior、Seam Assist、UV Map、Post-Unwrap、Ring / Strip、Incremental Layout、Shared Atlas、Standard Pack、Atlas Pack、Exact Texture-X、Island Transform、Validation Settingsも既定で折りたたまれています。UV ProtectionのMark / Unmark FinishedとLock / Unlock LayoutはLayout工程を開くと常時表示され、選択・保守操作だけが内部で折りたたまれます。工程と内部セクションの折りたたみ状態は互いに独立し、処理設定やbackend結果に影響しません。
+
+### Helper Comments / 補助コメント
+
+Processingセクションの **「補助コメントを表示」**（**Show Helper Comments**）を無効にすると、プリセットやワークフローの操作説明・補足テキストを一括で非表示にできます。Target、Scope、選択数、Active UVなどの状態表示、およびエラー、警告、無効状態の理由は非表示になりません。PropertyとOperatorのTooltipも常に利用できます。
 
 通常の **Classic → Unwrap Selected Objects → Weighted Island Layout → Validation** と **Chart Analyze → Generate → Unwrap → Weighted Island Layout** は詳細セクションを開かず完了できます。低頻度のGarment Prior、Distortion Candidate、Ring / Strip、Incremental Layout、Shared Atlas、Standard Pack、Atlas Pack、Exact Texture-Xも対応する明示的なセクションから到達できます。
 
