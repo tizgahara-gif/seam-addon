@@ -202,6 +202,14 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
     show_ring_strip: BoolProperty(name="Ring / Strip", default=False)
+    # Presentation-only state. These values are deliberately not consumed by
+    # operators or analysis signatures.
+    show_stage_seam: BoolProperty(name="1. Seam", default=True)
+    show_stage_unwrap: BoolProperty(name="2. Unwrap", default=True)
+    show_stage_layout: BoolProperty(name="3. Layout", default=True)
+    show_stage_symmetry: BoolProperty(name="4. Symmetry", default=False)
+    show_stage_validation: BoolProperty(name="5. Validation", default=False)
+    show_helper_comments: BoolProperty(name="Show Helper Comments", default=True)
     show_unwrap_advanced: BoolProperty(name="UV Map", default=False)
     show_post_unwrap: BoolProperty(name="Post-Unwrap", default=False)
     show_pack_advanced: BoolProperty(name="Advanced", default=False)

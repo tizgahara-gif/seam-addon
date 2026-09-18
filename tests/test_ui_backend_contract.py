@@ -70,6 +70,50 @@ def test_collapsed_architecture_keeps_advanced_controls_reachable():
     assert properties.count("default=False") >= len(sections)
 
 
+def test_main_stages_have_independent_presentation_only_disclosures():
+    properties = _source("properties.py")
+    ui = _source("ui.py")
+    defaults = {
+        "show_stage_seam": "True",
+        "show_stage_unwrap": "True",
+        "show_stage_layout": "True",
+        "show_stage_symmetry": "False",
+        "show_stage_validation": "False",
+    }
+    for index, (name, default) in enumerate(defaults.items(), 1):
+        assert f'{name}: BoolProperty(name="{index}.' in properties
+        assert f'default={default})' in properties.split(f'{name}: BoolProperty', 1)[1].splitlines()[0]
+        assert f'"{name}"' in ui
+    assert 'icon="TRIA_DOWN" if expanded else "TRIA_RIGHT"' in ui
+    assert "if not _stage_header" in ui
+    for backend in ("operators.py", "seam_detection.py", "weighted_layout.py"):
+        source = _source(backend)
+        assert not any(name in source for name in defaults)
+
+
+def test_helper_comments_gate_only_explanatory_copy():
+    properties = _source("properties.py")
+    ui = _source("ui.py")
+    assert 'show_helper_comments: BoolProperty(name="Show Helper Comments", default=True)' in properties
+    assert 'status.prop(settings, "show_helper_comments")' in ui
+    assert "if settings.show_helper_comments:" in ui
+    assert '_helper_comment(shared_box, settings, "All selected objects share one weighted atlas.")' in ui
+    # Safety and contract state bypass the optional helper.
+    for text in (
+        "No active UV map.",
+        "Select at least one face to seed UV islands.",
+        "Pack Islands cannot preserve UV Protection.",
+        "Atlas Pack cannot preserve UV Protection",
+    ):
+        assert text in ui
+        assert f'_helper_comment' not in next(
+            line for line in ui.splitlines() if text in line
+        )
+    assert '_error(status, "No active UV map.")' in ui
+    for status in ("Target: Selected Objects", "Active UV: %s", "Scope: Selected UV Islands"):
+        assert status in ui
+
+
 def test_public_operator_buttons_have_one_primary_location():
     ui = _source("ui.py")
     tree = ast.parse(ui)

@@ -21,7 +21,7 @@ def test_all_literal_ui_text_has_a_japanese_translation():
         arg.value
         for node in ast.walk(ui_tree)
         if isinstance(node, ast.Call)
-        and ((isinstance(node.func, ast.Name) and node.func.id in {"_warning", "_info", "iface_"}))
+        and ((isinstance(node.func, ast.Name) and node.func.id in {"_warning", "_error", "_helper_comment", "iface_"}))
         for arg in node.args
         if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
     }
@@ -154,6 +154,14 @@ def test_uv_protection_translation_keys_and_canonical_terms():
         "Pack Selected Into Free Space": "選択UVアイランドを空き領域へ配置",
     }
     assert {key: translations.get(key) for key in expected} == expected
+
+
+def test_stage_and_helper_comment_translations():
+    translations = _japanese_translations()
+    assert translations["Show Helper Comments"] == "補助コメントを表示"
+    assert [translations[f"{index}. {name}"] for index, name in enumerate(
+        ("Seam", "Unwrap", "Layout", "Symmetry", "Validation"), 1
+    )] == ["1. シーム", "2. UV展開", "3. レイアウト", "4. 対称", "5. 検証"]
 
 
 def test_uv_protection_dynamic_reports_translate_before_formatting():
