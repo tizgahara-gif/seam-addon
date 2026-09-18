@@ -38,7 +38,9 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     seam_count_penalty: FloatProperty(name="Seam Count Penalty", default=0.08, min=0.0, max=2.0)
     chart_refinement_iterations: IntProperty(name="Refinement Iterations", default=5, min=1, max=8)
     preserve_existing_seams: BoolProperty(name="Preserve Existing Seams", default=True)
-    show_seam_advanced: BoolProperty(name="Advanced", default=False)
+    show_seam_advanced: BoolProperty(name="Candidate Search", default=False)
+    show_garment_prior: BoolProperty(name="Garment Prior", default=False)
+    show_seam_assist: BoolProperty(name="Seam Assist", default=False)
     use_professional_garment_prior: BoolProperty(
         name="Use Professional Garment Prior", default=True,
         description="Ranks likely garment seam positions before trial unwrap. It never forces a seam; final acceptance is based on measured UV quality")
@@ -200,8 +202,17 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
 
     show_ring_strip: BoolProperty(name="Ring / Strip", default=False)
-    show_unwrap_advanced: BoolProperty(name="Unwrap Advanced", default=False)
-    show_pack_advanced: BoolProperty(name="Pack Advanced", default=False)
+    show_unwrap_advanced: BoolProperty(name="UV Map", default=False)
+    show_post_unwrap: BoolProperty(name="Post-Unwrap", default=False)
+    show_pack_advanced: BoolProperty(name="Advanced", default=False)
+    show_processing_options: BoolProperty(name="Processing Options", default=False)
+    show_protection_maintenance: BoolProperty(name="Selection / Maintenance", default=False)
+    show_incremental_layout: BoolProperty(name="Incremental Layout", default=False)
+    show_shared_atlas: BoolProperty(name="Shared Atlas", default=False)
+    show_standard_pack: BoolProperty(name="Standard Pack", default=False)
+    show_exact_texture_x: BoolProperty(name="Exact Texture-X", default=False)
+    show_island_transform: BoolProperty(name="Island Transform", default=False)
+    show_validation_settings: BoolProperty(name="Validation Settings", default=False)
     ring_layout: EnumProperty(
         name="Layout",
         items=(("RECTANGULAR", "Rectangular", "Align all rows to one width"),
@@ -379,7 +390,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         description="Allow UV island rotation during atlas packing",
         default=True,
     )
-    show_atlas_settings: BoolProperty(name="Atlas Settings", default=False)
+    show_atlas_settings: BoolProperty(name="Atlas Pack", default=False)
+    show_atlas_advanced: BoolProperty(name="Advanced", default=False)
 
     overlap_epsilon: FloatProperty(
         name="Legacy Overlap Epsilon",
