@@ -99,7 +99,7 @@ def test_dynamic_warning_translates_template_before_formatting():
 def test_workflow_scope_labels_and_warning_conditions_are_explicit():
     ui = (ROOT / "ui.py").read_text(encoding="utf-8")
     properties = (ROOT / "properties.py").read_text(encoding="utf-8")
-    assert 'text="Selected Objects Post-Unwrap"' in ui
+    assert 'prop(settings, "show_post_unwrap"' in ui
     assert 'text="Clear All Tags"' in ui
     assert 'weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}' in ui
     assert 'weighted_scale_mode == "ALLOCATE_BY_IMPORTANCE"' in ui
@@ -113,7 +113,7 @@ def test_unwrap_selected_label_and_incremental_scope_match_implementation():
     assert 'text="Unwrap Selected UV Islands"' in ui
     assert 'bl_label = "Unwrap Selected UV Islands"' in operators
     assert 'bl_idname = "autoseamuv.unwrap_selected_faces"' in operators
-    assert 'text="Only the active object is modified."' in ui
+    assert 'text="Target: Active Object"' in ui
     assert 'incremental.enabled = preflight["all_ready"]' not in ui
     assert "Unwrap Selected UV Islands" in readme
 

@@ -60,24 +60,21 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         selected_edges = _selected_edge_count(context)
 
         status = layout.box()
-        status.label(text="Status", icon="INFO")
+        status.label(text="Processing", icon="INFO")
+        status.label(text="Target: Selected Objects")
         status.label(text=iface_("Active UV: %s") % (active_uv.name if active_uv else iface_("None")))
-        status.label(text=iface_("Mode: %s") % iface_("Edit" if edit_mode else "Object"))
-        if edit_mode:
-            status.label(text=iface_("Selected Faces: %d") % _selected_face_count(context))
         status.label(text=iface_("Selected Objects: %d") % len(meshes))
+        status.label(text=iface_("Unique Mesh Data: %d") %
+                     len({obj.data.as_pointer() for obj in meshes}))
         if active_uv is None:
             _warning(status, "No active UV map.")
             _info(status, "Selected Objects unwrap can create the configured UV map.")
             _info(status, "Selected UV Islands requires an existing active UV map.")
 
-        processing = layout.box()
-        processing.label(text="Processing")
-        if len(meshes) > 1:
-            processing.label(text=iface_("Selected Mesh Objects: %d") % len(meshes))
-            processing.label(text=iface_("Unique Mesh Data: %d") %
-                             len({obj.data.as_pointer() for obj in meshes}))
-        processing.prop(settings, "process_shared_mesh_once", text="Process Shared Mesh Data Once")
+        status.prop(settings, "show_processing_options", toggle=True)
+        if settings.show_processing_options:
+            status.prop(settings, "process_shared_mesh_once",
+                        text="Process Shared Mesh Data Once")
 
         self._draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges)
         self._draw_unwrap(layout, settings, edit_mode, active_uv, context)
@@ -100,6 +97,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             classic.operator("autoseamuv.mark_only", text="Generate Seams", icon="MOD_UVPROJECT")
         else:
             box.prop(settings, "seam_preset", text="Preset")
+            box.prop(settings, "max_chart_distortion", text="Max Distortion")
+            box.prop(settings, "preserve_existing_seams", text="Preserve Existing Seams")
             descriptions = {
                 "ORGANIC": "Fewer seams, garment structure and UV quality prioritized.",
                 "HARD_SURFACE": "Sharp angles, material boundaries and hard edges prioritized.",
@@ -111,8 +110,42 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             row.operator("autoseamuv.analyze_seams", text="Analyze Seams", icon="VIEWZOOM")
             row.operator("autoseamuv.generate_seams", text="Generate Seams", icon="MOD_UVPROJECT")
 
-        assist = box.column(align=True)
-        assist.label(text="Assist — Active Object")
+        box.prop(settings, "show_seam_assist", toggle=True)
+        if settings.show_seam_assist:
+            assist = box.column(align=True)
+            assist.label(text="Seam Assist — Active Object")
+            AUTOSEAMUV_PT_panel._draw_seam_assist(
+                assist, settings, edit_mode, selected_faces, selected_edges)
+
+        if settings.seam_mode == "CLASSIC":
+            box.prop(settings, "show_seam_advanced", text="Advanced", toggle=True)
+            if settings.show_seam_advanced:
+                advanced = box.column(align=True)
+                advanced.prop(settings, "clear_existing")
+                advanced.prop(settings, "longitudinal_seam_helper")
+        else:
+            box.prop(settings, "show_seam_advanced", text="Candidate Search", toggle=True)
+            if settings.show_seam_advanced:
+                advanced = box.column(align=True)
+                advanced.prop(settings, "seam_count_penalty")
+                advanced.prop(settings, "seam_minimum_spacing")
+                advanced.prop(settings, "straightness_bias")
+                advanced.prop(settings, "curvature_bias")
+                advanced.prop(settings, "seam_search_radius")
+                advanced.prop(settings, "chart_refinement_iterations")
+                advanced.prop(settings, "use_distortion_guided_candidates")
+                advanced.prop(settings, "use_edge_loop_completion")
+            box.prop(settings, "show_garment_prior", toggle=True)
+            if settings.show_garment_prior:
+                garment = box.column(align=True)
+                garment.prop(settings, "use_professional_garment_prior",
+                             text="Professional Garment Prior")
+                if settings.use_professional_garment_prior:
+                    garment.prop(settings, "character_front_axis")
+                    garment.prop(settings, "weight_material")
+
+    @staticmethod
+    def _draw_seam_assist(assist, settings, edit_mode, selected_faces, selected_edges):
         assist.prop(settings, "include_open_boundaries", text="Include Open Boundaries")
         row = assist.row(align=True)
         boundary_action = row.row()
@@ -139,24 +172,6 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
                 _warning(assist, "Force / Protect requires Edit Mode and selected edges.")
             assist.label(text="Active Object")
             assist.operator("autoseamuv.clear_edge_tags", text="Clear All Tags")
-            box.prop(settings, "use_professional_garment_prior", text="Professional Garment Prior")
-
-        box.prop(settings, "show_seam_advanced", toggle=True)
-        if settings.show_seam_advanced:
-            advanced = box.column(align=True)
-            if settings.seam_mode == "CLASSIC":
-                advanced.prop(settings, "clear_existing")
-                advanced.prop(settings, "longitudinal_seam_helper")
-            else:
-                advanced.prop(settings, "max_chart_distortion")
-                advanced.prop(settings, "seam_count_penalty")
-                advanced.prop(settings, "seam_minimum_spacing")
-                advanced.prop(settings, "straightness_bias")
-                advanced.prop(settings, "chart_refinement_iterations")
-                advanced.prop(settings, "preserve_existing_seams")
-                advanced.prop(settings, "character_front_axis")
-                advanced.prop(settings, "use_distortion_guided_candidates")
-                advanced.prop(settings, "use_edge_loop_completion")
 
     @staticmethod
     def _draw_unwrap(layout, settings, edit_mode, active_uv, context):
@@ -180,18 +195,19 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
             _info(box, "Select at least one face to seed UV islands.")
         elif active_uv is None:
             _warning(box, "Unwrap Selected UV Islands requires an existing active UV map.")
-        box.label(text=iface_("Target UV Map: %s") % settings.uv_map_name, icon="INFO")
         box.operator("autoseamuv.unwrap_only", text="Unwrap Selected Objects", icon="UV")
 
-        box.prop(settings, "show_unwrap_advanced", toggle=True)
+        box.prop(settings, "show_unwrap_advanced", text="UV Map", toggle=True)
         if settings.show_unwrap_advanced:
             post = box.column(align=True)
-            post.label(text="Named UV Settings")
             post.prop(settings, "uv_map_name", text="UV Map Name")
             post.prop(settings, "create_uv_if_missing", text="Create UV If Missing")
             post.label(text="Named settings apply to Selected Objects and Ring / Strip.", icon="INFO")
             post.label(text="Selected UV Islands always uses Active UV and never creates one.", icon="INFO")
-            post.label(text="Selected Objects Post-Unwrap")
+
+        box.prop(settings, "show_post_unwrap", toggle=True)
+        if settings.show_post_unwrap:
+            post = box.column(align=True)
             post.prop(settings, "average_islands", text="Average Island Scale")
             post.prop(settings, "straighten_circular_strip_islands", text="Straighten Circular Strip Islands")
 
@@ -217,8 +233,6 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         protection = box.column(align=True)
         protection.label(text="UV Protection", icon="LOCKED")
         protection.label(text="Target: Active Object", icon="INFO")
-        protection.label(text="Finished protects seams and UVs.", icon="INFO")
-        protection.label(text="Layout Lock protects placement only.", icon="INFO")
         has_faces = _selected_face_count(context) > 0
         row = protection.row(align=True)
         row.enabled = edit_mode and active_uv is not None and has_faces
@@ -228,10 +242,12 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         row.enabled = edit_mode and active_uv is not None and has_faces
         row.operator("autoseamuv.lock_layout_islands", text="Lock Layout")
         row.operator("autoseamuv.unlock_layout_islands", text="Unlock Layout")
-        row = protection.row(align=True)
-        row.operator("autoseamuv.select_finished_islands", text="Select Finished")
-        row.operator("autoseamuv.select_layout_locked_islands", text="Select Layout Locked")
-        protection.operator("autoseamuv.clear_uv_protection", text="Clear UV Protection")
+        protection.prop(settings, "show_protection_maintenance", toggle=True)
+        if settings.show_protection_maintenance:
+            row = protection.row(align=True)
+            row.operator("autoseamuv.select_finished_islands", text="Select Finished")
+            row.operator("autoseamuv.select_layout_locked_islands", text="Select Layout Locked")
+            protection.operator("autoseamuv.clear_uv_protection", text="Clear UV Protection")
         if edit_mode and active_uv is not None and not has_faces:
             _info(protection, "Select at least one face to seed UV islands.")
         protection.separator()
@@ -273,87 +289,86 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.enabled = (preflight["all_ready"] if settings.weighted_scope != "SELECTED_FACES"
                           else edit_mode and selected_scope_ready)
         action.operator("autoseamuv.weighted_island_layout", text="Weighted Island Layout")
-        weighted.separator()
-        weighted.label(text="Incremental Pack")
-        weighted.label(text="Target: Active Object", icon="INFO")
-        weighted.label(text="Scope: Selected UV Islands", icon="INFO")
-        incremental = weighted.row()
-        active = getattr(context, "active_object", None)
-        incremental.enabled = bool(active and active.type == "MESH" and edit_mode and
-                                   active.data.polygons and active_uv is not None and has_faces)
-        incremental.operator("autoseamuv.pack_selected_into_free_space",
-                             text="Pack Selected Into Free Space")
-        weighted.label(text="Only the active object is modified.", icon="INFO")
-        weighted.separator()
-        weighted.label(text="Shared Atlas")
-        shared = weighted.row()
-        shared.enabled = (preflight["all_ready"] and preflight["unique_mesh_count"] >= 2 and
-                          not (settings.weighted_scope == "SELECTED_FACES" and
-                               (not edit_mode or not has_weighted_seeds)))
-        shared.operator("autoseamuv.shared_weighted_atlas", text="Shared Weighted Atlas")
-        weighted.label(text="All selected objects share one weighted atlas.", icon="INFO")
-        weighted.label(text="Shared Weighted Atlas reallocates UV area globally.", icon="INFO")
-        weighted.label(text="Atlas Pack preserves existing island scaling unless its options change it.", icon="INFO")
+        box.prop(settings, "show_incremental_layout", toggle=True)
+        if settings.show_incremental_layout:
+            incremental_box = box.column(align=True)
+            incremental_box.label(text="Target: Active Object", icon="INFO")
+            incremental_box.label(text="Scope: Selected UV Islands", icon="INFO")
+            incremental = incremental_box.row()
+            active = getattr(context, "active_object", None)
+            incremental.enabled = bool(active and active.type == "MESH" and edit_mode and
+                                       active.data.polygons and active_uv is not None and has_faces)
+            incremental.operator("autoseamuv.pack_selected_into_free_space",
+                                 text="Pack Selected Into Free Space")
+
+        box.prop(settings, "show_shared_atlas", toggle=True)
+        if settings.show_shared_atlas:
+            shared_box = box.column(align=True)
+            shared_box.label(text="Target: Selected Objects", icon="INFO")
+            shared = shared_box.row()
+            shared.enabled = (preflight["all_ready"] and preflight["unique_mesh_count"] >= 2 and
+                              not (settings.weighted_scope == "SELECTED_FACES" and
+                                   (not edit_mode or not has_weighted_seeds)))
+            shared.operator("autoseamuv.shared_weighted_atlas", text="Shared Weighted Atlas")
+            shared_box.label(text="All selected objects share one weighted atlas.", icon="INFO")
 
         pack = box.column(align=True)
-        pack.separator()
-        pack.label(text="Pack Islands")
-        if settings.weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}:
-            _warning(pack, "Half-region layout is active. Packing may break the Exact Texture-X workflow.")
-        pack.prop(settings, "pack_rotation", text="Rotation")
-        pack.prop(settings, "pack_margin_method", text="Margin Method")
-        if settings.pack_margin_method == "FRACTION":
-            pack.prop(settings, "pack_margin_percent", text="Pack Margin (%)")
+        pack.prop(settings, "show_standard_pack", toggle=True)
+        if not settings.show_standard_pack:
+            pack = None
         else:
-            pack.prop(settings, "pack_margin", text="Pack Margin")
-        pack.prop(settings, "show_pack_advanced", toggle=True)
-        if settings.show_pack_advanced:
-            advanced = pack.column(align=True)
-            advanced.prop(settings, "pack_shape_method", text="Shape Method")
-            advanced.prop(settings, "lock_pinned_islands", text="Lock Pinned Islands")
-            if settings.lock_pinned_islands:
-                advanced.prop(settings, "pack_pin_method", text="Pin Method")
-            advanced.prop(settings, "merge_overlapping", text="Merge Overlapping")
-            advanced.prop(settings, "pack_target", text="Pack Target")
-        protection_active = any(has_active_uv_protection(obj.data) for obj in meshes)
-        if protection_active:
-            _warning(pack, "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout or Pack Selected Into Free Space, or clear UV Protection first.")
-        action = pack.row()
-        action.enabled = preflight["all_ready"] and not protection_active
-        action.operator("autoseamuv.pack_islands", text="Pack Islands")
-        if len(meshes) > 1:
-            _warning(pack, "Objects will be packed independently.")
-            pack.label(text="Use Atlas Pack for a shared texture atlas.", icon="INFO")
+            pack = pack.column(align=True)
+        if pack is not None:
+            if settings.weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}:
+                _warning(pack, "Half-region layout is active. Packing may break the Exact Texture-X workflow.")
+            pack.prop(settings, "pack_rotation", text="Rotation")
+            pack.prop(settings, "pack_margin_method", text="Margin Method")
+            if settings.pack_margin_method == "FRACTION":
+                pack.prop(settings, "pack_margin_percent", text="Pack Margin (%)")
+            else:
+                pack.prop(settings, "pack_margin", text="Pack Margin")
+            pack.prop(settings, "show_pack_advanced", toggle=True)
+            if settings.show_pack_advanced:
+                advanced = pack.column(align=True)
+                advanced.prop(settings, "pack_shape_method", text="Shape Method")
+                advanced.prop(settings, "lock_pinned_islands", text="Lock Pinned Islands")
+                if settings.lock_pinned_islands:
+                    advanced.prop(settings, "pack_pin_method", text="Pin Method")
+                advanced.prop(settings, "merge_overlapping", text="Merge Overlapping")
+                advanced.prop(settings, "pack_target", text="Pack Target")
+            protection_active = any(has_active_uv_protection(obj.data) for obj in meshes)
+            if protection_active:
+                _warning(pack, "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout or Pack Selected Into Free Space, or clear UV Protection first.")
+            action = pack.row()
+            action.enabled = preflight["all_ready"] and not protection_active
+            action.operator("autoseamuv.pack_islands", text="Pack Islands")
 
         atlas = box.column(align=True)
-        atlas.separator()
-        atlas.label(text="Multiple Objects")
-        if settings.weighted_target_region in {"LEFT_HALF", "RIGHT_HALF"}:
-            _warning(atlas, "Half-region layout is active. Packing may break the Exact Texture-X workflow.")
         atlas.prop(settings, "show_atlas_settings", toggle=True)
         if settings.show_atlas_settings:
             atlas_settings = atlas.column(align=True)
             atlas_settings.prop(settings, "atlas_uv_source", text="UV Source")
             if settings.atlas_uv_source == "NAMED":
-                atlas_settings.prop(settings, "uv_map_name", text="UV Map Name")
-                atlas_settings.prop(settings, "create_uv_if_missing", text="Create UV If Missing")
+                atlas_settings.label(text="Named UV details are configured in UV Map.", icon="INFO")
             else:
                 atlas_settings.label(text="UV Target: each object's active UV map", icon="INFO")
             atlas_settings.prop(settings, "atlas_texture_resolution", text="Texture Resolution")
             atlas_settings.prop(settings, "atlas_pixel_margin", text="Pixel Margin")
-            atlas_settings.prop(settings, "atlas_average_island_scale", text="Average Island Scale")
-            if (settings.weighted_scale_mode == "ALLOCATE_BY_IMPORTANCE" and
-                    settings.atlas_average_island_scale):
-                _warning(atlas_settings, "Average Island Scale may override the relative scaling created by Weighted Island Layout.")
-            atlas_settings.prop(settings, "atlas_pack_rotate", text="Allow Rotation")
-        atlas_preflight = resolve_atlas_targets(context, settings)
-        atlas_protected = any(has_active_uv_protection(obj.data)
-                              for obj in atlas_preflight["objects"])
-        if atlas_protected:
-            _warning(atlas, "Atlas Pack cannot preserve UV Protection on the selected objects. Use Shared Weighted Atlas or clear UV Protection first.")
-        action = atlas.row()
-        action.enabled = atlas_preflight["all_ready"] and not atlas_protected
-        action.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects")
+            atlas_settings.prop(settings, "show_atlas_advanced", toggle=True)
+            if settings.show_atlas_advanced:
+                atlas_settings.prop(settings, "atlas_average_island_scale", text="Average Island Scale")
+                if (settings.weighted_scale_mode == "ALLOCATE_BY_IMPORTANCE" and
+                        settings.atlas_average_island_scale):
+                    _warning(atlas_settings, "Average Island Scale may override the relative scaling created by Weighted Island Layout.")
+                atlas_settings.prop(settings, "atlas_pack_rotate", text="Allow Rotation")
+            atlas_preflight = resolve_atlas_targets(context, settings)
+            atlas_protected = any(has_active_uv_protection(obj.data)
+                                  for obj in atlas_preflight["objects"])
+            if atlas_protected:
+                _warning(atlas, "Atlas Pack cannot preserve UV Protection on the selected objects. Use Shared Weighted Atlas or clear UV Protection first.")
+            action = atlas.row()
+            action.enabled = atlas_preflight["all_ready"] and not atlas_protected
+            action.operator("autoseamuv.atlas_pack_selected_objects", text="Atlas Pack Selected Objects")
 
     @staticmethod
     def _draw_symmetry(layout, settings, active_uv, edit_mode, selected_faces):
@@ -399,51 +414,50 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         action.operator("autoseamuv.sync_mirrored_uv_island",
                         text="Synchronize Mirrored UV Island")
 
-        transform = box.column(align=True)
-        transform.separator()
-        transform.label(text="Island Transform")
-        transform.label(text="Target: Active Object")
-        transform.label(text="Scope: Selected UV Islands")
-        action = transform.row()
-        action.enabled = edit_mode and active_uv is not None and selected_faces > 0
-        action.operator("autoseamuv.flip_selected_uv_islands",
-                        text="Flip Selected UV Islands")
+        box.prop(settings, "show_island_transform", toggle=True)
+        if settings.show_island_transform:
+            transform = box.column(align=True)
+            transform.label(text="Target: Active Object")
+            transform.label(text="Scope: Selected UV Islands")
+            action = transform.row()
+            action.enabled = edit_mode and active_uv is not None and selected_faces > 0
+            action.operator("autoseamuv.flip_selected_uv_islands",
+                            text="Flip Selected UV Islands")
 
-        exact = box.column(align=True)
-        exact.separator()
-        exact.label(text="Exact Texture-X")
-        exact.prop(settings, "texture_source_side", text="Texture Source Side")
-        target = settings.weighted_target_region
-        source = settings.texture_source_side
-        if target == "FULL":
-            exact.label(text="Exact Texture-X requires source UVs inside one texture half.", icon="INFO")
-        elif target != source:
-            _warning(exact, "Target region does not match Exact Texture-X source.")
-        else:
-            exact.label(text="Layout settings match Exact Texture-X.", icon="CHECKMARK")
-        action = exact.row()
-        action.enabled = active_uv is not None and symmetry_available
-        action.operator("autoseamuv.transfer_exact_texture_x_symmetry", text="Exact Texture-X Symmetry")
+        box.prop(settings, "show_exact_texture_x", toggle=True)
+        if settings.show_exact_texture_x:
+            exact = box.column(align=True)
+            exact.prop(settings, "texture_source_side", text="Texture Source Side")
+            target = settings.weighted_target_region
+            source = settings.texture_source_side
+            if target == "FULL":
+                exact.label(text="Exact Texture-X requires source UVs inside one texture half.", icon="INFO")
+            elif target != source:
+                _warning(exact, "Target region does not match Exact Texture-X source.")
+            else:
+                exact.label(text="Layout settings match Exact Texture-X.", icon="CHECKMARK")
+            action = exact.row()
+            action.enabled = active_uv is not None and symmetry_available
+            action.operator("autoseamuv.transfer_exact_texture_x_symmetry", text="Exact Texture-X Symmetry")
 
     @staticmethod
     def _draw_validation(layout, settings):
         box = layout.box()
         box.label(text="5. Validation", icon="CHECKMARK")
         overlap = box.column(align=True)
-        overlap.label(text="UV Overlap")
-        overlap.label(text="Scope: Selected Objects")
-        overlap.prop(settings, "check_overlap_across_objects", text="Check Across Objects")
         overlap.operator("autoseamuv.check_uv_overlap", text="Check Overlap")
-        overlap.operator("autoseamuv.clear_uv_overlap_highlight", text="Clear Overlap Selection")
         quality = box.column(align=True)
-        quality.separator()
-        quality.label(text="UV Quality")
-        quality.label(text="Scope: Selected Objects")
-        quality.prop(settings, "stretch_warning_threshold", text="Stretch Warning Threshold")
         quality.operator("autoseamuv.validate_uv", text="Run UV Quality Check")
-        quality.label(text="Selects flipped, zero-area, and over-threshold stretch faces in Edit Mode.", icon="INFO")
-        quality.label(text="Last Quality Report")
-        quality.label(text=settings.report_summary, icon="INFO")
+        box.prop(settings, "show_validation_settings", toggle=True)
+        if settings.show_validation_settings:
+            advanced = box.column(align=True)
+            advanced.prop(settings, "check_overlap_across_objects", text="Check Across Objects")
+            advanced.prop(settings, "stretch_warning_threshold", text="Stretch Warning Threshold")
+            advanced.prop(settings, "overlap_area_epsilon", text="Zero-Area Tolerance")
+            advanced.operator("autoseamuv.clear_uv_overlap_highlight",
+                              text="Clear Overlap Selection")
+            advanced.label(text="Last Quality Report")
+            advanced.label(text=settings.report_summary, icon="INFO")
 
 
 CLASSES = (AUTOSEAMUV_PT_panel,)

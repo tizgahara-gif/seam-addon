@@ -51,7 +51,33 @@ def test_ui_contract_exposes_routed_setting_families():
     ):
         assert f'prop(settings, "{setting}"' in ui
     assert "selected_face_seeds_by_mesh" in ui
-    assert 'text="Named UV Settings"' in ui
+    assert 'text="UV Map"' in ui
+
+
+def test_collapsed_architecture_keeps_advanced_controls_reachable():
+    properties = _source("properties.py")
+    ui = _source("ui.py")
+    sections = {
+        "show_processing_options", "show_seam_advanced", "show_garment_prior",
+        "show_seam_assist", "show_unwrap_advanced", "show_post_unwrap",
+        "show_ring_strip", "show_incremental_layout", "show_shared_atlas",
+        "show_standard_pack", "show_atlas_settings", "show_exact_texture_x",
+        "show_island_transform", "show_validation_settings",
+    }
+    for name in sections:
+        assert f'{name}: BoolProperty' in properties
+        assert f'prop(settings, "{name}"' in ui
+    assert properties.count("default=False") >= len(sections)
+
+
+def test_public_operator_buttons_have_one_primary_location():
+    ui = _source("ui.py")
+    tree = ast.parse(ui)
+    ids = [arg.value for node in ast.walk(tree) if isinstance(node, ast.Call)
+           and isinstance(node.func, ast.Attribute) and node.func.attr == "operator"
+           and node.args and isinstance(node.args[0], ast.Constant)
+           for arg in node.args[:1]]
+    assert len(ids) == len(set(ids)), "duplicate public operator button"
 
 
 def test_normalized_uv_distances_use_ui_only_percentage_facades():

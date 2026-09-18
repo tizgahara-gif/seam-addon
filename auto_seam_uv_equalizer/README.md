@@ -1,4 +1,4 @@
-# Auto Seam UV Equalizer v0.8.x
+# Auto Seam UV Equalizer v0.9.0
 
 Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。新しいサイドバーは複合的な Quick Actions ではなく、現在の工程と作用範囲が分かる5つのセクションで構成されています。
 
@@ -6,13 +6,27 @@ Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェ�
 
 `auto_seam_uv_equalizer.zip` を **Edit > Preferences > Add-ons > Install from Disk** からインストールし、3D Viewの **N > Auto UV** を開きます。GitHubのソースアーカイブではなく、リリース用zipを使用してください。
 
+## Release Notes / リリースノート
+
+### v0.9.0 — UI/UX
+
+- Reorganized the five-stage workflow. / 5段階ワークフローを再整理しました。
+- Frequently used controls remain visible. / 高頻度の操作は常時表示します。
+- Low-frequency and advanced controls are now collapsible. / 低頻度・詳細設定を折りたたみ可能にしました。
+- Reduced panel height and visual density. / パネルの高さと視覚密度を削減しました。
+- Core processing behavior is unchanged. / コア処理の挙動は変更していません。
+
 ## Five-stage panel
+
+v0.9では5工程を維持したまま、毎回使う操作だけを常時表示します。Processing Options、Candidate Search、Garment Prior、Seam Assist、UV Map、Post-Unwrap、Ring / Strip、Incremental Layout、Shared Atlas、Standard Pack、Atlas Pack、Exact Texture-X、Island Transform、Validation Settingsは既定で折りたたまれています。UV ProtectionのMark / Unmark FinishedとLock / Unlock Layoutは常時表示され、選択・保守操作だけが折りたたまれます。折りたたみ状態は処理設定やbackend結果に影響しません。
+
+通常の **Classic → Unwrap Selected Objects → Weighted Island Layout → Validation** と **Chart Analyze → Generate → Unwrap → Weighted Island Layout** は詳細セクションを開かず完了できます。低頻度のGarment Prior、Distortion Candidate、Ring / Strip、Incremental Layout、Shared Atlas、Standard Pack、Atlas Pack、Exact Texture-Xも対応する明示的なセクションから到達できます。
 
 ### 1. Seam
 
 **Classic** は角度、マテリアル境界、開放境界、非多様体の規則でシームを生成します。**Chart-Based** は Organic / Cloth、Hard Surface、Cylinder / Strip、Manual Assisted のプリセットとUV品質評価を使います。Analyze Seamsは診断のみ、Generate Seamsは適用です。
 
-Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Assist — Active Object** はアクティブオブジェクトだけに作用します。ForceとProtectはEdit Modeのアクティブオブジェクトで現在選択している辺だけが対象です。**Clear All Tags** はモードや辺選択に関係なくActive ObjectのForce / Protectタグをすべて消去します。Mirror Seamは共通のMesh Symmetry Axis / Toleranceを使い、Selected Side → OppositeだけはEdit Modeの選択辺を必要とします。Selected BoundaryのInclude Open BoundariesはUIで確認できます。詳細パラメータとCharacter Front AxisはAdvanced内にあります。
+Analyze / Generateの作用範囲は選択メッシュオブジェクトです。Selected BoundaryとMirror Seamなどの **Seam Assist — Active Object** はアクティブオブジェクトだけに作用します。ForceとProtectはEdit Modeのアクティブオブジェクトで現在選択している辺だけが対象です。**Clear All Tags** はモードや辺選択に関係なくActive ObjectのForce / Protectタグをすべて消去します。Mirror Seamは共通のMesh Symmetry Axis / Toleranceを使い、Selected Side → OppositeだけはEdit Modeの選択辺を必要とします。候補調整はCandidate Search、衣装固有設定はGarment Priorに分離されています。
 
 ### 2. Unwrap
 
@@ -20,7 +34,7 @@ Analyze / Generateの作用範囲は選択メッシュオブジェクトです�
 
 **Unwrap Selected Objects** は選択メッシュオブジェクト全体を既存シームで、設定された **UV Map Name** へUV展開します。**Create UV If Missing** が有効なら、その名前のUVマップを作成できます。同じNamed UV設定は **Ring / Strip Unwrap**、**Atlas PackのUV Source = Named**、および該当するAuto / legacy unwrap workflowでも使用します。Atlasの **UV Source = Active** は各オブジェクトのActive UV Mapだけを使用し、Named設定を使用しません。任意の **Selected Objects Post-Unwrap**（Average Island Scale / Straighten Circular Strip Islands）はUnwrap Selected Objectsにだけ作用し、Unwrap Selected UV Islandsには作用せず、既定ではOFFです。**Unwrap Margin** はこのUV展開だけに使用され、Pack Marginとは独立しています。**Margin Method = Fraction** の場合だけ、0–1 UV空間を100%とする割合（%）で指定します。**Scaled / Add** ではBlender固有のraw margin値を使用し、%として表示しません。新規設定の既定はFractionですが、旧ファイルに保存済みのmarginは従来の暗黙的なScaled semanticsへ移行します。Ring / StripはEdit ModeではActive Object / Selected Faces、Object ModeではSelected Mesh Objects / Whole Objectsが対象で、現在のScopeをUIに表示します。
 
-UV targetはoperatorごとに分離されています。Active-map workflowは **Unwrap Selected UV Islands、Weighted Island Layout、Pack Islands、Symmetry、Validation** です（各機能固有のScope規則は後述）。Named-map workflowでは上記のUV Map Name / Create UV If Missingを使用します。パネルのUnwrap AdvancedとAtlasのNamed設定は同じpropertyを表示するため、一方の変更は他方にも反映されます。
+UV targetはoperatorごとに分離されています。Active-map workflowは **Unwrap Selected UV Islands、Weighted Island Layout、Pack Islands、Symmetry、Validation** です（各機能固有のScope規則は後述）。Named-map workflowではUV MapセクションのUV Map Name / Create UV If Missingを使用します。AtlasでUV Source = Namedを選んだ場合もこの一つの設定を参照し、同じpropertyを重複表示しません。
 
 ### 3. Layout
 
