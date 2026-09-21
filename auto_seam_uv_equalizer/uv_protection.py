@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .island_tools import find_uv_islands
-from .mesh_utils import build_mesh_topology
+from .island_tools import find_uv_face_islands
 
 
 FINISHED_ATTRIBUTE = "autoseam_finished_group"
@@ -102,9 +101,10 @@ def current_islands(obj):
     """Return current active-map UV islands as deterministic face tuples."""
     if obj.data.uv_layers.active is None:
         raise ProtectionError("No active UV map.")
-    _, _, loop_to_face, _ = build_mesh_topology(obj.data)
-    return [tuple(sorted({loop_to_face[loop] for loop in loops}))
-            for loops in find_uv_islands(obj)]
+    try:
+        return find_uv_face_islands(obj)
+    except RuntimeError as exc:
+        raise ProtectionError(str(exc)) from exc
 
 
 def validate_protection_consistency(obj, islands=None):

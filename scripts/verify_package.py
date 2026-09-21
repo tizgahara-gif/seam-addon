@@ -51,6 +51,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
     ),
     "auto_seam_uv_equalizer/island_tools.py": (
         "def find_uv_islands",
+        "def find_uv_face_islands",
         "def straighten_circular_strip_island",
         "def straighten_circular_strip_islands_on_object",
     ),
@@ -125,7 +126,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "def collect_selected_uv_islands",
         "def plan_horizontal_uv_flip",
         "def apply_uv_plan",
-        "find_uv_islands",
+        "find_uv_face_islands",
     ),
     "auto_seam_uv_equalizer/mesh_utils.py": (
         "def build_mesh_topology",

@@ -15,7 +15,7 @@ def _load_module():
         "auto_seam_uv_equalizer", types.ModuleType("auto_seam_uv_equalizer"))
     package.__path__ = [str(MODULE.parent)]
     island = types.ModuleType("auto_seam_uv_equalizer.island_tools")
-    island.find_uv_islands = lambda _obj: []
+    island.find_uv_face_islands = lambda _obj: []
     mesh = types.ModuleType("auto_seam_uv_equalizer.mesh_utils")
     mesh.build_mesh_topology = lambda _mesh: ({}, {}, {}, {})
     sys.modules[island.__name__] = island

@@ -11,6 +11,7 @@ import bmesh
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
 from auto_seam_uv_equalizer import operators, weighted_layout
+from auto_seam_uv_equalizer.island_tools import find_uv_face_islands
 from auto_seam_uv_equalizer.symmetry import build_symmetry_plan
 from auto_seam_uv_equalizer.uv_validation import triangles_from_object, validate_object
 from auto_seam_uv_equalizer.weighted_layout import pack_importance_boxes
@@ -813,6 +814,90 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.autoseamuv.mark_and_unwrap(), {"CANCELLED"})
         self.assertEqual(tuple(edge.use_seam for edge in obj.data.edges), before_seams)
         self.assertEqual(tuple(tuple(datum.vector) for datum in layer.uv), before_uv)
+
+    def test_edit_bmesh_face_islands_match_object_mode_and_uv_continuity(self):
+        obj = mesh_object(
+            "ModeAwareIslands",
+            [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+             (2,0,0),(2,1,0),(3,0,0),(3,1,0)],
+            [(0,1,2,3), (1,4,5,2), (4,6,7,5)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        # Faces 0/1 share an epsilon-close UV edge; face 2 is UV-split.
+        values = ((0,0),(1,0),(1,1),(0,1),
+                  (1 + 0.25e-6,0),(2,0),(2,1),(1 + 0.25e-6,1),
+                  (4,0),(5,0),(5,1),(4,1))
+        for datum, uv in zip(layer.uv, values):
+            datum.vector = uv
+        object_islands = find_uv_face_islands(obj)
+        self.assertEqual(object_islands, [(0, 1), (2,)])
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        edit_islands = find_uv_face_islands(obj)
+        self.assertEqual({frozenset(item) for item in edit_islands},
+                         {frozenset(item) for item in object_islands})
+
+    def test_edit_mode_protection_tags_complete_seeded_islands(self):
+        obj = mesh_object(
+            "ProtectionBMesh",
+            [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+             (2,0,0),(3,0,0),(3,1,0),(2,1,0),
+             (4,0,0),(5,0,0),(5,1,0),(4,1,0)],
+            [(0,1,2,3), (4,5,6,7), (8,9,10,11)],
+        )
+        layer = obj.data.uv_layers.new(name="UVMap")
+        initial_uvs = tuple((float(index % 4), float(index // 4))
+                            for index in range(len(layer.uv)))
+        for datum, uv in zip(layer.uv, initial_uvs):
+            datum.vector = uv
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        for face in bm.faces:
+            face.select_set(True)
+        selection = {face.index for face in bm.faces if face.select}
+        select_mode = tuple(bpy.context.tool_settings.mesh_select_mode)
+
+        self.assertEqual(bpy.ops.autoseamuv.lock_layout_islands(), {"FINISHED"})
+        lock = bm.faces.layers.int.get("autoseam_layout_lock")
+        self.assertEqual([bm.faces[index][lock] for index in range(3)], [1, 1, 1])
+        self.assertEqual(bpy.ops.autoseamuv.unlock_layout_islands(), {"FINISHED"})
+        self.assertEqual([bm.faces[index][lock] for index in range(3)], [0, 0, 0])
+        self.assertEqual(bpy.ops.autoseamuv.mark_finished_islands(), {"FINISHED"})
+        finished = bm.faces.layers.int.get("autoseam_finished_group")
+        self.assertEqual(len({bm.faces[index][finished] for index in range(3)}), 3)
+        self.assertTrue(all(bm.faces[index][finished] > 0 for index in range(3)))
+        self.assertEqual(bpy.ops.autoseamuv.unmark_finished_islands(), {"FINISHED"})
+        self.assertEqual([bm.faces[index][finished] for index in range(3)], [0, 0, 0])
+        self.assertEqual({face.index for face in bm.faces if face.select}, selection)
+        self.assertEqual(tuple(bpy.context.tool_settings.mesh_select_mode),
+                         select_mode)
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
+        # Protection writes face custom data only, never Edit BMesh UVs.
+        edit_uv = bm.loops.layers.uv.active
+        current_uvs = tuple(tuple(loop[edit_uv].uv) for face in bm.faces for loop in face.loops)
+        self.assertEqual(current_uvs, initial_uvs)
+
+    def test_flip_selected_uv_island_uses_unsynchronized_edit_bmesh_uvs(self):
+        obj = mesh_object("FlipBMesh", [(0,0,0),(1,0,0),(1,1,0),(0,1,0),
+                                         (2,0,0),(2,1,0)],
+                          [(0,1,2,3), (1,4,5,2)])
+        obj.data.uv_layers.new(name="UVMap")
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data); bm.faces.ensure_lookup_table()
+        uv = bm.loops.layers.uv.active
+        face_uvs = (((0,0),(1,0),(1,1),(0,1)),
+                    ((3,0),(4,0),(4,1),(3,1)))
+        for face, coordinates in zip(bm.faces, face_uvs):
+            face.select_set(face.index == 0)
+            for loop, coordinate in zip(face.loops, coordinates):
+                loop[uv].uv = coordinate
+        untouched = tuple(tuple(loop[uv].uv) for loop in bm.faces[1].loops)
+
+        self.assertEqual(bpy.ops.autoseamuv.flip_selected_uv_islands(), {"FINISHED"})
+        self.assertEqual(tuple(tuple(loop[uv].uv) for loop in bm.faces[1].loops), untouched)
+        self.assertEqual({face.index for face in bm.faces if face.select}, {0})
+        self.assertEqual(bpy.context.mode, "EDIT_MESH")
 
     def test_unwrap_selected_faces_reacquires_uv_layer_and_preserves_obstacle(self):
         obj = mesh_object("SelectedUnwrapRNA",
