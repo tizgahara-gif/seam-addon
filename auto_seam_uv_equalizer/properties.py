@@ -20,6 +20,20 @@ from .percentage_facades import (
 class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     """Scene-level settings used by the Auto Seam UV Equalizer operators."""
 
+    ui_mode: EnumProperty(
+        name="Mode",
+        items=(("SIMPLE", "Simple", "Create a practical initial UV setup in one step"),
+               ("ADVANCED", "Advanced", "Show the complete five-stage toolset")),
+        default="SIMPLE",
+    )
+    simple_symmetry: EnumProperty(
+        name="Symmetry",
+        items=(("AUTO", "Auto", "Apply X symmetry when valid topology is detected"),
+               ("NONE", "None", "Do not apply symmetry")),
+        default="AUTO",
+    )
+    simple_status: StringProperty(name="Auto UV Setup Result", default="")
+
     angle_threshold: FloatProperty(
         name="Angle Threshold (Degrees)",
         description="Mark edges as seams when adjacent face normals meet or exceed this degree value",

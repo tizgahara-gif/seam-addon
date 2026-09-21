@@ -5,7 +5,7 @@ from __future__ import annotations
 bl_info = {
     "name": "Auto Seam UV Equalizer",
     "author": "地図ヶ原",
-    "version": (0, 9, 0),
+    "version": (0, 10, 0),
     "blender": (5, 1, 2),
     "location": "View3D > Sidebar > Auto UV",
     "description": ("Topology-aware seam generation, UV unwrapping, weighted layout, "
@@ -18,10 +18,12 @@ from bpy.app.handlers import persistent  # noqa: E402
 from bpy.props import PointerProperty  # noqa: E402
 
 from . import (operators, operators_protection, operators_seam, operators_symmetry,
+               simple_workflow,
                operators_uv, operators_validation, properties, translations, ui)
 
 CLASSES = (
     properties.AUTOSEAMUV_PG_settings,
+    *simple_workflow.CLASSES,
     operators.AUTOSEAMUV_OT_mark_selected_region_boundary,
     operators.AUTOSEAMUV_OT_analyze_seams,
     operators.AUTOSEAMUV_OT_generate_seams,

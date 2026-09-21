@@ -1,12 +1,33 @@
-# Auto Seam UV Equalizer v0.9.0
+# Auto Seam UV Equalizer v0.10.0
 
-Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。新しいサイドバーは複合的な Quick Actions ではなく、現在の工程と作用範囲が分かる5つのセクションで構成されています。
+Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。
+
+## Quick Start — Simple Mode
+
+1. Mesh Objectを1つ以上選択します。
+2. 3D Viewの **N > Auto UV** を開きます。
+3. 既定の **Simple** のままにします。
+4. **Auto UV Setup（自動UVセットアップ）** をクリックします。
+
+Simpleは既存のChart-Based Seam（Organic、既存シーム保持、Garment Prior / Distortion Guide / Clean Edge Loop）、ANGLE_BASED Unwrap、Protection-aware Weighted Layout、Standard UV Transferをこの順に実行します。単一ObjectはWeighted Island Layout、複数の固有Mesh DataはShared Weighted Atlasを使用します。Active UV Mapがあればそれを使い、なければ `UVMap` を作成します。対称化はX軸のpositive Xからnegative Xを試し、対応Topologyがなければその工程だけをスキップします。Advanced設定値を書き換えることはありません。
+
+## Advanced Mode
+
+**Advanced** は従来の全5工程（Seam、Unwrap、Layout、Symmetry、Validation）とすべてのsub-panelをそのまま表示します。シーム生成、UV展開、Packing、対称化、Protection、Validationを直接制御したい場合に使用してください。Mode切替自体はUVデータやAdvanced設定を変更しません。
 
 ## Installation
 
 `auto_seam_uv_equalizer.zip` を **Edit > Preferences > Add-ons > Install from Disk** からインストールし、3D Viewの **N > Auto UV** を開きます。GitHubのソースアーカイブではなく、リリース用zipを使用してください。
 
 ## Release Notes / リリースノート
+
+### v0.10.0 — Simple Mode
+
+- Added a new default Simple workflow. / 既定のSimpleワークフローを追加しました。
+- Auto UV Setup performs Seam → Unwrap → Layout → Symmetry. / 自動UVセットアップが一連の4工程を実行します。
+- Existing full toolset is available in Advanced Mode. / 既存の全ツールはAdvanced Modeで維持されます。
+- Simple Mode reuses the same processing backend as Advanced Mode. / SimpleはAdvancedと同じ処理backendを再利用します。
+- Hard failures restore seam and UV state; symmetry detection failure is a non-fatal skip. / Hard FailureではシームとUVを復元し、対称検出失敗はスキップとして扱います。
 
 ### v0.9.0 — UI/UX
 

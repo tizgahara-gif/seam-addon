@@ -17,6 +17,46 @@ from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finishe
                             validate_protection_consistency)
 
 
+def transfer_standard_uv_backend(obj, axis="X", direction="POSITIVE_TO_NEGATIVE",
+                                 tolerance=0.0001, layout="OVERLAP", gap=0.02):
+    """Apply the same Standard UV Transfer used by the Advanced operator.
+
+    This service entry point deliberately accepts an immutable configuration
+    snapshot rather than reading or changing Scene properties.
+    """
+    layer = obj.data.uv_layers.active
+    if layer is None:
+        raise SymmetryError("active UV map does not exist")
+    axis_index = "XYZ".index(axis)
+    sign = -1 if direction == "NEGATIVE_TO_POSITIVE" else 1
+    candidates = range(len(obj.data.polygons))
+    sources = _source_faces(obj.data, candidates, axis_index, sign, tolerance)
+    plan = build_symmetry_plan(
+        [tuple(vertex.co) for vertex in obj.data.vertices],
+        [tuple(edge.vertices) for edge in obj.data.edges],
+        [tuple(face.vertices) for face in obj.data.polygons], sources,
+        axis_index, sign, tolerance)
+    if not plan.face_pairs:
+        raise SymmetryError("no valid mirrored topology found")
+    source_uvs = [tuple(item.vector) for item in layer.uv]
+    writes = combine_island_transfer_plans(plan_symmetric_uv_transfers(
+        [tuple(face.vertices) for face in obj.data.polygons], source_uvs,
+        plan, layout, gap))
+    validate_protection_consistency(obj)
+    preflight_finished_write(obj.data, writes)
+    assert_plan_does_not_modify_finished(obj.data, writes)
+    previous = {index: tuple(layer.uv[index].vector) for index in writes}
+    try:
+        for index, uv in writes.items():
+            layer.uv[index].vector = uv
+    except Exception:
+        for index, uv in previous.items():
+            layer.uv[index].vector = uv
+        raise
+    obj.data.update()
+    return len(plan.face_pairs)
+
+
 def _selected_faces(obj):
     if obj.mode == "EDIT":
         bm = bmesh.from_edit_mesh(obj.data)

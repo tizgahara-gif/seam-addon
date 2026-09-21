@@ -13,6 +13,20 @@ _TRANSLATION_STATE_KEY = f"{TRANSLATION_DOMAIN}.registered"
 
 
 _JA_JP = {
+    "Simple": "シンプル",
+    "Advanced": "アドバンスド",
+    "Simple UV": "シンプルUV",
+    "Auto": "自動",
+    "Symmetry": "対称化",
+    "Auto UV Setup": "自動UVセットアップ",
+    "Auto UV Setup completed": "自動UVセットアップ完了",
+    "Target: Selected Objects": "対象: 選択オブジェクト",
+    "Seam → Unwrap → Layout → Symmetry": "シーム → UV展開 → 配置 → 対称化",
+    "Applied": "適用",
+    "Skipped — no valid mirrored topology found": "スキップ — 有効な左右対称トポロジーを検出できませんでした",
+    "Auto UV Setup failed — no editable mesh selected": "自動UVセットアップ失敗 — 編集可能なメッシュが選択されていません",
+    "Auto UV Setup failed — changes rolled back: %s": "自動UVセットアップ失敗 — 変更をロールバックしました: %s",
+    "Auto UV Setup completed — Seam: Success; Unwrap: Success; Layout: Success; Symmetry: %s": "自動UVセットアップ完了 — シーム: 成功; UV展開: 成功; 配置: 成功; 対称化: %s",
     "Processing Options": "処理設定",
     "Show Helper Comments": "補助コメントを表示",
     "Candidate Search": "候補探索",
