@@ -13,7 +13,9 @@ def _load_primitives():
     # instead provide minimal package dependency stubs through the normal test setup.
     package = sys.modules.setdefault("auto_seam_uv_equalizer", types.ModuleType("auto_seam_uv_equalizer"))
     package.__path__ = [str(MODULE.parent)]
-    island = types.ModuleType("auto_seam_uv_equalizer.island_tools"); island.find_uv_islands = lambda obj: []
+    island = types.ModuleType("auto_seam_uv_equalizer.island_tools")
+    island.find_uv_islands = lambda obj: []
+    island.find_uv_face_islands = lambda obj: []
     mesh = types.ModuleType("auto_seam_uv_equalizer.mesh_utils"); mesh.build_mesh_topology = lambda obj: ({}, {}, {}, {})
     sys.modules[island.__name__] = island; sys.modules[mesh.__name__] = mesh
     spec = importlib.util.spec_from_file_location("auto_seam_uv_equalizer.weighted_layout", MODULE)

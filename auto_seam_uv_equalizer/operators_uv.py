@@ -40,9 +40,6 @@ class AUTOSEAMUV_OT_flip_selected_uv_islands(bpy.types.Operator):
             self.report({"ERROR"}, iface_("No active UV map."))
             return {"CANCELLED"}
 
-        # Synchronize the read-only Mesh view consumed by the shared island
-        # connectivity helper.  This does not leave Edit Mode or alter selection.
-        obj.update_from_editmode()
         islands = collect_selected_uv_islands(obj, bm, uv_layer)
         if not islands:
             self.report({"WARNING"}, iface_("No selected UV islands found."))

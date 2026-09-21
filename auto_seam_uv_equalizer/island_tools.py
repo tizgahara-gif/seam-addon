@@ -23,6 +23,26 @@ def _mesh_loop_uv_edge(uv_layer, loop_index: int, loop_to_next: dict[int, int]) 
     return uv_layer.uv[loop_index].vector, uv_layer.uv[next_loop_index].vector
 
 
+def _face_components(face_indices, face_neighbors) -> list[tuple[int, ...]]:
+    """Return deterministic connected components for a face adjacency graph."""
+    unvisited = set(face_indices)
+    islands = []
+    while unvisited:
+        start = min(unvisited)
+        unvisited.remove(start)
+        island = [start]
+        queue = deque([start])
+        while queue:
+            face_index = queue.popleft()
+            for neighbor in sorted(face_neighbors.get(face_index, ())):
+                if neighbor in unvisited:
+                    unvisited.remove(neighbor)
+                    island.append(neighbor)
+                    queue.append(neighbor)
+        islands.append(tuple(sorted(island)))
+    return islands
+
+
 def _mesh_uv_edges_match(uv_layer, loop_a_index: int, loop_b_index: int, loop_to_next) -> bool:
     a_start, a_end = _mesh_loop_uv_edge(uv_layer, loop_a_index, loop_to_next)
     b_start, b_end = _mesh_loop_uv_edge(uv_layer, loop_b_index, loop_to_next)
@@ -42,6 +62,8 @@ def find_uv_islands(obj) -> list[set[int]]:
     uv_layer = mesh.uv_layers.active
     if uv_layer is None:
         raise RuntimeError("Active object has no UV map.")
+    if len(uv_layer.uv) != len(mesh.loops):
+        raise RuntimeError("Active UV map data is not synchronized with mesh loops.")
 
     face_neighbors: DefaultDict[int, set[int]] = defaultdict(set)
     _edge_faces, edge_to_loops, _loop_faces, loop_to_next = build_mesh_topology(mesh)
@@ -75,6 +97,67 @@ def find_uv_islands(obj) -> list[set[int]]:
         islands.append(loop_indices)
 
     return islands
+
+
+def _find_uv_face_islands_mesh(mesh) -> list[tuple[int, ...]]:
+    """Find face islands from the evaluated Object Mode Mesh representation."""
+    uv_layer = mesh.uv_layers.active
+    if uv_layer is None:
+        raise RuntimeError("No active UV map.")
+    if len(uv_layer.uv) != len(mesh.loops):
+        raise RuntimeError("Active UV map data is not synchronized with mesh loops.")
+
+    face_neighbors: DefaultDict[int, set[int]] = defaultdict(set)
+    _edge_faces, edge_to_loops, _loop_faces, loop_to_next = build_mesh_topology(mesh)
+    for linked_loops in edge_to_loops.values():
+        for (face_a, loop_a), (face_b, loop_b) in combinations(linked_loops, 2):
+            if face_a != face_b and _mesh_uv_edges_match(
+                    uv_layer, loop_a, loop_b, loop_to_next):
+                face_neighbors[face_a].add(face_b)
+                face_neighbors[face_b].add(face_a)
+    return _face_components((face.index for face in mesh.polygons), face_neighbors)
+
+
+def _find_uv_face_islands_bmesh(mesh) -> list[tuple[int, ...]]:
+    """Find face islands directly from the live Edit BMesh and its UV layer."""
+    import bmesh
+
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
+    uv_layer = bm.loops.layers.uv.active
+    if uv_layer is None:
+        raise RuntimeError("No active UV map.")
+
+    face_neighbors: DefaultDict[int, set[int]] = defaultdict(set)
+    for edge in bm.edges:
+        # Test every pair for non-manifold edges, matching the Mesh path.
+        for loop_a, loop_b in combinations(edge.link_loops, 2):
+            face_a = loop_a.face.index
+            face_b = loop_b.face.index
+            if face_a == face_b:
+                continue
+            a_start = loop_a[uv_layer].uv
+            a_end = loop_a.link_loop_next[uv_layer].uv
+            b_start = loop_b[uv_layer].uv
+            b_end = loop_b.link_loop_next[uv_layer].uv
+            if ((_uv_points_close(a_start, b_start) and
+                 _uv_points_close(a_end, b_end)) or
+                (_uv_points_close(a_start, b_end) and
+                 _uv_points_close(a_end, b_start))):
+                face_neighbors[face_a].add(face_b)
+                face_neighbors[face_b].add(face_a)
+    return _face_components((face.index for face in bm.faces), face_neighbors)
+
+
+def find_uv_face_islands(obj) -> list[tuple[int, ...]]:
+    """Return face-index UV islands from the authoritative data for the mode."""
+    if obj is None or obj.type != "MESH":
+        return []
+    mesh = obj.data
+    if mesh.is_editmode:
+        return _find_uv_face_islands_bmesh(mesh)
+    return _find_uv_face_islands_mesh(mesh)
 
 
 def _loop_face_count(loop_indices: Iterable[int], loop_to_face: dict[int, int]) -> int:

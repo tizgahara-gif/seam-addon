@@ -25,9 +25,6 @@ class _ProtectionTagBase(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         bm.faces.ensure_lookup_table(); bm.faces.index_update()
         selected = {face.index for face in bm.faces if face.select}
-        # Mesh connectivity readers need the current Edit Mesh, but selection is
-        # only read and is never rewritten.
-        obj.update_from_editmode()
         try:
             islands = selected_islands(obj, selected)
             if not islands:

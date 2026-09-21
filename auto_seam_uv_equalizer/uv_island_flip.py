@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from .island_tools import find_uv_islands
-from .mesh_utils import build_mesh_topology
+from .island_tools import find_uv_face_islands
 
 
 @dataclass(frozen=True)
@@ -19,9 +18,9 @@ class UVFlipIsland:
 def collect_selected_uv_islands(obj, bm, uv_layer) -> list[UVFlipIsland]:
     """Snapshot complete islands containing at least one selected mesh face.
 
-    Connectivity deliberately comes from the same ``find_uv_islands`` helper
-    used by Weighted Selected UV Islands.  Selection is only read from BMesh;
-    it is never expanded or written.
+    Connectivity comes directly from the live Edit BMesh through the shared
+    mode-aware face-island helper. Selection is only read; it is never expanded
+    or written.
     """
     bm.faces.ensure_lookup_table()
     bm.faces.index_update()
@@ -29,16 +28,17 @@ def collect_selected_uv_islands(obj, bm, uv_layer) -> list[UVFlipIsland]:
     if not selected_faces:
         return []
 
-    _edge_faces, _edge_loops, loop_to_face, _loop_next = build_mesh_topology(obj.data)
-    bm_loops = {loop.index: loop for face in bm.faces for loop in face.loops}
     islands = []
-    for loop_indices in find_uv_islands(obj):
-        if not selected_faces.intersection(loop_to_face[index] for index in loop_indices):
+    for face_indices in find_uv_face_islands(obj):
+        if not selected_faces.intersection(face_indices):
             continue
+        loops = sorted((loop for face_index in face_indices
+                        for loop in bm.faces[face_index].loops),
+                       key=lambda loop: loop.index)
         islands.append(UVFlipIsland(tuple(
-            (index, float(bm_loops[index][uv_layer].uv.x),
-             float(bm_loops[index][uv_layer].uv.y))
-            for index in sorted(loop_indices)
+            (loop.index, float(loop[uv_layer].uv.x),
+             float(loop[uv_layer].uv.y))
+            for loop in loops
         )))
     return islands
 
