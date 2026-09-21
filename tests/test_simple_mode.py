@@ -79,3 +79,46 @@ def test_mode_switch_and_simple_stages_do_not_assign_advanced_settings():
     assert "settings.unwrap_method =" not in source
     assert "settings.weighted_rotation_mode =" not in source
     assert "ui_mode =" not in source
+
+
+def test_simple_runner_has_object_mode_snapshot_transaction_order():
+    function = next(node for node in _tree("simple_workflow.py").body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "_execute_stage")
+    source = ast.unparse(function)
+    context = source.index("operators._snapshot_context(context)")
+    object_mode = source.index("operators._ensure_object_mode()")
+    targets = source.index("resolve_simple_targets(context)")
+    data = source.index("before = snapshot(targets.unique_objects)")
+    operation = source.index("result = operation(targets.unique_objects)")
+    assert context < object_mode < targets < data < operation
+    assert "rollback also failed" in source
+    assert "finally:\n        operators._restore_context" in source
+
+
+def test_simple_policy_deduplicates_meshes_without_advanced_setting():
+    source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    resolver = ast.unparse(next(node for node in ast.parse(source).body
+                                if isinstance(node, ast.FunctionDef)
+                                and node.name == "resolve_simple_targets"))
+    assert "obj.data.as_pointer()" in resolver
+    assert "process_shared_mesh_once" not in source
+    assert "settings.weighted_" not in source
+
+
+def test_simple_ui_and_backend_share_readiness_resolver():
+    ui = (ROOT / "ui.py").read_text(encoding="utf-8")
+    workflow = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    assert "targets = resolve_simple_targets(context)" in ui
+    assert "targets = resolve_simple_targets(context)" in workflow
+    assert "targets.all_uv_ready" in ui
+    assert 'simple_symmetry_axis' in ui
+
+
+def test_symmetry_only_soft_skips_typed_not_found_error():
+    function = next(node for node in _tree("simple_workflow.py").body
+                    if isinstance(node, ast.FunctionDef) and node.name == "run_symmetry")
+    source = ast.unparse(function)
+    assert "except SymmetryNotFoundError as exc" in source
+    assert "ProtectionError" not in source
+    assert "ValueError" not in source

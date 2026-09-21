@@ -16,6 +16,10 @@ class SymmetryError(ValueError):
     """A safe, user-facing symmetry validation failure."""
 
 
+class SymmetryNotFoundError(SymmetryError):
+    """The requested scope has no unambiguous mirrored counterpart."""
+
+
 class SymmetryPlan(NamedTuple):
     vertex_pairs: dict[int, int]
     edge_pairs: dict[int, int]
@@ -108,7 +112,7 @@ def build_symmetry_plan(coordinates, edges, faces, source_faces, axis=0,
     vertex_pairs, ambiguous = build_unique_vertex_mirror(coordinates, axis, tolerance)
     source_faces = tuple(source_faces)
     if not source_faces:
-        raise SymmetryError("no source-side faces in the selected scope")
+        raise SymmetryNotFoundError("no source-side faces in the selected scope")
 
     needed_vertices = {vertex for face_index in source_faces for vertex in faces[face_index]}
     missing = needed_vertices - vertex_pairs.keys()
@@ -119,7 +123,7 @@ def build_symmetry_plan(coordinates, edges, faces, source_faces, axis=0,
         if ambiguous_vertices:
             raise SymmetryError(f"ambiguous or unmatched vertex: {ambiguous_vertices[0]}")
     if missing:
-        raise SymmetryError(f"unmatched vertex: {min(missing)}")
+        raise SymmetryNotFoundError(f"unmatched vertex: {min(missing)}")
 
     edge_lookup = build_edge_lookup(edges)
     face_lookup = {}
@@ -142,8 +146,9 @@ def build_symmetry_plan(coordinates, edges, faces, source_faces, axis=0,
         mirrored = tuple(vertex_pairs[v] for v in face)
         matches = face_lookup.get(frozenset(mirrored), ())
         if len(matches) != 1 or matches[0] == source_face:
-            reason = "ambiguous" if len(matches) > 1 else "missing"
-            raise SymmetryError(f"{reason} mirrored face for face {source_face}")
+            if len(matches) > 1:
+                raise SymmetryError(f"ambiguous mirrored face for face {source_face}")
+            raise SymmetryNotFoundError(f"missing mirrored face for face {source_face}")
         destination_face = matches[0]
         face_pairs[source_face] = destination_face
         destination_loops = {vertex: loop_starts[destination_face] + offset

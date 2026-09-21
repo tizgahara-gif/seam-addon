@@ -6,6 +6,7 @@ from .translations import iface_
 from .operators import (resolve_atlas_targets, resolve_layout_targets,
                         selected_face_seeds_by_mesh)
 from .uv_protection import has_active_uv_protection
+from .simple_workflow import resolve_simple_targets
 
 
 def _mesh_objects(context):
@@ -112,45 +113,65 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
     @staticmethod
     def _draw_simple(layout, settings, context):
-        meshes = _mesh_objects(context)
-        active_uv = _active_uv(context)
+        targets = resolve_simple_targets(context)
         box = layout.box()
-        box.label(text="Simple UV", icon="UV")
+        box.label(text="Processing", icon="INFO")
         box.label(text="Target: Selected Objects")
+        box.label(text=iface_("Selected Objects: %d") % targets.selected_count)
+        box.label(text=iface_("Unique Mesh Data: %d") % targets.unique_mesh_count)
+        box.label(text=iface_("UV Ready: %d / %d") %
+                  (targets.uv_ready_count, targets.unique_mesh_count))
         box.prop(settings, "show_helper_comments")
 
         seam = layout.box()
         seam.label(text="1. Seam")
         action = seam.column(align=True)
-        action.enabled = bool(meshes)
+        action.enabled = targets.editable_count > 0
         action.operator("autoseamuv.simple_auto_seam", text="Auto Seam", icon="MOD_UVPROJECT")
-        _helper_comment(seam, settings, "Analyze and generate seams without changing UVs.")
+        _helper_comment(seam, settings,
+                        "Chart-Based seam generation using the Organic / Cloth preset.")
 
         unwrap = layout.box()
         unwrap.label(text="2. Unwrap")
         action = unwrap.column(align=True)
-        action.enabled = bool(meshes)
+        action.enabled = targets.editable_count > 0
         action.operator("autoseamuv.simple_auto_unwrap", text="Auto Unwrap", icon="UV")
-        _helper_comment(unwrap, settings, "Unwrap using the current seams.")
+        _helper_comment(unwrap, settings, "Uses the current seams.")
+        _helper_comment(unwrap, settings,
+                        "Uses the active UV map, or creates UVMap if none exists.")
+        if targets.missing_uv_count:
+            _helper_comment(unwrap, settings,
+                            "Missing UV maps will be created as UVMap.")
 
         layout_box = layout.box()
         layout_box.label(text="3. Layout")
         action = layout_box.column(align=True)
-        action.enabled = bool(meshes) and active_uv is not None
+        action.enabled = targets.editable_count > 0 and targets.all_uv_ready
         action.operator("autoseamuv.simple_auto_layout", text="Auto Layout", icon="NODE_CORNER")
-        _helper_comment(layout_box, settings, "Arrange the existing UV islands only.")
-        if meshes and active_uv is None:
-            _error(layout_box, "No active UV map.")
+        _helper_comment(layout_box, settings,
+                        "Scale and pack existing UV islands using Weighted Layout.")
+        _helper_comment(layout_box, settings, "Seams and unwrap are not changed.")
+        _helper_comment(layout_box, settings,
+                        "Multiple objects will be packed into one Shared Weighted Atlas."
+                        if targets.unique_mesh_count > 1 else
+                        "The selected mesh will use Weighted Layout.")
+        if targets.editable_count and not targets.all_uv_ready:
+            _error(layout_box, "%d selected mesh target(s) have no active UV map.",
+                   targets.missing_uv_count)
 
         symmetry = layout.box()
         symmetry.label(text="4. Symmetry")
+        symmetry.prop(settings, "simple_symmetry_axis", text="Axis")
         symmetry.prop(settings, "simple_symmetry_direction", text="Source Side")
         action = symmetry.column(align=True)
-        action.enabled = bool(meshes) and active_uv is not None
+        action.enabled = targets.editable_count > 0 and targets.all_uv_ready
         action.operator("autoseamuv.simple_auto_symmetry", text="Auto Symmetry", icon="MOD_MIRROR")
-        _helper_comment(symmetry, settings, "Apply Standard UV Transfer when topology is symmetric.")
-        if meshes and active_uv is None:
-            _error(symmetry, "No active UV map.")
+        _helper_comment(symmetry, settings,
+                        "Copies the source-side UVs onto the mirrored side.")
+        _helper_comment(symmetry, settings, "Paired UV islands will overlap.")
+        if targets.editable_count and not targets.all_uv_ready:
+            _error(symmetry, "%d selected mesh target(s) have no active UV map.",
+                   targets.missing_uv_count)
 
     @staticmethod
     def _draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges):
