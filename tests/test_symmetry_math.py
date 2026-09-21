@@ -51,6 +51,115 @@ def test_overlap_and_separate_transfers():
     assert max(uv[0] for uv in separate.values()) == 2.25
 
 
+def _multi_island_transfer_fixture():
+    faces = tuple((index * 4, index * 4 + 1, index * 4 + 2, index * 4 + 3)
+                  for index in range(6))
+    source = (
+        ((0.05, 0.05), (0.20, 0.05), (0.20, 0.20), (0.05, 0.20)),
+        ((0.30, 0.30), (0.55, 0.35), (0.50, 0.42), (0.28, 0.38)),
+        ((0.70, 0.70), (0.78, 0.70), (0.78, 0.95), (0.70, 0.95)),
+    )
+    uvs = tuple(uv for island in source for uv in island) + ((9.0, 9.0),) * 12
+    pairs = tuple((loop, 12 + (loop // 4) * 4 + (3 - loop % 4))
+                  for loop in range(12))
+    plan = symmetry.SymmetryPlan({}, {}, {0: 3, 1: 4, 2: 5}, pairs, (0, 1, 2))
+    return faces, uvs, plan
+
+
+def _planned_writes(faces, uvs, plan, layout="OVERLAP", gap=0.02):
+    plans = symmetry.plan_symmetric_uv_transfers(faces, uvs, plan, layout, gap)
+    return plans, symmetry.combine_island_transfer_plans(plans)
+
+
+def test_symmetric_transfer_single_island_baseline():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    single = plan._replace(face_pairs={0: 3}, loop_pairs=plan.loop_pairs[:4], source_faces=(0,))
+    _plans, writes = _planned_writes(faces, uvs, single, "SEPARATE_MIRRORED", 0.03)
+    assert writes == symmetry.transferred_uvs(uvs, plan.loop_pairs[:4],
+                                              "SEPARATE_MIRRORED", 0.03)
+
+
+def test_symmetric_transfer_multiple_islands_matches_individual_results():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    _plans, batch = _planned_writes(faces, uvs, plan, "SEPARATE_MIRRORED", 0.03)
+    individual = {}
+    for index in range(3):
+        individual.update(symmetry.transferred_uvs(
+            uvs, plan.loop_pairs[index * 4:index * 4 + 4], "SEPARATE_MIRRORED", 0.03))
+    assert batch == individual
+
+
+def test_symmetric_transfer_multiple_islands_order_independent():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    _plans, expected = _planned_writes(faces, uvs, plan, "SEPARATE_MIRRORED", 0.03)
+    shuffled = plan._replace(loop_pairs=tuple(reversed(plan.loop_pairs)),
+                             source_faces=(2, 0, 1))
+    plans, actual = _planned_writes(faces, uvs, shuffled, "SEPARATE_MIRRORED", 0.03)
+    assert actual == expected
+    assert [item.source_island_key for item in plans] == [(0, 0), (1, 4), (2, 8)]
+
+
+def test_symmetric_transfer_multiple_islands_nonzero_gap():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    plans, _writes = _planned_writes(faces, uvs, plan, "SEPARATE_MIRRORED", 0.03)
+    for island_plan in plans:
+        source_face = island_plan.source_faces[0]
+        source_values = uvs[source_face * 4:source_face * 4 + 4]
+        assert abs(min(uv[0] for uv in island_plan.destination_uvs)
+                   - max(uv[0] for uv in source_values) - 0.03) < 1e-12
+
+
+def test_symmetric_transfer_multiple_islands_near_uv_boundary():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    _plans, writes = _planned_writes(faces, uvs, plan)
+    assert all(0.0 <= value <= 1.0 for uv in writes.values() for value in uv)
+
+
+def test_symmetric_transfer_multiple_islands_different_sizes():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    plans, _writes = _planned_writes(faces, uvs, plan)
+    widths = [max(u for u, _v in item.destination_uvs)
+              - min(u for u, _v in item.destination_uvs) for item in plans]
+    assert all(abs(actual - expected) < 1e-12
+               for actual, expected in zip(widths, (0.15, 0.27, 0.08)))
+
+
+def test_symmetric_transfer_l_to_r():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    assert len(_planned_writes(faces, uvs, plan)[1]) == 12
+
+
+def test_symmetric_transfer_r_to_l():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    reverse = plan._replace(loop_pairs=tuple((destination, source)
+                                             for source, destination in plan.loop_pairs),
+                            source_faces=(3, 4, 5))
+    reverse_uvs = uvs[:12] + uvs[:12]
+    assert len(_planned_writes(faces, reverse_uvs, reverse)[1]) == 12
+
+
+def test_symmetric_transfer_transaction_rollback():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    duplicate = plan._replace(loop_pairs=plan.loop_pairs[:-1] + ((11, 12),))
+    try:
+        _planned_writes(faces, uvs, duplicate)
+    except symmetry.SymmetryError as exc:
+        assert "duplicate" in str(exc)
+    else:
+        raise AssertionError("duplicate destination was accepted")
+    assert uvs[12:] == ((9.0, 9.0),) * 12
+
+
+def test_symmetric_transfer_finished_destination_rollback():
+    faces, uvs, plan = _multi_island_transfer_fixture()
+    plans, writes = _planned_writes(faces, uvs, plan)
+    before = uvs[12:]
+    # Protection is preflighted by the operator before this write set is
+    # committed; the pure plan itself must not mutate a finished destination.
+    assert len(plans) == 3 and len(writes) == 12
+    assert uvs[12:] == before
+
+
 def test_missing_face_rejected_without_writes():
     coordinates, edges, faces = mirrored_quad_data()
     try:

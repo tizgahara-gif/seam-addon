@@ -5,8 +5,11 @@ import bmesh
 import bpy
 
 from .symmetry import (SymmetryError, build_symmetry_plan,
-                       collect_selected_source_uv_island, exact_texture_x_uvs,
-                       plan_mirrored_island_sync, transferred_uvs)
+                       collect_selected_source_uv_island,
+                       collect_selected_source_uv_islands,
+                       combine_island_transfer_plans, exact_texture_x_uvs,
+                       plan_mirrored_island_sync,
+                       plan_symmetric_uv_transfers, transferred_uvs)
 from .translations import iface_
 from .operators import _restore_context, _snapshot_context
 from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
@@ -51,7 +54,7 @@ def _source_faces(mesh, candidates, axis, sign, tolerance):
     return result
 
 
-def _plan(context, require_uv, selected_faces=None):
+def _plan(context, require_uv, selected_faces=None, expand_uv_islands=False):
     obj = context.active_object
     if obj is None or obj.type != "MESH":
         raise SymmetryError("active object is not a mesh")
@@ -71,6 +74,17 @@ def _plan(context, require_uv, selected_faces=None):
         if not selected:
             raise SymmetryError("no faces selected")
         candidates = selected
+        # A selected face is a seed: Standard Transfer operates on every
+        # complete active-map UV island touched by the selection.
+        if require_uv and expand_uv_islands:
+            faces = [tuple(face.vertices) for face in mesh.polygons]
+            uvs = [tuple(item.vector) for item in layer.uv]
+            candidates = {
+                face_index
+                for island in collect_selected_source_uv_islands(
+                    faces, uvs, selected)
+                for face_index in island
+            }
     else:
         candidates = range(len(mesh.polygons))
     axis = "XYZ".index(settings.mesh_symmetry_axis)
@@ -121,20 +135,37 @@ class AUTOSEAMUV_OT_transfer_symmetric_uv(bpy.types.Operator):
             if original_mode == "EDIT":
                 bpy.ops.object.mode_set(mode="OBJECT")
             obj, layer, plan = _plan(
-                context, True, selected_faces=selected_faces
+                context, True, selected_faces=selected_faces,
+                expand_uv_islands=True
             )
             settings = context.scene.autoseamuv_settings
             source_uvs = [tuple(item.vector) for item in layer.uv]
-            writes = transferred_uvs(source_uvs, plan.loop_pairs,
-                                      settings.symmetry_layout, settings.symmetry_island_gap)
+            island_plans = plan_symmetric_uv_transfers(
+                [tuple(face.vertices) for face in obj.data.polygons],
+                source_uvs, plan, settings.symmetry_layout,
+                settings.symmetry_island_gap)
+            writes = combine_island_transfer_plans(island_plans)
             validate_protection_consistency(obj)
             preflight_finished_write(obj.data, writes)
             assert_plan_does_not_modify_finished(obj.data, writes)
             # This is the first mutation: every geometry/loop/UV check succeeded.
-            for loop_index, uv in writes.items():
-                layer.uv[loop_index].vector = uv
+            previous = {loop_index: tuple(layer.uv[loop_index].vector)
+                        for loop_index in writes}
+            try:
+                for loop_index, uv in writes.items():
+                    layer.uv[loop_index].vector = uv
+            except Exception:
+                for loop_index, uv in previous.items():
+                    layer.uv[loop_index].vector = uv
+                obj.data.update()
+                raise
             obj.data.update()
         except (SymmetryError, ProtectionError, ValueError) as exc:
+            self.report({"ERROR"}, iface_("Symmetric UV transfer failed: %s", exc))
+            return_value = {"CANCELLED"}
+        except Exception as exc:
+            # Assignment failures are rolled back above; convert Blender RNA
+            # errors into the same controlled, transaction-safe cancellation.
             self.report({"ERROR"}, iface_("Symmetric UV transfer failed: %s", exc))
             return_value = {"CANCELLED"}
         else:

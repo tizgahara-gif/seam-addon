@@ -32,6 +32,15 @@ class MirroredIslandSyncPlan(NamedTuple):
     uv_writes: dict[int, tuple[float, float]]
 
 
+class IslandTransferPlan(NamedTuple):
+    """Immutable result for one independently transformed source UV island."""
+
+    source_island_key: tuple[int, int]
+    source_faces: tuple[int, ...]
+    destination_loops: tuple[int, ...]
+    destination_uvs: tuple[tuple[float, float], ...]
+
+
 def _cell(co, tolerance):
     return tuple(floor(float(value) / tolerance) for value in co)
 
@@ -218,6 +227,15 @@ def collect_selected_source_uv_island(faces, uvs, selected_faces, tolerance=1e-6
     return hit[0]
 
 
+def collect_selected_source_uv_islands(faces, uvs, selected_faces, tolerance=1e-6):
+    """Expand face seeds to complete UV islands in deterministic order."""
+    selected_faces = set(selected_faces)
+    islands = [island for island in find_uv_face_islands(faces, uvs, tolerance)
+               if island & selected_faces]
+    return tuple(tuple(sorted(island)) for island in
+                 sorted(islands, key=lambda island: min(island)))
+
+
 def plan_mirrored_island_sync(coordinates, edges, faces, source_faces, seams, uvs,
                               axis=0, tolerance=1e-4):
     """Validate topology and snapshot exact seam/UV destination writes."""
@@ -266,6 +284,68 @@ def transferred_uvs(source_uvs, loop_pairs, layout="OVERLAP", island_gap=0.02):
     offset = (maximum_u - minimum_u) + island_gap
     return {destination: (minimum_u + maximum_u - uv[0] + offset, uv[1])
             for _, destination, uv in values}
+
+
+def plan_symmetric_uv_transfers(faces, source_uvs, symmetry_plan,
+                                layout="OVERLAP", island_gap=0.02):
+    """Plan Standard Transfer per UV island, without changing input UVs.
+
+    In particular, the bounding box and gap transform are reset for every
+    island.  This makes a batch exactly equivalent to transferring each
+    source island separately.
+    """
+    source_faces = set(symmetry_plan.source_faces)
+    loop_starts, cursor = [], 0
+    for face in faces:
+        loop_starts.append(cursor)
+        cursor += len(face)
+    if cursor != len(source_uvs):
+        raise SymmetryError("UV loop count does not match mesh topology")
+
+    pair_by_source = dict(symmetry_plan.loop_pairs)
+    plans = []
+    claimed_destinations = set()
+    islands = [island & source_faces
+               for island in find_uv_face_islands(faces, source_uvs)
+               if island & source_faces]
+    for island in sorted(islands, key=lambda item: min(item)):
+        island_faces = tuple(sorted(island))
+        source_loops = tuple(
+            loop_starts[face_index] + offset
+            for face_index in island_faces
+            for offset in range(len(faces[face_index])))
+        try:
+            loop_pairs = tuple((loop, pair_by_source[loop]) for loop in source_loops)
+        except KeyError as exc:
+            raise SymmetryError(f"incomplete island loop mapping: {exc.args[0]}") from exc
+        writes = transferred_uvs(source_uvs, loop_pairs, layout, island_gap)
+        duplicate = claimed_destinations & writes.keys()
+        if duplicate:
+            raise SymmetryError(f"duplicate destination loop mapping: {min(duplicate)}")
+        for uv in writes.values():
+            if len(uv) < 2 or not all(isfinite(float(value)) for value in uv[:2]):
+                raise SymmetryError("symmetric UV transfer produced a non-finite coordinate")
+        claimed_destinations.update(writes)
+        destinations = tuple(sorted(writes))
+        plans.append(IslandTransferPlan(
+            (island_faces[0], source_loops[0]), island_faces, destinations,
+            tuple(writes[loop] for loop in destinations)))
+    if not plans:
+        raise SymmetryError("no UV islands to transfer")
+    return tuple(plans)
+
+
+def combine_island_transfer_plans(plans):
+    """Validate and flatten immutable island plans into one atomic write set."""
+    writes = {}
+    for plan in plans:
+        if len(plan.destination_loops) != len(plan.destination_uvs):
+            raise SymmetryError("incomplete island transfer plan")
+        for loop, uv in zip(plan.destination_loops, plan.destination_uvs):
+            if loop in writes:
+                raise SymmetryError(f"duplicate destination loop mapping: {loop}")
+            writes[loop] = uv
+    return writes
 
 
 def exact_texture_x_uvs(source_uvs, loop_pairs, source_side="LEFT_HALF", epsilon=1e-7):
