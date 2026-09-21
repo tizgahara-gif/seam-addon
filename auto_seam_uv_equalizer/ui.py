@@ -75,6 +75,10 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout, settings = self.layout, context.scene.autoseamuv_settings
+        layout.prop(settings, "ui_mode", text="Mode", expand=True)
+        if settings.ui_mode == "SIMPLE":
+            self._draw_simple(layout, settings, context)
+            return
         meshes = _mesh_objects(context)
         active_uv = _active_uv(context)
         edit_mode = context.mode == "EDIT_MESH"
@@ -105,6 +109,22 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         self._draw_layout(layout, settings, meshes, active_uv, edit_mode, context)
         self._draw_symmetry(layout, settings, active_uv, edit_mode, selected_faces)
         self._draw_validation(layout, settings)
+
+    @staticmethod
+    def _draw_simple(layout, settings, context):
+        meshes = _mesh_objects(context)
+        box = layout.box()
+        box.label(text="Simple UV", icon="UV")
+        box.label(text="Target: Selected Objects")
+        box.prop(settings, "simple_symmetry", text="Symmetry")
+        action = box.column(align=True)
+        action.enabled = bool(meshes)
+        action.operator("autoseamuv.simple_auto_uv", text="Auto UV Setup", icon="MOD_UVPROJECT")
+        if settings.show_helper_comments:
+            box.label(text="Seam → Unwrap → Layout → Symmetry", icon="INFO")
+        box.prop(settings, "show_helper_comments")
+        if settings.simple_status:
+            box.label(text=settings.simple_status, icon="CHECKMARK")
 
     @staticmethod
     def _draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges):
