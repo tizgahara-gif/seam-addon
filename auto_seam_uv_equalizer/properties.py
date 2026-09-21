@@ -22,17 +22,16 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
 
     ui_mode: EnumProperty(
         name="Mode",
-        items=(("SIMPLE", "Simple", "Create a practical initial UV setup in one step"),
+        items=(("SIMPLE", "Simple", "Run each UV production stage with safe one-click defaults"),
                ("ADVANCED", "Advanced", "Show the complete five-stage toolset")),
         default="SIMPLE",
     )
-    simple_symmetry: EnumProperty(
-        name="Symmetry",
-        items=(("AUTO", "Auto", "Apply X symmetry when valid topology is detected"),
-               ("NONE", "None", "Do not apply symmetry")),
-        default="AUTO",
+    simple_symmetry_direction: EnumProperty(
+        name="Source Side",
+        items=(("POSITIVE_TO_NEGATIVE", "Positive to Negative", "Use +X as the source"),
+               ("NEGATIVE_TO_POSITIVE", "Negative to Positive", "Use -X as the source")),
+        default="POSITIVE_TO_NEGATIVE",
     )
-    simple_status: StringProperty(name="Auto UV Setup Result", default="")
 
     angle_threshold: FloatProperty(
         name="Angle Threshold (Degrees)",

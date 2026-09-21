@@ -1,4 +1,4 @@
-# Auto Seam UV Equalizer v0.10.0
+# Auto Seam UV Equalizer v0.11.0
 
 Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。
 
@@ -7,9 +7,18 @@ Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェ�
 1. Mesh Objectを1つ以上選択します。
 2. 3D Viewの **N > Auto UV** を開きます。
 3. 既定の **Simple** のままにします。
-4. **Auto UV Setup（自動UVセットアップ）** をクリックします。
+4. **Auto Seam（自動シーム）** を実行します。
+5. 必要ならシームを確認・手修正します。
+6. **Auto Unwrap（自動UV展開）** を実行します。
+7. 必要ならUVを確認・手修正します。
+8. **Auto Layout（自動レイアウト）** を実行します。
+9. 必要な場合だけ **Auto Symmetry（自動対称化）** を実行します。
 
-Simpleは既存のChart-Based Seam（Organic、既存シーム保持、Garment Prior / Distortion Guide / Clean Edge Loop）、ANGLE_BASED Unwrap、Protection-aware Weighted Layout、Standard UV Transferをこの順に実行します。単一ObjectはWeighted Island Layout、複数の固有Mesh DataはShared Weighted Atlasを使用します。Active UV Mapがあればそれを使い、なければ `UVMap` を作成します。対称化はX軸のpositive Xからnegative Xを試し、対応Topologyがなければその工程だけをスキップします。Advanced設定値を書き換えることはありません。
+Simple ModeはUV工程全体を一括自動化するものではありません。主要工程ごとに安全な既定値で自動処理し、各段階の間で手修正できる構造です。工程に強制順序はなく、手作業またはAdvancedで作ったシームやUVから必要な工程だけを直接実行できます。
+
+Simple Mode does not automate the entire UV workflow in one operation. It provides one-click defaults for each major UV stage, allowing manual correction between stages. There is no forced stage order.
+
+各ボタンは既存production backendだけを使用します。Auto SeamはChart-Based Seam（Organic、既存シーム保持、Garment Prior / Distortion Guide / Clean Edge Loop）、Auto Unwrapは現在のシームを使うANGLE_BASED Unwrap、Auto Layoutは単一ObjectでProtection-aware Weighted Layout、複数の固有Mesh DataでShared Weighted Atlas、Auto SymmetryはStandard UV Transferです。UnwrapはActive UV Mapがあれば使用し、なければ `UVMap` を作成します。対称Topologyがなければ対称化だけをスキップします。各工程は個別にrollbackされ、Advanced設定値は変更しません。
 
 ## Advanced Mode
 
@@ -21,10 +30,16 @@ Simpleは既存のChart-Based Seam（Organic、既存シーム保持、Garment P
 
 ## Release Notes / リリースノート
 
+### v0.11.0 — Staged Simple Mode
+
+- Replaced the public one-shot Auto UV Setup with independent Auto Seam, Auto Unwrap, Auto Layout, and Auto Symmetry stages. / 一括Auto UV Setupを、独立した自動シーム・自動UV展開・自動レイアウト・自動対称化へ置き換えました。
+- Manual edits are supported between stages, and every stage rolls back only its own changes on failure. / 工程間の手修正に対応し、失敗時は該当工程の変更だけを復元します。
+- Added a typed chart-settings adapter and explicit shared contract to prevent missing Simple settings such as `unwrap_method`. / `unwrap_method`などのSimple設定欠落を防ぐtyped adapterと共通contractを追加しました。
+
 ### v0.10.0 — Simple Mode
 
 - Added a new default Simple workflow. / 既定のSimpleワークフローを追加しました。
-- Auto UV Setup performs Seam → Unwrap → Layout → Symmetry. / 自動UVセットアップが一連の4工程を実行します。
+- The original release introduced a one-shot Seam → Unwrap → Layout → Symmetry workflow. / 初版では4工程の一括workflowを導入しました（v0.11で段階方式へ変更）。
 - Existing full toolset is available in Advanced Mode. / 既存の全ツールはAdvanced Modeで維持されます。
 - Simple Mode reuses the same processing backend as Advanced Mode. / SimpleはAdvancedと同じ処理backendを再利用します。
 - Hard failures restore seam and UV state; symmetry detection failure is a non-fatal skip. / Hard FailureではシームとUVを復元し、対称検出失敗はスキップとして扱います。

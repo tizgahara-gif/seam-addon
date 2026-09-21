@@ -78,11 +78,45 @@ class IntegrationTests(unittest.TestCase):
         for name in ("mark_selected_region_boundary", "mark_only", "mark_and_unwrap",
                      "unwrap_only", "weighted_island_layout", "pack_islands", "auto_unwrap_pack",
                      "shared_weighted_atlas",
+                     "simple_auto_seam", "simple_auto_unwrap",
+                     "simple_auto_layout", "simple_auto_symmetry",
                      "detect_ring_strip", "unwrap_ring_strip", "mirror_seams",
                      "validate_symmetry", "transfer_symmetric_uv",
                      "transfer_exact_texture_x_symmetry",
                      "sync_mirrored_uv_island", "flip_selected_uv_islands"):
             self.assertTrue(hasattr(bpy.ops.autoseamuv, name), name)
+
+    def test_simple_stages_allow_manual_edits_and_independent_entry(self):
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.object
+        settings = bpy.context.scene.autoseamuv_settings
+        settings.ui_mode = "SIMPLE"
+
+        # Seam analysis uses a temporary unwrap and must not create a UV map on
+        # the production mesh.
+        self.assertIsNone(obj.data.uv_layers.active)
+        self.assertEqual(bpy.ops.autoseamuv.simple_auto_seam(), {"FINISHED"})
+        self.assertIsNone(obj.data.uv_layers.active)
+
+        # A human edit between stages is consumed by Unwrap; it does not cause
+        # the Seam stage to run again or remove that edit.
+        manual_edge = obj.data.edges[0]
+        manual_edge.use_seam = True
+        self.assertEqual(bpy.ops.autoseamuv.simple_auto_unwrap(), {"FINISHED"})
+        self.assertTrue(manual_edge.use_seam)
+        self.assertIsNotNone(obj.data.uv_layers.active)
+
+        seams = tuple(edge.use_seam for edge in obj.data.edges)
+        self.assertEqual(bpy.ops.autoseamuv.simple_auto_layout(), {"FINISHED"})
+        self.assertEqual(tuple(edge.use_seam for edge in obj.data.edges), seams)
+
+        # Mode changes are presentation-only and do not fork or mutate mesh
+        # data; Simple can resume after visiting Advanced.
+        uv_before = [tuple(item.vector) for item in obj.data.uv_layers.active.uv]
+        settings.ui_mode = "ADVANCED"
+        settings.ui_mode = "SIMPLE"
+        self.assertEqual([tuple(item.vector) for item in obj.data.uv_layers.active.uv],
+                         uv_before)
 
     def test_production_operator_surface_is_exact(self):
         registered_ids = {
@@ -103,6 +137,8 @@ class IntegrationTests(unittest.TestCase):
             "autoseamuv.select_finished_islands",
             "autoseamuv.select_layout_locked_islands",
             "autoseamuv.shared_weighted_atlas", "autoseamuv.sync_mirrored_uv_island",
+            "autoseamuv.simple_auto_seam", "autoseamuv.simple_auto_unwrap",
+            "autoseamuv.simple_auto_layout", "autoseamuv.simple_auto_symmetry",
             "autoseamuv.transfer_exact_texture_x_symmetry",
             "autoseamuv.transfer_symmetric_uv", "autoseamuv.unlock_layout_islands",
             "autoseamuv.unmark_finished_islands", "autoseamuv.unwrap_only",
@@ -111,7 +147,7 @@ class IntegrationTests(unittest.TestCase):
             "autoseamuv.weighted_island_layout",
         }
         self.assertEqual(registered_ids, expected_ids)
-        self.assertEqual(len(registered_ids), 34)
+        self.assertEqual(len(registered_ids), 38)
 
     def test_registration_enable_disable_cycle_is_idempotent(self):
         self.assertIn(addon._on_load_post, bpy.app.handlers.load_post)

@@ -141,7 +141,7 @@ REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
         "def _candidate_pairs",
     ),
     "auto_seam_uv_equalizer/README.md": (
-        "Auto Seam UV Equalizer v0.10.0",
+        "Auto Seam UV Equalizer v0.11.0",
         "Five-stage panel",
         "Weighted Island Layout",
         "Atlas Pack Selected Objects",

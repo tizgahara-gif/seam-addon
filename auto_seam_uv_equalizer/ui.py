@@ -113,18 +113,44 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
     @staticmethod
     def _draw_simple(layout, settings, context):
         meshes = _mesh_objects(context)
+        active_uv = _active_uv(context)
         box = layout.box()
         box.label(text="Simple UV", icon="UV")
         box.label(text="Target: Selected Objects")
-        box.prop(settings, "simple_symmetry", text="Symmetry")
-        action = box.column(align=True)
-        action.enabled = bool(meshes)
-        action.operator("autoseamuv.simple_auto_uv", text="Auto UV Setup", icon="MOD_UVPROJECT")
-        if settings.show_helper_comments:
-            box.label(text="Seam → Unwrap → Layout → Symmetry", icon="INFO")
         box.prop(settings, "show_helper_comments")
-        if settings.simple_status:
-            box.label(text=settings.simple_status, icon="CHECKMARK")
+
+        seam = layout.box()
+        seam.label(text="1. Seam")
+        action = seam.column(align=True)
+        action.enabled = bool(meshes)
+        action.operator("autoseamuv.simple_auto_seam", text="Auto Seam", icon="MOD_UVPROJECT")
+        _helper_comment(seam, settings, "Analyze and generate seams without changing UVs.")
+
+        unwrap = layout.box()
+        unwrap.label(text="2. Unwrap")
+        action = unwrap.column(align=True)
+        action.enabled = bool(meshes)
+        action.operator("autoseamuv.simple_auto_unwrap", text="Auto Unwrap", icon="UV")
+        _helper_comment(unwrap, settings, "Unwrap using the current seams.")
+
+        layout_box = layout.box()
+        layout_box.label(text="3. Layout")
+        action = layout_box.column(align=True)
+        action.enabled = bool(meshes) and active_uv is not None
+        action.operator("autoseamuv.simple_auto_layout", text="Auto Layout", icon="NODE_CORNER")
+        _helper_comment(layout_box, settings, "Arrange the existing UV islands only.")
+        if meshes and active_uv is None:
+            _error(layout_box, "No active UV map.")
+
+        symmetry = layout.box()
+        symmetry.label(text="4. Symmetry")
+        symmetry.prop(settings, "simple_symmetry_direction", text="Source Side")
+        action = symmetry.column(align=True)
+        action.enabled = bool(meshes) and active_uv is not None
+        action.operator("autoseamuv.simple_auto_symmetry", text="Auto Symmetry", icon="MOD_MIRROR")
+        _helper_comment(symmetry, settings, "Apply Standard UV Transfer when topology is symmetric.")
+        if meshes and active_uv is None:
+            _error(symmetry, "No active UV map.")
 
     @staticmethod
     def _draw_seam(layout, settings, context, edit_mode, selected_faces, selected_edges):

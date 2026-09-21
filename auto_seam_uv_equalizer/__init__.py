@@ -5,7 +5,7 @@ from __future__ import annotations
 bl_info = {
     "name": "Auto Seam UV Equalizer",
     "author": "地図ヶ原",
-    "version": (0, 10, 0),
+    "version": (0, 11, 0),
     "blender": (5, 1, 2),
     "location": "View3D > Sidebar > Auto UV",
     "description": ("Topology-aware seam generation, UV unwrapping, weighted layout, "

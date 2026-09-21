@@ -16,17 +16,24 @@ def test_chart_signature_covers_every_analysis_setting():
     required = {
         "seam_preset", "max_chart_distortion", "seam_count_penalty",
         "seam_minimum_spacing", "straightness_bias", "preserve_existing_seams",
+        "unwrap_method",
         "material_boundary", "curvature_bias", "weight_material",
         "seam_search_radius", "chart_refinement_iterations", "character_front_axis",
         "use_professional_garment_prior", "mesh_symmetry_axis",
         "mesh_symmetry_tolerance", "use_distortion_guided_candidates",
         "use_edge_loop_completion",
     }
-    function = next(node for node in ast.parse(source).body
+    tree = ast.parse(source)
+    function = next(node for node in tree.body
                     if isinstance(node, ast.FunctionDef) and node.name == "analysis_signature")
-    literals = {node.value for node in ast.walk(function)
+    assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name)
+                              and target.id == "CHART_ANALYSIS_SETTING_NAMES"
+                              for target in node.targets))
+    literals = {node.value for node in ast.walk(assignment)
                 if isinstance(node, ast.Constant) and isinstance(node.value, str)}
     assert required <= literals
+    assert "CHART_ANALYSIS_SETTING_NAMES" in ast.unparse(function)
 
 
 def test_chart_operators_share_processing_policy_and_revalidate_cache():
