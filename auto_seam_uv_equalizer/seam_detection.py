@@ -17,6 +17,19 @@ MIN_MESH_FACE_COUNT = 1
 LONGITUDINAL_ALIGNMENT = 0.65
 LONGITUDINAL_SIDE_TOLERANCE = 0.18
 
+# Public adapter contract shared by chart-analysis callers. Keeping this list
+# next to the consumer prevents lightweight configurations from silently
+# drifting out of sync with ``analysis_signature``.
+CHART_ANALYSIS_SETTING_NAMES = (
+    "seam_preset", "max_chart_distortion", "seam_count_penalty",
+    "seam_minimum_spacing", "straightness_bias", "preserve_existing_seams",
+    "unwrap_method", "material_boundary", "curvature_bias", "weight_material",
+    "seam_search_radius", "chart_refinement_iterations", "character_front_axis",
+    "use_professional_garment_prior", "mesh_symmetry_axis",
+    "mesh_symmetry_tolerance", "use_distortion_guided_candidates",
+    "use_edge_loop_completion",
+)
+
 
 def mark_selected_region_boundary_seams(bm, include_open_boundaries: bool = True) -> tuple[int, int, int, int, int]:
     """Add seams around selected BMesh faces without changing any selection.
@@ -189,14 +202,6 @@ def analysis_signature(obj, settings):
     mesh = obj.data
     force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
     protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
-    setting_names = ("seam_preset", "max_chart_distortion", "seam_count_penalty",
-                     "seam_minimum_spacing", "straightness_bias",
-                     "preserve_existing_seams", "unwrap_method", "material_boundary",
-                     "curvature_bias", "weight_material", "seam_search_radius",
-                     "chart_refinement_iterations")
-    setting_names += ("character_front_axis", "use_professional_garment_prior",
-                      "mesh_symmetry_axis", "mesh_symmetry_tolerance",
-                      "use_distortion_guided_candidates", "use_edge_loop_completion")
     return (
         tuple(tuple(vertex.co) for vertex in mesh.vertices),
         tuple(tuple(edge.vertices) for edge in mesh.edges),
@@ -206,7 +211,7 @@ def analysis_signature(obj, settings):
         tuple(face.material_index for face in mesh.polygons),
         tuple((name, getattr(settings, name, True) if name in {
             "use_distortion_guided_candidates", "use_edge_loop_completion"}
-               else getattr(settings, name)) for name in setting_names),
+               else getattr(settings, name)) for name in CHART_ANALYSIS_SETTING_NAMES),
     )
 
 

@@ -15,19 +15,28 @@ def test_simple_is_default_and_version_is_minor_bumped():
     properties = (ROOT / "properties.py").read_text(encoding="utf-8")
     init = (ROOT / "__init__.py").read_text(encoding="utf-8")
     assert 'default="SIMPLE"' in properties
-    assert '"version": (0, 10, 0)' in init
+    assert '"version": (0, 11, 0)' in init
 
 
-def test_simple_pipeline_calls_shared_backends_in_order():
+def test_simple_stages_call_shared_backends_independently():
     source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
-    positions = [source.index(f"{name}(", source.index("def execute")) for name in
-                 ("run_chart_seam", "run_unwrap", "run_weighted_layout", "run_symmetry")]
-    assert positions == sorted(positions)
+    for class_name, backend in (
+        ("AUTOSEAMUV_OT_simple_auto_seam", "run_chart_seam"),
+        ("AUTOSEAMUV_OT_simple_auto_unwrap", "_run_unwrap_stage"),
+        ("AUTOSEAMUV_OT_simple_auto_layout", "run_weighted_layout"),
+        ("AUTOSEAMUV_OT_simple_auto_symmetry", "run_symmetry"),
+    ):
+        node = next(item for item in _tree("simple_workflow.py").body
+                    if isinstance(item, ast.ClassDef) and item.name == class_name)
+        called = {call.func.id for call in ast.walk(node)
+                  if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)}
+        assert backend in called
+    assert "run_unwrap(obj, config)" in source
 
 
-def test_simple_operator_is_one_undo_step_and_has_no_algorithm_copy():
+def test_simple_operators_are_undo_steps_and_have_no_algorithm_copy():
     source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
-    assert 'bl_options = {"REGISTER", "UNDO"}' in source
+    assert source.count('bl_options = {"REGISTER", "UNDO"}') == 4
     assert "analyze_chart_seams(" not in source
     assert "weighted_layout_object(" in source
     assert "shared_weighted_layout(" in source
@@ -38,4 +47,35 @@ def test_ui_branches_before_drawing_advanced_stages():
     branch = source.index('if settings.ui_mode == "SIMPLE"')
     advanced = source.index("self._draw_seam(layout")
     assert branch < advanced
-    assert 'operator("autoseamuv.simple_auto_uv", text="Auto UV Setup"' in source
+    for identifier in ("simple_auto_seam", "simple_auto_unwrap",
+                       "simple_auto_layout", "simple_auto_symmetry"):
+        assert f'operator("autoseamuv.{identifier}"' in source
+    assert "Auto UV Setup" not in source
+
+
+def test_chart_adapter_is_typed_and_satisfies_shared_contract():
+    source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    assert "SimpleNamespace" not in source
+    assert "class ChartSettings" in source
+    assert "unwrap_method=config.unwrap_method" in source
+    assert "CHART_ANALYSIS_SETTING_NAMES" in source
+
+
+def test_each_stage_has_only_its_own_transaction_surface():
+    source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    seam = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                and node.name == "AUTOSEAMUV_OT_simple_auto_seam")
+    unwrap = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                  and node.name == "AUTOSEAMUV_OT_simple_auto_unwrap")
+    assert "_snapshot_seams" in ast.unparse(seam)
+    assert "_snapshot_uvs" not in ast.unparse(seam)
+    assert "_snapshot_uvs" in ast.unparse(unwrap)
+    assert "run_chart_seam" not in ast.unparse(unwrap)
+
+
+def test_mode_switch_and_simple_stages_do_not_assign_advanced_settings():
+    source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    assert "settings.unwrap_method =" not in source
+    assert "settings.weighted_rotation_mode =" not in source
+    assert "ui_mode =" not in source
