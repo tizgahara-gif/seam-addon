@@ -1,4 +1,4 @@
-"""Independent one-click stages for Simple Mode, using production backends."""
+"""Independent, transactional one-click stages for Simple Mode."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ import bpy
 from . import operators
 from .operators_symmetry import transfer_standard_uv_backend
 from .seam_detection import CHART_ANALYSIS_SETTING_NAMES
-from .symmetry import SymmetryError
+from .symmetry import SymmetryNotFoundError
 from .translations import iface_
-from .uv_protection import ProtectionError
 from .uv_tools import unwrap_object
 from .weighted_layout import (rotation_steps_for_mode, shared_weighted_layout,
                               weighted_layout_object)
@@ -20,7 +19,6 @@ from .weighted_layout import (rotation_steps_for_mode, shared_weighted_layout,
 @dataclass(frozen=True)
 class SimpleConfig:
     """Safe Simple defaults, wholly independent of Advanced Scene settings."""
-
     seam_preset: str = "ORGANIC"
     unwrap_method: str = "ANGLE_BASED"
     unwrap_margin_method: str = "FRACTION"
@@ -35,9 +33,40 @@ class SimpleConfig:
 
 
 @dataclass(frozen=True)
+class SimpleTargets:
+    selected_objects: tuple
+    editable_objects: tuple
+    unique_objects: tuple
+    selected_count: int
+    editable_count: int
+    unique_mesh_count: int
+    uv_ready_count: int
+    missing_uv_count: int
+    empty_mesh_count: int
+    all_uv_ready: bool
+
+
+def resolve_simple_targets(context) -> SimpleTargets:
+    """Resolve the exact, fixed-policy target set shared by Simple UI/operators."""
+    selected = tuple(operators.resolve_layout_targets(
+        context, require_uv=False)["objects"])
+    editable = tuple(obj for obj in selected if obj.data.polygons)
+    unique, seen = [], set()
+    for obj in editable:
+        key = obj.data.as_pointer()
+        if key not in seen:
+            seen.add(key)
+            unique.append(obj)
+    ready = sum(obj.data.uv_layers.active is not None for obj in unique)
+    return SimpleTargets(
+        selected, editable, tuple(unique), len(selected), len(editable), len(unique),
+        ready, len(unique) - ready, len(selected) - len(editable),
+        bool(unique) and ready == len(unique))
+
+
+@dataclass(frozen=True)
 class ChartSettings:
     """Typed adapter implementing the chart-analysis settings contract."""
-
     seam_preset: str
     unwrap_method: str
     max_chart_distortion: float = 0.18
@@ -58,29 +87,24 @@ class ChartSettings:
     use_edge_loop_completion: bool = True
 
 
-def _chart_settings(config: SimpleConfig) -> ChartSettings:
-    """Adapt immutable Simple defaults to the production chart contract."""
-    settings = ChartSettings(
-        seam_preset=config.seam_preset,
-        unwrap_method=config.unwrap_method,
-        mesh_symmetry_axis=config.symmetry_axis,
-        mesh_symmetry_tolerance=config.symmetry_tolerance,
-    )
-    # Fail at the adapter boundary, rather than deep inside an analysis run,
-    # if the production contract grows without a corresponding Simple field.
+def _chart_settings(config):
+    settings = ChartSettings(seam_preset=config.seam_preset,
+                             unwrap_method=config.unwrap_method,
+                             mesh_symmetry_axis=config.symmetry_axis,
+                             mesh_symmetry_tolerance=config.symmetry_tolerance)
     missing = set(CHART_ANALYSIS_SETTING_NAMES).difference(vars(settings))
     if missing:
         raise TypeError(f"Simple chart settings are missing: {', '.join(sorted(missing))}")
     return settings
 
 
-def run_chart_seam(obj, config: SimpleConfig):
+def run_chart_seam(obj, config):
     settings = _chart_settings(config)
     return operators.apply_chart_seams(
         obj, operators._analyze_with_temporary_unwrap(obj, settings))
 
 
-def run_unwrap(obj, config: SimpleConfig):
+def run_unwrap(obj, config):
     active = obj.data.uv_layers.active
     uv_name = active.name if active is not None else "UVMap"
     return unwrap_object(obj, uv_name, True, config.unwrap_method,
@@ -88,13 +112,13 @@ def run_unwrap(obj, config: SimpleConfig):
                          False, False, 3, 0.0)
 
 
-def _run_unwrap_stage(objects, config: SimpleConfig) -> int:
+def _run_unwrap_stage(objects, config):
     for obj in objects:
         run_unwrap(obj, config)
     return len(objects)
 
 
-def run_weighted_layout(objects, config: SimpleConfig):
+def run_weighted_layout(objects, config):
     steps = rotation_steps_for_mode(config.rotation_mode)
     if len(objects) == 1:
         return weighted_layout_object(objects[0], config.density_influence,
@@ -105,25 +129,37 @@ def run_weighted_layout(objects, config: SimpleConfig):
                                   "WHOLE_OBJECT", "FULL", {}, steps)
 
 
-def run_symmetry(objects, config: SimpleConfig):
-    applied = 0
+@dataclass(frozen=True)
+class SimpleSymmetryReport:
+    applied_objects: int
+    applied_face_pairs: int
+    skipped_objects: tuple
+
+
+def run_symmetry(objects, config):
+    applied_objects, pairs, skipped = 0, 0, []
     for obj in objects:
         try:
-            applied += transfer_standard_uv_backend(
+            count = transfer_standard_uv_backend(
                 obj, config.symmetry_axis, config.symmetry_direction,
                 config.symmetry_tolerance, "OVERLAP", 0.02)
-        except (SymmetryError, ProtectionError, ValueError):
+        except SymmetryNotFoundError as exc:
+            skipped.append((obj.name, str(exc)))
             continue
-    return applied
+        applied_objects += 1
+        pairs += count
+    return SimpleSymmetryReport(applied_objects, pairs, tuple(skipped))
 
 
 def _snapshot_seams(objects):
-    return {obj.data.as_pointer(): (obj.data, [edge.use_seam for edge in obj.data.edges])
+    return {obj.data.as_pointer(): (obj.data, tuple(edge.use_seam for edge in obj.data.edges))
             for obj in objects}
 
 
 def _rollback_seams(snapshot):
     for mesh, seams in snapshot.values():
+        if len(mesh.edges) != len(seams):
+            raise RuntimeError("mesh topology changed; seam rollback is incomplete")
         for edge, value in zip(mesh.edges, seams):
             edge.use_seam = value
         mesh.update()
@@ -134,152 +170,132 @@ def _snapshot_uvs(objects):
     for obj in objects:
         mesh = obj.data
         result[mesh.as_pointer()] = (
-            mesh,
-            [(layer, layer.name, [tuple(uv.vector) for uv in layer.uv])
-             for layer in mesh.uv_layers],
-            mesh.uv_layers.active.name if mesh.uv_layers.active else None,
-        )
+            mesh, tuple((layer.name, tuple(tuple(uv.vector) for uv in layer.uv))
+                        for layer in mesh.uv_layers),
+            mesh.uv_layers.active.name if mesh.uv_layers.active else None)
     return result
 
 
 def _rollback_uvs(snapshot):
     for mesh, layers, active_name in snapshot.values():
-        original_names = {name for _layer, name, _values in layers}
-        for layer in list(mesh.uv_layers):
-            if layer.name not in original_names:
-                mesh.uv_layers.remove(layer)
-        for original_layer, name, values in layers:
-            layer = mesh.uv_layers.get(name) or original_layer
+        while len(mesh.uv_layers):
+            mesh.uv_layers.remove(mesh.uv_layers[0])
+        for name, values in layers:
+            layer = mesh.uv_layers.new(name=name)
+            if len(layer.uv) != len(values):
+                raise RuntimeError("mesh topology changed; UV rollback is incomplete")
             for datum, value in zip(layer.uv, values):
                 datum.vector = value
         mesh.uv_layers.active = mesh.uv_layers.get(active_name) if active_name else None
         mesh.update()
 
 
-def _stage_targets(operator, context, *, require_uv=False):
-    settings = context.scene.autoseamuv_settings
-    targets = operators.resolve_layout_targets(context, require_uv=require_uv)
-    if not targets["objects"]:
-        operator.report({"ERROR"}, iface_("No editable mesh selected."))
-        return None
-    if require_uv and not targets["all_ready"]:
-        operator.report({"ERROR"}, iface_("No active UV map."))
-        return None
-    objects, _skipped = operators._objects_for_processing(
-        operator, targets["objects"], settings.process_shared_mesh_once)
-    if not objects or any(not obj.data.polygons for obj in objects):
-        operator.report({"ERROR"}, iface_("No editable mesh selected."))
-        return None
-    return objects
-
-
-def _execute_stage(operator, context, operation, snapshot, rollback, success_message):
-    objects = _stage_targets(operator, context)
-    if objects is None:
-        return {"CANCELLED"}
-    before = snapshot(objects)
+def _execute_stage(operator, context, operation, snapshot, rollback, require_uv=False):
+    """Run every Simple stage with one transaction ordering contract."""
     active, selected, mode = operators._snapshot_context(context)
+    before = None
+    targets = None
     try:
         operators._ensure_object_mode()
-        result = operation(objects)
+        targets = resolve_simple_targets(context)
+        if not targets.unique_objects:
+            operator.report({"ERROR"}, iface_("No editable mesh selected."))
+            return {"CANCELLED"}, None, targets
+        if require_uv and not targets.all_uv_ready:
+            operator.report({"ERROR"}, iface_(
+                "%d selected mesh target(s) have no active UV map.",
+                targets.missing_uv_count))
+            return {"CANCELLED"}, None, targets
+        if targets.empty_mesh_count:
+            operator.report({"WARNING"}, iface_("Skipped %d empty mesh object(s).",
+                                                targets.empty_mesh_count))
+        before = snapshot(targets.unique_objects)
+        result = operation(targets.unique_objects)
+        return {"FINISHED"}, result, targets
     except Exception as exc:
-        rollback(before)
-        operator.report({"ERROR"}, iface_("%s failed — stage changes rolled back: %s",
-                                         operator.bl_label, exc))
-        return {"CANCELLED"}
+        if before is None:
+            operator.report({"ERROR"}, iface_("%s failed: %s", operator.bl_label, exc))
+        else:
+            try:
+                rollback(before)
+            except Exception as rollback_exc:
+                operator.report({"ERROR"}, iface_(
+                    "%s failed; rollback also failed: %s (original error: %s)",
+                    operator.bl_label, rollback_exc, exc))
+            else:
+                operator.report({"ERROR"}, iface_(
+                    "%s failed — stage changes rolled back: %s", operator.bl_label, exc))
+        return {"CANCELLED"}, None, targets
     finally:
         operators._restore_context(context, active, selected, mode)
-    operator.report({"INFO"}, iface_(success_message, result))
-    return {"FINISHED"}
 
 
 class AUTOSEAMUV_OT_simple_auto_seam(bpy.types.Operator):
-    bl_idname = "autoseamuv.simple_auto_seam"
-    bl_label = "Auto Seam"
-    bl_description = "Analyze and generate chart-based seams without changing UVs"
+    bl_idname, bl_label = "autoseamuv.simple_auto_seam", "Auto Seam"
+    bl_description = "Chart-Based seam generation using the Organic / Cloth preset"
     bl_options = {"REGISTER", "UNDO"}
-
     def execute(self, context):
         config = SimpleConfig()
-        return _execute_stage(
-            self, context,
+        status, result, _ = _execute_stage(self, context,
             lambda objects: sum(run_chart_seam(obj, config) for obj in objects),
-            _snapshot_seams, _rollback_seams, "Auto Seam completed: %d seam(s).")
+            _snapshot_seams, _rollback_seams)
+        if status == {"FINISHED"}:
+            self.report({"INFO"}, iface_("Auto Seam completed: %d seam(s).", result))
+        return status
 
 
 class AUTOSEAMUV_OT_simple_auto_unwrap(bpy.types.Operator):
-    bl_idname = "autoseamuv.simple_auto_unwrap"
-    bl_label = "Auto Unwrap"
-    bl_description = "Unwrap with the current seams; never regenerates seams or lays out UVs"
+    bl_idname, bl_label = "autoseamuv.simple_auto_unwrap", "Auto Unwrap"
+    bl_description = "Use current seams and the active UV map, or create UVMap if missing"
     bl_options = {"REGISTER", "UNDO"}
-
     def execute(self, context):
         config = SimpleConfig()
-        return _execute_stage(
-            self, context,
+        status, result, _ = _execute_stage(self, context,
             lambda objects: _run_unwrap_stage(objects, config),
-            _snapshot_uvs, _rollback_uvs, "Auto Unwrap completed for %d object(s).")
+            _snapshot_uvs, _rollback_uvs)
+        if status == {"FINISHED"}:
+            self.report({"INFO"}, iface_("Auto Unwrap completed for %d object(s).", result))
+        return status
 
 
 class AUTOSEAMUV_OT_simple_auto_layout(bpy.types.Operator):
-    bl_idname = "autoseamuv.simple_auto_layout"
-    bl_label = "Auto Layout"
-    bl_description = "Lay out existing UV islands without changing seams or unwrapping"
+    bl_idname, bl_label = "autoseamuv.simple_auto_layout", "Auto Layout"
+    bl_description = "Scale, rotate, and pack existing UV islands using Weighted Layout"
     bl_options = {"REGISTER", "UNDO"}
-
     def execute(self, context):
-        objects = _stage_targets(self, context, require_uv=True)
-        if objects is None:
-            return {"CANCELLED"}
         config = SimpleConfig()
-        before = _snapshot_uvs(objects)
-        active, selected, mode = operators._snapshot_context(context)
-        try:
-            operators._ensure_object_mode()
-            report = run_weighted_layout(objects, config)
-        except Exception as exc:
-            _rollback_uvs(before)
-            self.report({"ERROR"}, iface_("Auto Layout failed — stage changes rolled back: %s", exc))
-            return {"CANCELLED"}
-        finally:
-            operators._restore_context(context, active, selected, mode)
-        self.report({"INFO"}, iface_("Auto Layout completed: %d island(s).", report.island_count))
-        return {"FINISHED"}
+        status, result, _ = _execute_stage(self, context,
+            lambda objects: run_weighted_layout(objects, config),
+            _snapshot_uvs, _rollback_uvs, require_uv=True)
+        if status == {"FINISHED"}:
+            self.report({"INFO"}, iface_("Auto Layout completed: %d island(s).",
+                                        result.island_count))
+        return status
 
 
 class AUTOSEAMUV_OT_simple_auto_symmetry(bpy.types.Operator):
-    bl_idname = "autoseamuv.simple_auto_symmetry"
-    bl_label = "Auto Symmetry"
-    bl_description = "Apply Standard UV Transfer without seam, unwrap, or layout operations"
+    bl_idname, bl_label = "autoseamuv.simple_auto_symmetry", "Auto Symmetry"
+    bl_description = "Copy source-side UVs onto the mirrored side; paired islands overlap"
     bl_options = {"REGISTER", "UNDO"}
-
     def execute(self, context):
-        objects = _stage_targets(self, context, require_uv=True)
-        if objects is None:
+        settings = context.scene.autoseamuv_settings
+        config = SimpleConfig(symmetry_axis=settings.simple_symmetry_axis,
+                              symmetry_direction=settings.simple_symmetry_direction)
+        status, report, _ = _execute_stage(self, context,
+            lambda objects: run_symmetry(objects, config),
+            _snapshot_uvs, _rollback_uvs, require_uv=True)
+        if status != {"FINISHED"}:
+            return status
+        if not report.applied_objects:
+            self.report({"WARNING"}, iface_(
+                "No selected mesh had valid symmetric topology."))
             return {"CANCELLED"}
-        direction = context.scene.autoseamuv_settings.simple_symmetry_direction
-        config = SimpleConfig(symmetry_direction=direction)
-        before = _snapshot_uvs(objects)
-        active, selected, mode = operators._snapshot_context(context)
-        try:
-            operators._ensure_object_mode()
-            applied = run_symmetry(objects, config)
-        except Exception as exc:
-            _rollback_uvs(before)
-            self.report({"ERROR"}, iface_("Auto Symmetry failed — stage changes rolled back: %s", exc))
-            return {"CANCELLED"}
-        finally:
-            operators._restore_context(context, active, selected, mode)
-        if applied:
-            self.report({"INFO"}, iface_("Auto Symmetry applied: %d face pair(s).", applied))
-        else:
-            self.report({"INFO"}, iface_("Skipped — no valid mirrored topology found"))
-        return {"FINISHED"}
+        self.report({"INFO"}, iface_(
+            "Auto Symmetry: %d object(s) applied, %d skipped (%d face pair(s)).",
+            report.applied_objects, len(report.skipped_objects),
+            report.applied_face_pairs))
+        return status
 
 
-CLASSES = (
-    AUTOSEAMUV_OT_simple_auto_seam,
-    AUTOSEAMUV_OT_simple_auto_unwrap,
-    AUTOSEAMUV_OT_simple_auto_layout,
-    AUTOSEAMUV_OT_simple_auto_symmetry,
-)
+CLASSES = (AUTOSEAMUV_OT_simple_auto_seam, AUTOSEAMUV_OT_simple_auto_unwrap,
+           AUTOSEAMUV_OT_simple_auto_layout, AUTOSEAMUV_OT_simple_auto_symmetry)

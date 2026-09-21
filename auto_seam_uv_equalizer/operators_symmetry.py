@@ -4,7 +4,7 @@ from __future__ import annotations
 import bmesh
 import bpy
 
-from .symmetry import (SymmetryError, build_symmetry_plan,
+from .symmetry import (SymmetryError, SymmetryNotFoundError, build_symmetry_plan,
                        collect_selected_source_uv_island,
                        collect_selected_source_uv_islands,
                        combine_island_transfer_plans, exact_texture_x_uvs,
@@ -37,7 +37,7 @@ def transfer_standard_uv_backend(obj, axis="X", direction="POSITIVE_TO_NEGATIVE"
         [tuple(face.vertices) for face in obj.data.polygons], sources,
         axis_index, sign, tolerance)
     if not plan.face_pairs:
-        raise SymmetryError("no valid mirrored topology found")
+        raise SymmetryNotFoundError("no valid mirrored topology found")
     source_uvs = [tuple(item.vector) for item in layer.uv]
     writes = combine_island_transfer_plans(plan_symmetric_uv_transfers(
         [tuple(face.vertices) for face in obj.data.polygons], source_uvs,

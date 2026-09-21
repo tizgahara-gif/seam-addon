@@ -32,6 +32,13 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
                ("NEGATIVE_TO_POSITIVE", "Negative to Positive", "Use -X as the source")),
         default="POSITIVE_TO_NEGATIVE",
     )
+    simple_symmetry_axis: EnumProperty(
+        name="Axis",
+        items=(("X", "X", "Mirror across the X axis"),
+               ("Y", "Y", "Mirror across the Y axis"),
+               ("Z", "Z", "Mirror across the Z axis")),
+        default="X",
+    )
 
     angle_threshold: FloatProperty(
         name="Angle Threshold (Degrees)",

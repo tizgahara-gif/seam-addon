@@ -18,7 +18,7 @@ Simple ModeはUV工程全体を一括自動化するものではありません�
 
 Simple Mode does not automate the entire UV workflow in one operation. It provides one-click defaults for each major UV stage, allowing manual correction between stages. There is no forced stage order.
 
-各ボタンは既存production backendだけを使用します。Auto SeamはChart-Based Seam（Organic、既存シーム保持、Garment Prior / Distortion Guide / Clean Edge Loop）、Auto Unwrapは現在のシームを使うANGLE_BASED Unwrap、Auto Layoutは単一ObjectでProtection-aware Weighted Layout、複数の固有Mesh DataでShared Weighted Atlas、Auto SymmetryはStandard UV Transferです。UnwrapはActive UV Mapがあれば使用し、なければ `UVMap` を作成します。対称Topologyがなければ対称化だけをスキップします。各工程は個別にrollbackされ、Advanced設定値は変更しません。
+各ボタンは既存production backendだけを使用します。Auto SeamはChart-Based Seam（Organic、既存シーム保持、Garment Prior / Distortion Guide / Clean Edge Loop）、Auto Unwrapは現在のシームを使うANGLE_BASED Unwrap、Auto Layoutは単一ObjectでProtection-aware Weighted Layout、複数の固有Mesh DataでShared Weighted Atlas、Auto SymmetryはStandard UV Transfer（指定Axis、左右UVをOverlap）です。UnwrapはActive UV Mapがあれば使用し、なければ `UVMap` を作成します。Simpleは空Meshをskipし、共有Mesh Dataを常に1回だけ処理します。対象解決とsnapshotはObject Mode同期後に行い、hard failureでは工程全体をrollbackします。Protection、設定、mapping errorは失敗として理由を表示し、本当に対応Topologyがない対象だけをskipします。Simple専用設定以外のAdvanced設定値は読み取りも変更もしません。
 
 ## Advanced Mode
 
