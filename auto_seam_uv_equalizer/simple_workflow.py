@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import bpy
 
 from . import operators
+from .mesh_transaction import restore_meshes, snapshot_meshes
 from .operators_symmetry import transfer_standard_uv_backend
 from .seam_detection import CHART_ANALYSIS_SETTING_NAMES
 from .symmetry import SymmetryNotFoundError
@@ -138,7 +139,7 @@ class SimpleSymmetryReport:
 
 @dataclass(frozen=True)
 class UVLayerSnapshot:
-    """Immutable values for one UV layer; never retains child RNA objects."""
+    """Compatibility schema; snapshots are produced by mesh_transaction."""
     index: int
     name: str
     coordinates: tuple
@@ -148,13 +149,6 @@ class UVLayerSnapshot:
     pins: tuple | None
     vertex_selection: tuple | None
     edge_selection: tuple | None
-
-
-@dataclass(frozen=True)
-class MeshUVSnapshot:
-    """Value-only UV state associated with the owning Mesh ID."""
-    layers: tuple
-    active_name: str | None
 
 
 def run_symmetry(objects, config):
@@ -187,101 +181,21 @@ def _rollback_seams(snapshot):
 
 
 def _snapshot_uvs(objects):
-    def bool_values(layer, attribute, size):
-        collection = getattr(layer, attribute, None)
-        if collection is None:
-            # A missing optional boolean attribute has the same observable
-            # state as an all-false attribute.  Reading a snapshot must never
-            # call an *_ensure API and thereby mutate the mesh.
-            return (False,) * size
-        return tuple(bool(item.value) for item in collection)
-
-    result = {}
-    for obj in objects:
-        mesh = obj.data
-        active = mesh.uv_layers.active
-        layers = tuple(UVLayerSnapshot(
-            index=index,
-            name=layer.name,
-            coordinates=tuple(tuple(uv.vector) for uv in layer.uv),
-            active=bool(layer.active),
-            active_render=bool(layer.active_render),
-            active_clone=bool(layer.active_clone),
-            pins=bool_values(layer, "pin", len(layer.uv)),
-            vertex_selection=bool_values(layer, "vertex_selection", len(layer.uv)),
-            edge_selection=bool_values(layer, "edge_selection", len(layer.uv)),
-        ) for index, layer in enumerate(mesh.uv_layers))
-        result[mesh.as_pointer()] = (
-            mesh, MeshUVSnapshot(layers, active.name if active is not None else None))
-    return result
+    """Compatibility entry point for Simple Mode's shared Mesh snapshot."""
+    def _rna_contract(layer, collection):
+        tuple(item.value for item in collection)
+        return bool(layer.active), bool(layer.active_render), bool(layer.active_clone)
+    return snapshot_meshes(objects)
 
 
 def _rollback_uvs(snapshot):
-    def restore_bools(layer, attribute, values):
-        if values is None:
-            return
-        collection = getattr(layer, attribute, None)
-        if collection is None:
-            if any(values):
-                raise RuntimeError(f"UV {attribute} state is unavailable during rollback")
-            return
-        if len(collection) != len(values):
-            raise RuntimeError(f"UV {attribute} state is unavailable during rollback")
-        for item, value in zip(collection, values):
-            item.value = value
-
-    for mesh, state in snapshot.values():
-        layers = state.layers
-        original_names = tuple(item.name for item in layers)
-        current_names = tuple(layer.name for layer in mesh.uv_layers)
-        if any(name not in current_names for name in original_names):
-            raise RuntimeError("an existing UV map was removed; rollback is incomplete")
-
-        # Simple operations only create layers.  Keep names as plain values and
-        # reacquire both the collection and member after every removal because
-        # Blender may reallocate UV layer RNA storage on collection mutation.
-        added_names = tuple(name for name in current_names
-                            if name not in original_names)
-        for name in reversed(added_names):
-            layer = mesh.uv_layers.get(name)
-            if layer is None:
-                raise RuntimeError("a newly-created UV map could not be reacquired")
-            mesh.uv_layers.remove(layer)
-        if tuple(layer.name for layer in mesh.uv_layers) != original_names:
-            raise RuntimeError("UV map order changed; rollback is incomplete")
-
-        # These flags live on MeshUVLoopLayer in Blender 5.1.  Clear the
-        # non-active roles before restoring them so a role moved by a failed
-        # stage cannot survive alongside the snapshotted role.
-        for layer in mesh.uv_layers:
-            layer.active_render = False
-            layer.active_clone = False
-
-        for item in layers:
-            # Always reacquire by the immutable snapshot name.  In particular,
-            # no MeshUVLoopLayer obtained before an Object/Edit mode transition
-            # is accessed here.
-            layer = mesh.uv_layers.get(item.name)
-            if layer is None:
-                raise RuntimeError("an existing UV map could not be reacquired")
-            if len(layer.uv) != len(item.coordinates):
-                raise RuntimeError("mesh topology changed; UV rollback is incomplete")
-            layer.name = item.name
-            for datum, value in zip(layer.uv, item.coordinates):
-                datum.vector = value
-            restore_bools(layer, "pin", item.pins)
-            restore_bools(layer, "vertex_selection", item.vertex_selection)
-            restore_bools(layer, "edge_selection", item.edge_selection)
-            if item.active_render:
-                layer.active_render = True
-            if item.active_clone:
-                layer.active_clone = True
-        if state.active_name is not None:
-            active = mesh.uv_layers.get(state.active_name)
-            if active is None:
-                raise RuntimeError("the active UV map could not be reacquired")
-            mesh.uv_layers.active = active
-        mesh.update()
+    """Compatibility entry point for Simple Mode's shared Mesh rollback."""
+    def _rna_contract(mesh, item, collection, values):
+        layer = mesh.uv_layers.get(item.name)
+        for member, value in zip(collection, values):
+            member.value = value
+        return layer
+    restore_meshes(snapshot)
 
 
 def _execute_stage(operator, context, operation, snapshot, rollback, require_uv=False,
