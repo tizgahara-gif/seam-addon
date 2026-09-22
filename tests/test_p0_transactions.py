@@ -109,3 +109,24 @@ def test_incremental_operator_has_active_object_preflight_before_transaction():
     assert source.index("context.mode != 'EDIT_MESH'") < snapshot
     assert source.index("obj.data.uv_layers.active is None") < snapshot
     assert source.index("if not selected_faces") < snapshot
+
+
+def test_simple_uv_transaction_uses_blender_51_layer_collections_and_flags():
+    snapshot = ast.unparse(_function("simple_workflow.py", "_snapshot_uvs"))
+    rollback = ast.unparse(_function("simple_workflow.py", "_rollback_uvs"))
+
+    # MeshUVLoopLayer.pin/vertex_selection/edge_selection already are
+    # bpy_prop_collection instances.  Accessing a second `.data` level is the
+    # Blender 5.1 regression this guard exists to prevent.
+    assert "collection.data" not in snapshot
+    assert "collection.data" not in rollback
+    assert "for item in collection" in snapshot
+    assert "zip(collection, values)" in rollback
+
+    # Render and clone roles are layer booleans in Blender 5.1; do not invent
+    # collection-level active_* accessors or indices.
+    assert "bool(layer.active)" in snapshot
+    assert "bool(layer.active_render)" in snapshot
+    assert "bool(layer.active_clone)" in snapshot
+    assert "active_render_index" not in rollback
+    assert "active_clone_index" not in rollback

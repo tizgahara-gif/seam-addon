@@ -10,7 +10,7 @@ import bmesh
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import auto_seam_uv_equalizer as addon
-from auto_seam_uv_equalizer import operators, weighted_layout
+from auto_seam_uv_equalizer import operators, simple_workflow, weighted_layout
 from auto_seam_uv_equalizer.island_tools import find_uv_face_islands
 from auto_seam_uv_equalizer.symmetry import build_symmetry_plan
 from auto_seam_uv_equalizer.uv_validation import triangles_from_object, validate_object
@@ -117,6 +117,58 @@ class IntegrationTests(unittest.TestCase):
         settings.ui_mode = "SIMPLE"
         self.assertEqual([tuple(item.vector) for item in obj.data.uv_layers.active.uv],
                          uv_before)
+
+    def test_simple_uv_snapshot_and_rollback_round_trip_blender_51_rna(self):
+        obj = mesh_object("SimpleUVTransaction",
+                          [(0,0,0),(1,0,0),(1,1,0),(0,1,0)],
+                          [(0,1,2,3)])
+        first = obj.data.uv_layers.new(name="First")
+        second = obj.data.uv_layers.new(name="Second")
+        for offset, layer in enumerate((first, second)):
+            for index, datum in enumerate(layer.uv):
+                datum.vector = (offset + index * 0.1, offset + index * 0.2)
+                layer.pin[index].value = index % 2 == offset
+                layer.vertex_selection[index].value = index in ({0, 3}, {1, 2})[offset]
+                layer.edge_selection[index].value = index in ({1}, {2, 3})[offset]
+        first.active = True
+        second.active_render = True
+        first.active_clone = True
+
+        pointers = tuple(layer.as_pointer() for layer in obj.data.uv_layers)
+        expected = tuple((
+            layer.name,
+            tuple(tuple(item.vector) for item in layer.uv),
+            bool(layer.active), bool(layer.active_render), bool(layer.active_clone),
+            tuple(item.value for item in layer.pin),
+            tuple(item.value for item in layer.vertex_selection),
+            tuple(item.value for item in layer.edge_selection),
+        ) for layer in obj.data.uv_layers)
+        snapshot = simple_workflow._snapshot_uvs((obj,))
+
+        # Simulate all mutations a failing Simple stage may have made.
+        added = obj.data.uv_layers.new(name="CreatedByFailedStage")
+        added.active = True
+        added.active_render = True
+        added.active_clone = True
+        first.name = "Mutated"
+        for layer in (first, second):
+            for index, datum in enumerate(layer.uv):
+                datum.vector = (9.0, 9.0)
+                layer.pin[index].value = not layer.pin[index].value
+                layer.vertex_selection[index].value = not layer.vertex_selection[index].value
+                layer.edge_selection[index].value = not layer.edge_selection[index].value
+
+        simple_workflow._rollback_uvs(snapshot)
+        self.assertEqual(tuple(layer.as_pointer() for layer in obj.data.uv_layers), pointers)
+        actual = tuple((
+            layer.name,
+            tuple(tuple(item.vector) for item in layer.uv),
+            bool(layer.active), bool(layer.active_render), bool(layer.active_clone),
+            tuple(item.value for item in layer.pin),
+            tuple(item.value for item in layer.vertex_selection),
+            tuple(item.value for item in layer.edge_selection),
+        ) for layer in obj.data.uv_layers)
+        self.assertEqual(actual, expected)
 
     def test_production_operator_surface_is_exact(self):
         registered_ids = {

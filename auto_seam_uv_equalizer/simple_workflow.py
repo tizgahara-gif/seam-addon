@@ -182,27 +182,22 @@ def _rollback_seams(snapshot):
 
 def _snapshot_uvs(objects):
     def bool_values(layer, attribute):
-        uv_attribute = getattr(layer, attribute, None)
-        if uv_attribute is None:
+        collection = getattr(layer, attribute, None)
+        if collection is None:
             return None
-        return tuple(bool(item.value) for item in uv_attribute.data)
+        return tuple(bool(item.value) for item in collection)
 
     result = {}
     for obj in objects:
         mesh = obj.data
-        active = mesh.uv_layers.active
-        active_render = getattr(mesh.uv_layers, "active_render", None)
-        active_clone = getattr(mesh.uv_layers, "active_clone", None)
         layers = tuple(UVLayerSnapshot(
             layer=layer,
             pointer=layer.as_pointer(),
             name=layer.name,
             coordinates=tuple(tuple(uv.vector) for uv in layer.uv),
-            active=active is not None and active.as_pointer() == layer.as_pointer(),
-            active_render=(active_render is not None and
-                           active_render.as_pointer() == layer.as_pointer()),
-            active_clone=(active_clone is not None and
-                          active_clone.as_pointer() == layer.as_pointer()),
+            active=bool(layer.active),
+            active_render=bool(layer.active_render),
+            active_clone=bool(layer.active_clone),
             pins=bool_values(layer, "pin"),
             vertex_selection=bool_values(layer, "vertex_selection"),
             edge_selection=bool_values(layer, "edge_selection"),
@@ -215,10 +210,10 @@ def _rollback_uvs(snapshot):
     def restore_bools(layer, attribute, values):
         if values is None:
             return
-        uv_attribute = getattr(layer, attribute, None)
-        if uv_attribute is None or len(uv_attribute.data) != len(values):
+        collection = getattr(layer, attribute, None)
+        if collection is None or len(collection) != len(values):
             raise RuntimeError(f"UV {attribute} state is unavailable during rollback")
-        for item, value in zip(uv_attribute.data, values):
+        for item, value in zip(collection, values):
             item.value = value
 
     for mesh, layers in snapshot.values():
@@ -235,7 +230,13 @@ def _rollback_uvs(snapshot):
         if tuple(layer.as_pointer() for layer in mesh.uv_layers) != original_pointers:
             raise RuntimeError("UV map order changed; rollback is incomplete")
 
-        active = active_render = active_clone = None
+        # These flags live on MeshUVLoopLayer in Blender 5.1.  Clear the
+        # non-active roles before restoring them so a role moved by a failed
+        # stage cannot survive alongside the snapshotted role.
+        for layer in mesh.uv_layers:
+            layer.active_render = False
+            layer.active_clone = False
+
         for item in layers:
             layer = item.layer
             if len(layer.uv) != len(item.coordinates):
@@ -247,19 +248,11 @@ def _rollback_uvs(snapshot):
             restore_bools(layer, "vertex_selection", item.vertex_selection)
             restore_bools(layer, "edge_selection", item.edge_selection)
             if item.active:
-                active = layer
+                layer.active = True
             if item.active_render:
-                active_render = layer
+                layer.active_render = True
             if item.active_clone:
-                active_clone = layer
-        layer_indices = {layer.as_pointer(): index
-                         for index, layer in enumerate(mesh.uv_layers)}
-        if active is not None:
-            mesh.uv_layers.active_index = layer_indices[active.as_pointer()]
-        if active_render is not None and hasattr(mesh.uv_layers, "active_render_index"):
-            mesh.uv_layers.active_render_index = layer_indices[active_render.as_pointer()]
-        if active_clone is not None and hasattr(mesh.uv_layers, "active_clone_index"):
-            mesh.uv_layers.active_clone_index = layer_indices[active_clone.as_pointer()]
+                layer.active_clone = True
         mesh.update()
 
 
