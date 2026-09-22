@@ -202,11 +202,18 @@ def analysis_signature(obj, settings):
     mesh = obj.data
     force = _bool_edge_attribute(mesh, FORCE_SEAM_ATTRIBUTE)
     protect = _bool_edge_attribute(mesh, PROTECT_SEAM_ATTRIBUTE)
+    # Finished faces are converted to an edge barrier by the analyzer.  Store
+    # that effective input rather than the face-group numbers so renumbering an
+    # otherwise identical group does not invalidate the cache.
+    edge_faces = build_edge_to_faces(mesh)
+    finished_protect = protected_edge_indices(mesh, edge_faces)
+    finished_mask = tuple(edge.index in finished_protect for edge in mesh.edges)
     return (
         tuple(tuple(vertex.co) for vertex in mesh.vertices),
         tuple(tuple(edge.vertices) for edge in mesh.edges),
         tuple(tuple(face.vertices) for face in mesh.polygons),
         tuple(edge.use_seam for edge in mesh.edges), tuple(force), tuple(protect),
+        finished_mask,
         tuple(getattr(edge, "use_edge_sharp", False) for edge in mesh.edges),
         tuple(face.material_index for face in mesh.polygons),
         tuple((name, getattr(settings, name, True) if name in {

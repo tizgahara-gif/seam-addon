@@ -33,6 +33,15 @@ class TriangleRecord(NamedTuple):
     bbox: tuple[float, float, float, float]
 
 
+class OverlapResult(NamedTuple):
+    """Conservative face-level overlap classification."""
+
+    partial_overlaps: set
+    exact_stacks: set
+    partial_pair_count: int
+    exact_pair_count: int
+
+
 def polygon_area_2d(points) -> float:
     return sum(
         point[0] * points[(index + 1) % len(points)][1]
@@ -271,9 +280,41 @@ def _candidate_pairs(records):
                 cells[(x, y)].append(index)
 
 
+def _same_triangle(a, b, epsilon):
+    """Compare triangles independent of winding and starting vertex."""
+    unmatched = list(b)
+    for point in a:
+        match = next((index for index, other in enumerate(unmatched)
+                      if abs(point[0] - other[0]) <= epsilon
+                      and abs(point[1] - other[1]) <= epsilon), None)
+        if match is None:
+            return False
+        unmatched.pop(match)
+    return not unmatched
+
+
+def _same_triangulation(a_records, b_records, epsilon):
+    """Require the complete face triangulations to match; ambiguity is partial."""
+    if len(a_records) != len(b_records):
+        return False
+    unmatched = list(b_records)
+    for record in a_records:
+        match = next((index for index, other in enumerate(unmatched)
+                      if _same_triangle(record.coordinates, other.coordinates, epsilon)), None)
+        if match is None:
+            return False
+        unmatched.pop(match)
+    return True
+
+
 def find_overlaps(records, area_epsilon, coord_epsilon, across_objects=True):
-    """Return overlapping ``(object name, face index)`` keys and pair count."""
-    faces, pairs = set(), set()
+    """Classify coincident stacks separately from non-identical intersections.
+
+    Exact classification requires matching full face triangulations.  Thus a
+    geometrically identical region with different triangulation remains in the
+    safer ``partial_overlaps`` category rather than being silently accepted.
+    """
+    overlapping_pairs = set()
     for index_a, index_b in _candidate_pairs(records):
         a, b = records[index_a], records[index_b]
         if a.obj == b.obj and a.face_index == b.face_index:
@@ -285,6 +326,18 @@ def find_overlaps(records, area_epsilon, coord_epsilon, across_objects=True):
         if not _triangles_overlap_with_area(a.coordinates, b.coordinates, area_epsilon, coord_epsilon):
             continue
         keys = ((a.obj.name, a.face_index), (b.obj.name, b.face_index))
-        pairs.add(tuple(sorted(keys)))
-        faces.update(keys)
-    return faces, len(pairs)
+        overlapping_pairs.add(tuple(sorted(keys)))
+
+    by_face = defaultdict(list)
+    for record in records:
+        by_face[(record.obj.name, record.face_index)].append(record)
+    partial_pairs, exact_pairs = set(), set()
+    for pair in overlapping_pairs:
+        if _same_triangulation(by_face[pair[0]], by_face[pair[1]], coord_epsilon):
+            exact_pairs.add(pair)
+        else:
+            partial_pairs.add(pair)
+    partial_faces = {face for pair in partial_pairs for face in pair}
+    exact_faces = {face for pair in exact_pairs for face in pair}
+    return OverlapResult(partial_faces, exact_faces,
+                         len(partial_pairs), len(exact_pairs))

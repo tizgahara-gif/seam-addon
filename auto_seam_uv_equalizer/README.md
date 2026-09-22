@@ -26,6 +26,10 @@ Simple Mode does not automate the entire UV workflow in one operation. It provid
 
 複数Objectの通常処理は1 Meshごとにcommitし、失敗したMeshだけを完全復元します。成功済みMeshは維持され、最終reportに成功数と失敗数が表示されます。複数Meshを同時変更するAtlas Packのみは一括transactionであり、1件でも失敗すると全対象Meshを復元します。
 
+Overlap Validationは部分交差を既定の問題選択とし、許容誤差内で同じ全三角分割を持つ完全スタック候補を別件数で報告します。完全スタックも偶発的な重複である可能性があるため、Validation Settingsの **Select Exact Stacks** で選択対象へ含められます。
+
+`texel_density.py` と対応する保存済みScene propertyは将来互換・内部実装用であり、現在のproduction UI surfaceには公開していません。
+
 ## Installation
 
 `auto_seam_uv_equalizer.zip` を **Edit > Preferences > Add-ons > Install from Disk** からインストールし、3D Viewの **N > Auto UV** を開きます。GitHubのソースアーカイブではなく、リリース用zipを使用してください。

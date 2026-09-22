@@ -9,6 +9,7 @@ from .translations import iface_
 from .uv_island_flip import (
     apply_uv_plan,
     collect_selected_uv_islands,
+    mesh_loop_indices,
     plan_horizontal_uv_flip,
 )
 from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finished,
@@ -46,15 +47,29 @@ class AUTOSEAMUV_OT_flip_selected_uv_islands(bpy.types.Operator):
             return {"CANCELLED"}
         try:
             planned_uvs = plan_horizontal_uv_flip(islands)
+            # Flush BMesh topology before crossing into Mesh-domain protection.
+            obj.update_from_editmode()
+            protected_plan = {
+                loop_index: planned_uvs[loop_id]
+                for loop_id, loop_index in mesh_loop_indices(mesh, planned_uvs).items()
+            }
             validate_protection_consistency(obj)
-            preflight_finished_write(obj.data, planned_uvs)
-            assert_plan_does_not_modify_finished(obj.data, planned_uvs)
+            preflight_finished_write(mesh, protected_plan)
+            assert_plan_does_not_modify_finished(mesh, protected_plan)
         except (ProtectionError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
-        apply_uv_plan(bm, uv_layer, planned_uvs)
-        bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+        original_uvs = {loop_id: tuple(bm.faces[loop_id[0]].loops[loop_id[1]][uv_layer].uv)
+                        for loop_id in planned_uvs}
+        try:
+            apply_uv_plan(bm, uv_layer, planned_uvs)
+            bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+        except Exception as exc:
+            apply_uv_plan(bm, uv_layer, original_uvs)
+            bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+            self.report({"ERROR"}, iface_("Flip Selected UV Islands failed: %s", exc))
+            return {"CANCELLED"}
         self.report({"INFO"}, iface_("Flipped %d UV island(s).", len(islands)))
         return {"FINISHED"}
 

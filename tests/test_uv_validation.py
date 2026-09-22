@@ -122,3 +122,36 @@ def test_failed_edit_mode_sync_has_explicit_error():
     })()
     with pytest.raises(validation.UVValidationError, match="Could not synchronize"):
         validation.prepare_validation_mesh(obj)
+
+
+class _OverlapObject:
+    def __init__(self, name):
+        self.name = name
+
+
+def _record(name, face, points):
+    xs, ys = zip(*points)
+    return validation.TriangleRecord(
+        _OverlapObject(name), face, points,
+        (min(xs), min(ys), max(xs), max(ys)),
+    )
+
+
+def test_overlap_classifies_exact_stack_and_partial_intersection():
+    triangle_a = ((0, 0), (1, 0), (0, 1))
+    records = [_record("A", 0, triangle_a), _record("B", 0, triangle_a),
+               _record("C", 0, ((.25, .25), (1.25, .25), (.25, 1.25)))]
+    result = validation.find_overlaps(records, 1e-9, 1e-9)
+    assert result.exact_pair_count == 1
+    assert result.exact_stacks == {("A", 0), ("B", 0)}
+    assert result.partial_pair_count == 2
+    assert ("C", 0) in result.partial_overlaps
+
+
+def test_overlap_ignores_edge_contact_and_honors_across_objects():
+    records = [_record("A", 0, ((0, 0), (1, 0), (0, 1))),
+               _record("B", 0, ((1, 0), (2, 0), (1, 1)))]
+    assert validation.find_overlaps(records, 1e-9, 1e-9).partial_pair_count == 0
+    stacked = [_record("A", 0, records[0].coordinates),
+               _record("B", 0, records[0].coordinates)]
+    assert validation.find_overlaps(stacked, 1e-9, 1e-9, False).exact_pair_count == 0
