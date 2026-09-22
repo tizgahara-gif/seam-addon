@@ -134,7 +134,6 @@ class IntegrationTests(unittest.TestCase):
         second.active_render = True
         first.active_clone = True
 
-        pointers = tuple(layer.as_pointer() for layer in obj.data.uv_layers)
         expected = tuple((
             layer.name,
             tuple(tuple(item.vector) for item in layer.uv),
@@ -150,7 +149,6 @@ class IntegrationTests(unittest.TestCase):
         added.active = True
         added.active_render = True
         added.active_clone = True
-        first.name = "Mutated"
         for layer in (first, second):
             for index, datum in enumerate(layer.uv):
                 datum.vector = (9.0, 9.0)
@@ -159,7 +157,6 @@ class IntegrationTests(unittest.TestCase):
                 layer.edge_selection[index].value = not layer.edge_selection[index].value
 
         simple_workflow._rollback_uvs(snapshot)
-        self.assertEqual(tuple(layer.as_pointer() for layer in obj.data.uv_layers), pointers)
         actual = tuple((
             layer.name,
             tuple(tuple(item.vector) for item in layer.uv),

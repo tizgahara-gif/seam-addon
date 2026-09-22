@@ -130,3 +130,22 @@ def test_simple_uv_transaction_uses_blender_51_layer_collections_and_flags():
     assert "bool(layer.active_clone)" in snapshot
     assert "active_render_index" not in rollback
     assert "active_clone_index" not in rollback
+
+
+def test_simple_uv_snapshot_is_value_only_and_rollback_reacquires_by_name():
+    source = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    snapshot_type = next(node for node in tree.body
+                         if isinstance(node, ast.ClassDef)
+                         and node.name == "UVLayerSnapshot")
+    fields = {node.target.id for node in snapshot_type.body
+              if isinstance(node, ast.AnnAssign)
+              and isinstance(node.target, ast.Name)}
+    assert {"index", "name", "coordinates", "active", "active_render",
+            "active_clone", "pins", "vertex_selection", "edge_selection"} == fields
+    assert "layer" not in fields
+    assert "pointer" not in fields
+    assert ".as_pointer()" not in ast.unparse(
+        _function("simple_workflow.py", "_rollback_uvs"))
+    assert "mesh.uv_layers.get(item.name)" in ast.unparse(
+        _function("simple_workflow.py", "_rollback_uvs"))
