@@ -95,6 +95,16 @@ def test_blender_5_uv_api_is_accepted():
     verify_package._verify_modern_uv_api({"addon/good.py": "uv_layer.uv[i].vector"})
 
 
+def test_duplicate_translation_literal_keys_are_rejected():
+    source = '_JA_JP = {"Advanced": "A", "Advanced": "B"}\n'
+    with pytest.raises(RuntimeError, match="Duplicate translation literal keys"):
+        verify_package._verify_translation_keys(source)
+
+
+def test_unique_translation_literal_keys_are_accepted():
+    verify_package._verify_translation_keys('_JA_JP = {"Simple": "S"}\n')
+
+
 def test_percentage_facades_are_accepted_at_ui_boundary():
     verify_package._verify_percentage_facade_routing({
         "auto_seam_uv_equalizer/properties.py": "weighted_padding_uv_percent",

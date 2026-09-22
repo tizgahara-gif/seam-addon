@@ -121,7 +121,17 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         box.label(text=iface_("Unique Mesh Data: %d") % targets.unique_mesh_count)
         box.label(text=iface_("UV Ready: %d / %d") %
                   (targets.uv_ready_count, targets.unique_mesh_count))
+        if targets.empty_mesh_count:
+            _warning(box, "%d empty mesh objects will be skipped.",
+                     targets.empty_mesh_count)
+        if not targets.editable_count:
+            _error(box, "No editable mesh targets.")
         box.prop(settings, "show_helper_comments")
+        if context.mode == "EDIT_MESH":
+            _helper_comment(box, settings,
+                            "Simple stages process whole selected mesh targets.")
+            _helper_comment(box, settings,
+                            "Component selection does not limit the scope.")
 
         seam = layout.box()
         seam.label(text="1. Seam")

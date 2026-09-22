@@ -86,3 +86,15 @@ def test_register_does_not_access_blender_datablocks_or_context_scene():
     assert not any(name == "bpy.data" or name.startswith("bpy.data.")
                    for name in accesses)
     assert "bpy.context.scene" not in accesses
+
+
+def test_property_group_registration_uses_rna_registry_and_class_objects():
+    source = (ROOT / "__init__.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    lookup = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "_registered_class")
+    lookup_source = ast.unparse(lookup)
+    assert "PropertyGroup.bl_rna_get_subclass_py" in lookup_source
+    assert "cls.__name__" in lookup_source
+    assert "_registered_class(cls.__name__)" not in source
+    assert "remaining = _registered_class(cls)" in source

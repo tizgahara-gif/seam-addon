@@ -136,6 +136,21 @@ class SimpleSymmetryReport:
     skipped_objects: tuple
 
 
+@dataclass(frozen=True)
+class UVLayerSnapshot:
+    """State of one existing UV layer, retaining its RNA object identity."""
+    layer: object
+    pointer: int
+    name: str
+    coordinates: tuple
+    active: bool
+    active_render: bool
+    active_clone: bool
+    pins: tuple | None
+    vertex_selection: tuple | None
+    edge_selection: tuple | None
+
+
 def run_symmetry(objects, config):
     applied_objects, pairs, skipped = 0, 0, []
     for obj in objects:
@@ -166,27 +181,85 @@ def _rollback_seams(snapshot):
 
 
 def _snapshot_uvs(objects):
+    def bool_values(layer, attribute):
+        uv_attribute = getattr(layer, attribute, None)
+        if uv_attribute is None:
+            return None
+        return tuple(bool(item.value) for item in uv_attribute.data)
+
     result = {}
     for obj in objects:
         mesh = obj.data
-        result[mesh.as_pointer()] = (
-            mesh, tuple((layer.name, tuple(tuple(uv.vector) for uv in layer.uv))
-                        for layer in mesh.uv_layers),
-            mesh.uv_layers.active.name if mesh.uv_layers.active else None)
+        active = mesh.uv_layers.active
+        active_render = getattr(mesh.uv_layers, "active_render", None)
+        active_clone = getattr(mesh.uv_layers, "active_clone", None)
+        layers = tuple(UVLayerSnapshot(
+            layer=layer,
+            pointer=layer.as_pointer(),
+            name=layer.name,
+            coordinates=tuple(tuple(uv.vector) for uv in layer.uv),
+            active=active is not None and active.as_pointer() == layer.as_pointer(),
+            active_render=(active_render is not None and
+                           active_render.as_pointer() == layer.as_pointer()),
+            active_clone=(active_clone is not None and
+                          active_clone.as_pointer() == layer.as_pointer()),
+            pins=bool_values(layer, "pin"),
+            vertex_selection=bool_values(layer, "vertex_selection"),
+            edge_selection=bool_values(layer, "edge_selection"),
+        ) for layer in mesh.uv_layers)
+        result[mesh.as_pointer()] = (mesh, layers)
     return result
 
 
 def _rollback_uvs(snapshot):
-    for mesh, layers, active_name in snapshot.values():
-        while len(mesh.uv_layers):
-            mesh.uv_layers.remove(mesh.uv_layers[0])
-        for name, values in layers:
-            layer = mesh.uv_layers.new(name=name)
-            if len(layer.uv) != len(values):
+    def restore_bools(layer, attribute, values):
+        if values is None:
+            return
+        uv_attribute = getattr(layer, attribute, None)
+        if uv_attribute is None or len(uv_attribute.data) != len(values):
+            raise RuntimeError(f"UV {attribute} state is unavailable during rollback")
+        for item, value in zip(uv_attribute.data, values):
+            item.value = value
+
+    for mesh, layers in snapshot.values():
+        original_pointers = tuple(item.pointer for item in layers)
+        current_layers = tuple(mesh.uv_layers)
+        current_pointers = tuple(layer.as_pointer() for layer in current_layers)
+        if any(pointer not in current_pointers for pointer in original_pointers):
+            raise RuntimeError("an existing UV map was removed; rollback is incomplete")
+
+        # Simple operations only create layers; remove exactly those additions.
+        for layer in reversed(current_layers):
+            if layer.as_pointer() not in original_pointers:
+                mesh.uv_layers.remove(layer)
+        if tuple(layer.as_pointer() for layer in mesh.uv_layers) != original_pointers:
+            raise RuntimeError("UV map order changed; rollback is incomplete")
+
+        active = active_render = active_clone = None
+        for item in layers:
+            layer = item.layer
+            if len(layer.uv) != len(item.coordinates):
                 raise RuntimeError("mesh topology changed; UV rollback is incomplete")
-            for datum, value in zip(layer.uv, values):
+            layer.name = item.name
+            for datum, value in zip(layer.uv, item.coordinates):
                 datum.vector = value
-        mesh.uv_layers.active = mesh.uv_layers.get(active_name) if active_name else None
+            restore_bools(layer, "pin", item.pins)
+            restore_bools(layer, "vertex_selection", item.vertex_selection)
+            restore_bools(layer, "edge_selection", item.edge_selection)
+            if item.active:
+                active = layer
+            if item.active_render:
+                active_render = layer
+            if item.active_clone:
+                active_clone = layer
+        layer_indices = {layer.as_pointer(): index
+                         for index, layer in enumerate(mesh.uv_layers)}
+        if active is not None:
+            mesh.uv_layers.active_index = layer_indices[active.as_pointer()]
+        if active_render is not None and hasattr(mesh.uv_layers, "active_render_index"):
+            mesh.uv_layers.active_render_index = layer_indices[active_render.as_pointer()]
+        if active_clone is not None and hasattr(mesh.uv_layers, "active_clone_index"):
+            mesh.uv_layers.active_clone_index = layer_indices[active_clone.as_pointer()]
         mesh.update()
 
 
@@ -254,7 +327,8 @@ class AUTOSEAMUV_OT_simple_auto_unwrap(bpy.types.Operator):
             lambda objects: _run_unwrap_stage(objects, config),
             _snapshot_uvs, _rollback_uvs)
         if status == {"FINISHED"}:
-            self.report({"INFO"}, iface_("Auto Unwrap completed for %d object(s).", result))
+            self.report({"INFO"}, iface_(
+                "Auto Unwrap completed for %d unique mesh target(s).", result))
         return status
 
 
@@ -287,14 +361,24 @@ class AUTOSEAMUV_OT_simple_auto_symmetry(bpy.types.Operator):
         if status != {"FINISHED"}:
             return status
         if not report.applied_objects:
-            self.report({"WARNING"}, iface_(
-                "No selected mesh had valid symmetric topology."))
+            self.report({"WARNING"}, _symmetry_skip_message(report.skipped_objects))
             return {"CANCELLED"}
+        if report.skipped_objects:
+            self.report({"WARNING"}, _symmetry_skip_message(report.skipped_objects))
         self.report({"INFO"}, iface_(
-            "Auto Symmetry: %d object(s) applied, %d skipped (%d face pair(s)).",
+            "Auto Symmetry: %d unique mesh target(s) applied, %d skipped (%d face pair(s)).",
             report.applied_objects, len(report.skipped_objects),
             report.applied_face_pairs))
         return status
+
+
+def _symmetry_skip_message(skipped_objects, limit=5):
+    details = [iface_("%s — %s", name, reason)
+               for name, reason in skipped_objects[:limit]]
+    remaining = len(skipped_objects) - len(details)
+    if remaining:
+        details.append(iface_("… and %d more", remaining))
+    return iface_("Auto Symmetry skipped:\n%s", "\n".join(details))
 
 
 CLASSES = (AUTOSEAMUV_OT_simple_auto_seam, AUTOSEAMUV_OT_simple_auto_unwrap,

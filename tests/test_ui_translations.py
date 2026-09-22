@@ -161,7 +161,16 @@ def test_stage_and_helper_comment_translations():
     assert translations["Show Helper Comments"] == "補助コメントを表示"
     assert [translations[f"{index}. {name}"] for index, name in enumerate(
         ("Seam", "Unwrap", "Layout", "Symmetry", "Validation"), 1
-    )] == ["1. シーム", "2. UV展開", "3. レイアウト", "4. 対称", "5. 検証"]
+    )] == ["1. シーム", "2. UV展開", "3. レイアウト", "4. 対称化", "5. 検証"]
+
+
+def test_translation_dictionary_has_no_duplicate_literal_keys():
+    tree = ast.parse((ROOT / "translations.py").read_text(encoding="utf-8"))
+    dictionary = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == "_JA_JP"
+                              for target in node.targets))
+    keys = [key.value for key in dictionary.keys if isinstance(key, ast.Constant)]
+    assert len(keys) == len(set(keys))
 
 
 def test_uv_protection_dynamic_reports_translate_before_formatting():
