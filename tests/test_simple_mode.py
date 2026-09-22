@@ -115,6 +115,17 @@ def test_simple_ui_and_backend_share_readiness_resolver():
     assert 'simple_symmetry_axis' in ui
 
 
+def test_simple_discloses_mesh_targets_overlap_and_scale_warning():
+    ui = (ROOT / "ui.py").read_text(encoding="utf-8")
+    workflow = (ROOT / "simple_workflow.py").read_text(encoding="utf-8")
+    assert 'text="Target: Selected Mesh Objects"' in ui
+    assert 'text="Layout: Overlap"' in ui
+    assert "unused space may remain in the current atlas" in ui
+    assert "One unique mesh target will use Weighted Layout." in ui
+    assert workflow.count("warn_scale=True") == 2
+    assert "operators._warn_non_uniform_scale" in workflow
+
+
 def test_symmetry_only_soft_skips_typed_not_found_error():
     function = next(node for node in _tree("simple_workflow.py").body
                     if isinstance(node, ast.FunctionDef) and node.name == "run_symmetry")

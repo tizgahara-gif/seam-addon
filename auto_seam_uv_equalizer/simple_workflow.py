@@ -138,9 +138,8 @@ class SimpleSymmetryReport:
 
 @dataclass(frozen=True)
 class UVLayerSnapshot:
-    """State of one existing UV layer, retaining its RNA object identity."""
-    layer: object
-    pointer: int
+    """Immutable values for one UV layer; never retains child RNA objects."""
+    index: int
     name: str
     coordinates: tuple
     active: bool
@@ -149,6 +148,13 @@ class UVLayerSnapshot:
     pins: tuple | None
     vertex_selection: tuple | None
     edge_selection: tuple | None
+
+
+@dataclass(frozen=True)
+class MeshUVSnapshot:
+    """Value-only UV state associated with the owning Mesh ID."""
+    layers: tuple
+    active_name: str | None
 
 
 def run_symmetry(objects, config):
@@ -181,28 +187,32 @@ def _rollback_seams(snapshot):
 
 
 def _snapshot_uvs(objects):
-    def bool_values(layer, attribute):
+    def bool_values(layer, attribute, size):
         collection = getattr(layer, attribute, None)
         if collection is None:
-            return None
+            # A missing optional boolean attribute has the same observable
+            # state as an all-false attribute.  Reading a snapshot must never
+            # call an *_ensure API and thereby mutate the mesh.
+            return (False,) * size
         return tuple(bool(item.value) for item in collection)
 
     result = {}
     for obj in objects:
         mesh = obj.data
+        active = mesh.uv_layers.active
         layers = tuple(UVLayerSnapshot(
-            layer=layer,
-            pointer=layer.as_pointer(),
+            index=index,
             name=layer.name,
             coordinates=tuple(tuple(uv.vector) for uv in layer.uv),
             active=bool(layer.active),
             active_render=bool(layer.active_render),
             active_clone=bool(layer.active_clone),
-            pins=bool_values(layer, "pin"),
-            vertex_selection=bool_values(layer, "vertex_selection"),
-            edge_selection=bool_values(layer, "edge_selection"),
-        ) for layer in mesh.uv_layers)
-        result[mesh.as_pointer()] = (mesh, layers)
+            pins=bool_values(layer, "pin", len(layer.uv)),
+            vertex_selection=bool_values(layer, "vertex_selection", len(layer.uv)),
+            edge_selection=bool_values(layer, "edge_selection", len(layer.uv)),
+        ) for index, layer in enumerate(mesh.uv_layers))
+        result[mesh.as_pointer()] = (
+            mesh, MeshUVSnapshot(layers, active.name if active is not None else None))
     return result
 
 
@@ -211,23 +221,33 @@ def _rollback_uvs(snapshot):
         if values is None:
             return
         collection = getattr(layer, attribute, None)
-        if collection is None or len(collection) != len(values):
+        if collection is None:
+            if any(values):
+                raise RuntimeError(f"UV {attribute} state is unavailable during rollback")
+            return
+        if len(collection) != len(values):
             raise RuntimeError(f"UV {attribute} state is unavailable during rollback")
         for item, value in zip(collection, values):
             item.value = value
 
-    for mesh, layers in snapshot.values():
-        original_pointers = tuple(item.pointer for item in layers)
-        current_layers = tuple(mesh.uv_layers)
-        current_pointers = tuple(layer.as_pointer() for layer in current_layers)
-        if any(pointer not in current_pointers for pointer in original_pointers):
+    for mesh, state in snapshot.values():
+        layers = state.layers
+        original_names = tuple(item.name for item in layers)
+        current_names = tuple(layer.name for layer in mesh.uv_layers)
+        if any(name not in current_names for name in original_names):
             raise RuntimeError("an existing UV map was removed; rollback is incomplete")
 
-        # Simple operations only create layers; remove exactly those additions.
-        for layer in reversed(current_layers):
-            if layer.as_pointer() not in original_pointers:
-                mesh.uv_layers.remove(layer)
-        if tuple(layer.as_pointer() for layer in mesh.uv_layers) != original_pointers:
+        # Simple operations only create layers.  Keep names as plain values and
+        # reacquire both the collection and member after every removal because
+        # Blender may reallocate UV layer RNA storage on collection mutation.
+        added_names = tuple(name for name in current_names
+                            if name not in original_names)
+        for name in reversed(added_names):
+            layer = mesh.uv_layers.get(name)
+            if layer is None:
+                raise RuntimeError("a newly-created UV map could not be reacquired")
+            mesh.uv_layers.remove(layer)
+        if tuple(layer.name for layer in mesh.uv_layers) != original_names:
             raise RuntimeError("UV map order changed; rollback is incomplete")
 
         # These flags live on MeshUVLoopLayer in Blender 5.1.  Clear the
@@ -238,7 +258,12 @@ def _rollback_uvs(snapshot):
             layer.active_clone = False
 
         for item in layers:
-            layer = item.layer
+            # Always reacquire by the immutable snapshot name.  In particular,
+            # no MeshUVLoopLayer obtained before an Object/Edit mode transition
+            # is accessed here.
+            layer = mesh.uv_layers.get(item.name)
+            if layer is None:
+                raise RuntimeError("an existing UV map could not be reacquired")
             if len(layer.uv) != len(item.coordinates):
                 raise RuntimeError("mesh topology changed; UV rollback is incomplete")
             layer.name = item.name
@@ -247,16 +272,20 @@ def _rollback_uvs(snapshot):
             restore_bools(layer, "pin", item.pins)
             restore_bools(layer, "vertex_selection", item.vertex_selection)
             restore_bools(layer, "edge_selection", item.edge_selection)
-            if item.active:
-                layer.active = True
             if item.active_render:
                 layer.active_render = True
             if item.active_clone:
                 layer.active_clone = True
+        if state.active_name is not None:
+            active = mesh.uv_layers.get(state.active_name)
+            if active is None:
+                raise RuntimeError("the active UV map could not be reacquired")
+            mesh.uv_layers.active = active
         mesh.update()
 
 
-def _execute_stage(operator, context, operation, snapshot, rollback, require_uv=False):
+def _execute_stage(operator, context, operation, snapshot, rollback, require_uv=False,
+                   warn_scale=False):
     """Run every Simple stage with one transaction ordering contract."""
     active, selected, mode = operators._snapshot_context(context)
     before = None
@@ -275,6 +304,8 @@ def _execute_stage(operator, context, operation, snapshot, rollback, require_uv=
         if targets.empty_mesh_count:
             operator.report({"WARNING"}, iface_("Skipped %d empty mesh object(s).",
                                                 targets.empty_mesh_count))
+        if warn_scale:
+            operators._warn_non_uniform_scale(operator, list(targets.unique_objects))
         before = snapshot(targets.unique_objects)
         result = operation(targets.unique_objects)
         return {"FINISHED"}, result, targets
@@ -318,7 +349,7 @@ class AUTOSEAMUV_OT_simple_auto_unwrap(bpy.types.Operator):
         config = SimpleConfig()
         status, result, _ = _execute_stage(self, context,
             lambda objects: _run_unwrap_stage(objects, config),
-            _snapshot_uvs, _rollback_uvs)
+            _snapshot_uvs, _rollback_uvs, warn_scale=True)
         if status == {"FINISHED"}:
             self.report({"INFO"}, iface_(
                 "Auto Unwrap completed for %d unique mesh target(s).", result))
@@ -333,7 +364,7 @@ class AUTOSEAMUV_OT_simple_auto_layout(bpy.types.Operator):
         config = SimpleConfig()
         status, result, _ = _execute_stage(self, context,
             lambda objects: run_weighted_layout(objects, config),
-            _snapshot_uvs, _rollback_uvs, require_uv=True)
+            _snapshot_uvs, _rollback_uvs, require_uv=True, warn_scale=True)
         if status == {"FINISHED"}:
             self.report({"INFO"}, iface_("Auto Layout completed: %d island(s).",
                                         result.island_count))

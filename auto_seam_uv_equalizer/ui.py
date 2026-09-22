@@ -116,8 +116,8 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         targets = resolve_simple_targets(context)
         box = layout.box()
         box.label(text="Processing", icon="INFO")
-        box.label(text="Target: Selected Objects")
-        box.label(text=iface_("Selected Objects: %d") % targets.selected_count)
+        box.label(text="Target: Selected Mesh Objects")
+        box.label(text=iface_("Selected Mesh Objects: %d") % targets.selected_count)
         box.label(text=iface_("Unique Mesh Data: %d") % targets.unique_mesh_count)
         box.label(text=iface_("UV Ready: %d / %d") %
                   (targets.uv_ready_count, targets.unique_mesh_count))
@@ -164,7 +164,7 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         _helper_comment(layout_box, settings,
                         "Multiple objects will be packed into one Shared Weighted Atlas."
                         if targets.unique_mesh_count > 1 else
-                        "The selected mesh will use Weighted Layout.")
+                        "One unique mesh target will use Weighted Layout.")
         if targets.editable_count and not targets.all_uv_ready:
             _error(layout_box, "%d selected mesh target(s) have no active UV map.",
                    targets.missing_uv_count)
@@ -173,12 +173,17 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         symmetry.label(text="4. Symmetry")
         symmetry.prop(settings, "simple_symmetry_axis", text="Axis")
         symmetry.prop(settings, "simple_symmetry_direction", text="Source Side")
+        symmetry.label(text="Layout: Overlap")
         action = symmetry.column(align=True)
         action.enabled = targets.editable_count > 0 and targets.all_uv_ready
         action.operator("autoseamuv.simple_auto_symmetry", text="Auto Symmetry", icon="MOD_MIRROR")
         _helper_comment(symmetry, settings,
                         "Copies the source-side UVs onto the mirrored side.")
-        _helper_comment(symmetry, settings, "Paired UV islands will overlap.")
+        _helper_comment(symmetry, settings, "Mirrored UVs are intentionally stacked.")
+        _helper_comment(symmetry, settings,
+                        "If this is run after Auto Layout, unused space may remain in the current atlas.")
+        _helper_comment(symmetry, settings,
+                        "Use this when both sides should share texture space.")
         if targets.editable_count and not targets.all_uv_ready:
             _error(symmetry, "%d selected mesh target(s) have no active UV map.",
                    targets.missing_uv_count)
