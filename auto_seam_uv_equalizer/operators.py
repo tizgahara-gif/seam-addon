@@ -30,6 +30,7 @@ from .uv_protection import (ProtectionError, assert_plan_does_not_modify_finishe
 from .chart_seam import (PRESETS, cached_uv_analysis_evaluators,
                          uv_chart_quality_from_snapshot, uv_face_distortion_from_snapshot)
 from .mesh_utils import selected_visible_mesh_objects
+from .mesh_transaction import restore_meshes, rollback_error, snapshot_meshes
 
 
 REPORT_PREFIX = "Auto Seam UV"
@@ -261,29 +262,30 @@ def _analyze_with_temporary_unwrap(obj, settings):
     temp_obj.data = temp_mesh
     temp_obj.name = "__AutoSeamUV_ChartAnalysis__"
     context = bpy.context
-    context.collection.objects.link(temp_obj)
-    def unwrap_snapshot(cuts):
-        for edge in temp_mesh.edges:
-            edge.use_seam = edge.index in cuts
-        method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
-        unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, "SCALED", 0.0,
-                      False, False, 3, 0.0)
-        return tuple(item.vector.copy() for item in temp_mesh.uv_layers.active.uv)
-
-    evaluate, distortion = cached_uv_analysis_evaluators(
-        unwrap_snapshot,
-        lambda snapshot, chart: uv_chart_quality_from_snapshot(
-            temp_mesh, snapshot, chart),
-        lambda snapshot, chart: uv_face_distortion_from_snapshot(
-            temp_mesh, snapshot, chart),
-    )
-
     try:
+        context.collection.objects.link(temp_obj)
+
+        def unwrap_snapshot(cuts):
+            for edge in temp_mesh.edges:
+                edge.use_seam = edge.index in cuts
+            method = PRESETS.get(settings.seam_preset, PRESETS["HARD_SURFACE"]).method
+            unwrap_object(temp_obj, "__AutoSeamUV_Temporary__", True, method, "SCALED", 0.0,
+                          False, False, 3, 0.0)
+            return tuple(item.vector.copy() for item in temp_mesh.uv_layers.active.uv)
+
+        evaluate, distortion = cached_uv_analysis_evaluators(
+            unwrap_snapshot,
+            lambda snapshot, chart: uv_chart_quality_from_snapshot(
+                temp_mesh, snapshot, chart),
+            lambda snapshot, chart: uv_face_distortion_from_snapshot(
+                temp_mesh, snapshot, chart),
+        )
         return analyze_chart_seams(obj, settings, evaluate, distortion)
     finally:
-        if temp_obj.name in context.view_layer.objects:
+        if temp_obj.name in bpy.data.objects:
             bpy.data.objects.remove(temp_obj, do_unlink=True)
-        bpy.data.meshes.remove(temp_mesh)
+        if temp_mesh.name in bpy.data.meshes:
+            bpy.data.meshes.remove(temp_mesh)
 
 
 class AUTOSEAMUV_OT_analyze_seams(bpy.types.Operator):
@@ -547,16 +549,25 @@ class AUTOSEAMUV_OT_mark_only(bpy.types.Operator):
         try:
             _ensure_object_mode()
             for obj in objects:
+                before = snapshot_meshes((obj,))
                 try:
+                    cleared = marked = longitudinal = 0
                     if settings.clear_existing:
-                        total_cleared += clear_seams(obj.data)
-                    total_marked += _auto_mark(obj, settings)
+                        cleared = clear_seams(obj.data)
+                    marked = _auto_mark(obj, settings)
                     if settings.seam_mode == "CLASSIC" and settings.longitudinal_seam_helper:
-                        total_longitudinal += mark_longitudinal_seam_helper(obj)
+                        longitudinal = mark_longitudinal_seam_helper(obj)
+                    total_cleared += cleared
+                    total_marked += marked
+                    total_longitudinal += longitudinal
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Auto Seam UV: failed to mark seams on %s: %s", obj.name, exc))
+                    try:
+                        restore_meshes(before)
+                    except Exception as rollback_exc:
+                        exc = rollback_error("Auto Mark Seams Only", exc, rollback_exc)
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed to mark seams on %s; restored: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
@@ -899,12 +910,13 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
         try:
             _ensure_object_mode()
             for obj in objects:
+                before = snapshot_meshes((obj,))
                 try:
                     if len(obj.data.polygons) == 0:
                         skipped_empty += 1
                         self.report({"WARNING"}, iface_("Auto Unwrap + Pack: skipped %s; mesh has no faces.", obj.name))
                         continue
-                    total_straightened += unwrap_object(
+                    straightened = unwrap_object(
                         obj,
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
@@ -917,10 +929,15 @@ class AUTOSEAMUV_OT_auto_unwrap_pack(bpy.types.Operator):
                         settings.circular_strip_margin,
                     )
                     pack_object(obj, settings)
+                    total_straightened += straightened
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s: %s", obj.name, exc))
+                    try:
+                        restore_meshes(before)
+                    except Exception as rollback_exc:
+                        exc = rollback_error("Auto Unwrap + Pack", exc, rollback_exc)
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s; restored: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
@@ -964,13 +981,15 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
         try:
             _ensure_object_mode()
             for obj in objects:
+                before = snapshot_meshes((obj,))
                 try:
+                    cleared = marked = longitudinal = straightened = 0
                     if settings.clear_existing:
-                        total_cleared += clear_seams(obj.data)
-                    total_marked += _auto_mark(obj, settings)
+                        cleared = clear_seams(obj.data)
+                    marked = _auto_mark(obj, settings)
                     if settings.seam_mode == "CLASSIC" and settings.longitudinal_seam_helper:
-                        total_longitudinal += mark_longitudinal_seam_helper(obj)
-                    total_straightened += unwrap_object(
+                        longitudinal = mark_longitudinal_seam_helper(obj)
+                    straightened = unwrap_object(
                         obj,
                         settings.uv_map_name,
                         settings.create_uv_if_missing,
@@ -984,10 +1003,18 @@ class AUTOSEAMUV_OT_mark_and_unwrap(bpy.types.Operator):
                     )
                     if settings.pack_islands:
                         pack_object(obj, settings)
+                    total_cleared += cleared
+                    total_marked += marked
+                    total_longitudinal += longitudinal
+                    total_straightened += straightened
                     processed += 1
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s: %s", obj.name, exc))
+                    try:
+                        restore_meshes(before)
+                    except Exception as rollback_exc:
+                        exc = rollback_error("Auto Seam + Unwrap", exc, rollback_exc)
+                    self.report({"ERROR"}, iface_("Auto Seam UV: failed on %s; restored: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
 
@@ -1028,9 +1055,13 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
         skipped_empty = 0
         failures = 0
         valid_objects: list[bpy.types.Object] = []
+        before = None
 
         try:
             _ensure_object_mode()
+            # Atlas packing is one cross-object operation: unlike the ordinary
+            # operators its transaction intentionally spans every target Mesh.
+            before = snapshot_meshes(objects)
             for obj in objects:
                 try:
                     if len(obj.data.polygons) == 0:
@@ -1049,7 +1080,8 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
                     valid_objects.append(obj)
                 except Exception as exc:
                     failures += 1
-                    self.report({"ERROR"}, iface_("Atlas Pack Selected Objects: failed to prepare %s: %s", obj.name, exc))
+                    raise RuntimeError(
+                        f"failed to prepare {obj.name}: {exc}") from exc
 
             if not valid_objects:
                 self.report(
@@ -1064,23 +1096,40 @@ class AUTOSEAMUV_OT_atlas_pack_selected_objects(bpy.types.Operator):
                 obj.select_set(True)
             context.view_layer.objects.active = valid_objects[0]
 
-            bpy.ops.object.mode_set(mode="EDIT")
-            bpy.ops.mesh.select_mode(type="FACE")
-            bpy.ops.mesh.select_all(action="SELECT")
+            if "FINISHED" not in bpy.ops.object.mode_set(mode="EDIT"):
+                raise RuntimeError("could not enter multi-object Edit Mode")
+            if "FINISHED" not in bpy.ops.mesh.select_mode(type="FACE"):
+                raise RuntimeError("could not select Atlas faces")
+            if "FINISHED" not in bpy.ops.mesh.select_all(action="SELECT"):
+                raise RuntimeError("could not select all Atlas faces")
 
             if settings.atlas_average_island_scale:
-                bpy.ops.uv.average_islands_scale()
+                if "FINISHED" not in bpy.ops.uv.average_islands_scale():
+                    raise RuntimeError("Blender Average Islands Scale was cancelled")
 
             atlas_margin = settings.atlas_pixel_margin / int(settings.atlas_texture_resolution)
-            bpy.ops.uv.pack_islands(
+            result = bpy.ops.uv.pack_islands(
                 margin=atlas_margin,
                 margin_method="FRACTION",
                 rotate=settings.atlas_pack_rotate,
             )
+            if "FINISHED" not in result:
+                raise RuntimeError("Blender Atlas Pack was cancelled")
 
             processed = len(valid_objects)
         except Exception as exc:
             failures += len(valid_objects) if valid_objects else 1
+            if before is not None:
+                try:
+                    _ensure_object_mode()
+                except Exception:
+                    pass
+                try:
+                    restore_meshes(before)
+                except Exception as rollback_exc:
+                    exc = rollback_error("Atlas Pack Selected Objects", exc, rollback_exc)
+                else:
+                    exc = RuntimeError(f"{exc}; all target meshes restored")
             self.report({"ERROR"}, iface_("Atlas Pack Selected Objects: failed to atlas pack selected objects: %s", exc))
         finally:
             _restore_context(context, active, selected, mode)

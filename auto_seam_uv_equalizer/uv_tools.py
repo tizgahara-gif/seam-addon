@@ -5,6 +5,7 @@ from __future__ import annotations
 import bpy
 
 from .island_tools import straighten_circular_strip_islands_on_object
+from .mesh_transaction import restore_meshes, rollback_error, snapshot_meshes
 from .uv_pack import pack as blender_pack
 from .uv_protection import (finished_face_indices, has_active_uv_protection, snapshot_finished,
                             selected_islands, validate_protection_consistency)
@@ -33,7 +34,8 @@ def ensure_uv_layer(obj, uv_map_name: str, create_if_missing: bool) -> bool:
 
 def _switch_to_object_mode() -> None:
     if bpy.ops.object.mode_set.poll():
-        bpy.ops.object.mode_set(mode="OBJECT")
+        if "FINISHED" not in bpy.ops.object.mode_set(mode="OBJECT"):
+            raise RuntimeError("could not enter Object Mode")
 
 
 def _select_only_object(obj) -> None:
@@ -59,6 +61,7 @@ def unwrap_object(
     if obj is None or obj.type != "MESH":
         return 0
 
+    before = snapshot_meshes((obj,))
     try:
         _switch_to_object_mode()
         _select_only_object(obj)
@@ -73,33 +76,51 @@ def unwrap_object(
             raise RuntimeError("all target UV islands are Finished")
         for face in obj.data.polygons:
             face.select = face.index in editable
-        bpy.ops.object.mode_set(mode="EDIT")
-        bpy.ops.mesh.select_mode(type="FACE")
-        bpy.ops.uv.unwrap(method=method, margin_method=margin_method, margin=margin)
+        if "FINISHED" not in bpy.ops.object.mode_set(mode="EDIT"):
+            raise RuntimeError("could not enter Edit Mode")
+        if "FINISHED" not in bpy.ops.mesh.select_mode(type="FACE"):
+            raise RuntimeError("could not select faces")
+        if "FINISHED" not in bpy.ops.uv.unwrap(
+                method=method, margin_method=margin_method, margin=margin):
+            raise RuntimeError("Blender UV unwrap was cancelled")
 
         straightened_count = 0
         if straighten_circular_strip_islands:
-            bpy.ops.object.mode_set(mode="OBJECT")
+            if "FINISHED" not in bpy.ops.object.mode_set(mode="OBJECT"):
+                raise RuntimeError("could not leave Edit Mode for straightening")
             straightened_count = straighten_circular_strip_islands_on_object(
                 obj,
                 circular_strip_min_faces,
                 circular_strip_margin,
             )
-            bpy.ops.object.mode_set(mode="EDIT")
+            if "FINISHED" not in bpy.ops.object.mode_set(mode="EDIT"):
+                raise RuntimeError("could not re-enter Edit Mode after straightening")
 
         if average_islands:
-            bpy.ops.uv.average_islands_scale()
+            if "FINISHED" not in bpy.ops.uv.average_islands_scale():
+                raise RuntimeError("Blender Average Islands Scale was cancelled")
 
-        bpy.ops.object.mode_set(mode="OBJECT")
-        layer = obj.data.uv_layers.active
+        if "FINISHED" not in bpy.ops.object.mode_set(mode="OBJECT"):
+            raise RuntimeError("could not leave Edit Mode after unwrap")
+        mesh = obj.data
+        layer = mesh.uv_layers.active
+        if layer is None:
+            raise RuntimeError("active UV map disappeared during unwrap")
         for loop, uv in protected["uv"].items():
             layer.uv[loop].vector = uv
-        obj.data.update()
+        mesh.update()
         return straightened_count
     except Exception as exc:
         if bpy.ops.object.mode_set.poll():
-            bpy.ops.object.mode_set(mode="OBJECT")
-        raise RuntimeError(f"Failed to unwrap {obj.name}: {exc}") from exc
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception:
+                pass
+        try:
+            restore_meshes(before)
+        except Exception as restore_exc:
+            raise rollback_error(f"Failed to unwrap {obj.name}", exc, restore_exc) from exc
+        raise RuntimeError(f"Failed to unwrap {obj.name}; changes rolled back: {exc}") from exc
 
 
 def unwrap_selected_faces(obj, method, margin_method, margin):
@@ -177,16 +198,28 @@ def pack_object(obj, settings) -> None:
         raise RuntimeError(
             "Pack Islands cannot preserve UV Protection. Use Weighted Island Layout "
             "or Pack Selected Into Free Space, or clear UV Protection first.")
+    before = snapshot_meshes((obj,))
     try:
         _switch_to_object_mode()
         _select_only_object(obj)
         if obj.data.uv_layers.active is None:
             raise RuntimeError("Pack Islands requires an active UV map.")
-        bpy.ops.object.mode_set(mode="EDIT")
-        bpy.ops.mesh.select_all(action="SELECT")
-        blender_pack(bpy, settings)
-        bpy.ops.object.mode_set(mode="OBJECT")
+        if "FINISHED" not in bpy.ops.object.mode_set(mode="EDIT"):
+            raise RuntimeError("could not enter Edit Mode")
+        if "FINISHED" not in bpy.ops.mesh.select_all(action="SELECT"):
+            raise RuntimeError("could not select mesh faces")
+        if "FINISHED" not in blender_pack(bpy, settings):
+            raise RuntimeError("Blender Pack Islands was cancelled")
+        if "FINISHED" not in bpy.ops.object.mode_set(mode="OBJECT"):
+            raise RuntimeError("could not leave Edit Mode after packing")
     except Exception as exc:
         if bpy.ops.object.mode_set.poll():
-            bpy.ops.object.mode_set(mode="OBJECT")
-        raise RuntimeError(f"Failed to pack {obj.name}: {exc}") from exc
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception:
+                pass
+        try:
+            restore_meshes(before)
+        except Exception as restore_exc:
+            raise rollback_error(f"Failed to pack {obj.name}", exc, restore_exc) from exc
+        raise RuntimeError(f"Failed to pack {obj.name}; changes rolled back: {exc}") from exc

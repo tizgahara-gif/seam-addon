@@ -1,6 +1,6 @@
 # Auto Seam UV Equalizer v0.11.0
 
-Blender 5.1向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。
+Blender 5.1.2以上向けの、トポロジー対応シーム生成、UV展開、ウェイト付きレイアウト、対称ツール、およびプロダクションメッシュ用UV検証アドオンです。Blender 4.xは対応対象外です。
 
 ## Quick Start — Simple Mode
 
@@ -23,6 +23,8 @@ Simple Mode does not automate the entire UV workflow in one operation. It provid
 ## Advanced Mode
 
 **Advanced** は従来の全5工程（Seam、Unwrap、Layout、Symmetry、Validation）とすべてのsub-panelをそのまま表示します。シーム生成、UV展開、Packing、対称化、Protection、Validationを直接制御したい場合に使用してください。Mode切替自体はUVデータやAdvanced設定を変更しません。
+
+複数Objectの通常処理は1 Meshごとにcommitし、失敗したMeshだけを完全復元します。成功済みMeshは維持され、最終reportに成功数と失敗数が表示されます。複数Meshを同時変更するAtlas Packのみは一括transactionであり、1件でも失敗すると全対象Meshを復元します。
 
 ## Installation
 

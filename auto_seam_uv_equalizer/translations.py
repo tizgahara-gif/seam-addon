@@ -294,6 +294,7 @@ _JA_JP = {
     "Source UVs are not fully contained in the selected texture half.": "転送元UVが指定したテクスチャ半面内に完全に収まっていません。",
     "Source UVs are outside the 0-1 UV space.": "転送元UVが0–1 UV空間外にあります。",
     "Auto Seam UV: failed on %s: %s": "自動シーム UV: %sの処理に失敗しました: %s",
+    "Auto Seam UV: failed on %s; restored: %s": "自動シーム UV: %sの処理に失敗し、復元しました: %s",
 
     # Operators and operator descriptions.
     "Detect Ring / Strip": "リング / ストリップを検出",
@@ -537,6 +538,7 @@ _JA_JP = {
     "Preserve Texel Density required one global uniform scale to fit the UV space.": "UV空間へ収めるため、テクセル密度維持モードで全体を均一縮小しました。",
     "Weighted UV area differs from its target by more than 15%.": "UV面積と重要度による目標値の差が15%を超えています。",
     "Auto Seam UV: failed to mark seams on %s: %s": "自動シーム UV: %sへのシーム設定に失敗しました: %s",
+    "Auto Seam UV: failed to mark seams on %s; restored: %s": "自動シーム UV: %sへのシーム設定に失敗し、復元しました: %s",
     "Auto Seam UV: marked %d seam(s), longitudinal %d, cleared %d, processed %d, skipped shared %d, failed %d.": "自動シーム UV: シーム%d本を設定（縦方向%d本）、%d本をクリア、%d個を処理、共有%d個をスキップ、%d個失敗しました。",
     "Auto Seam UV: skipped %s; mesh has no faces.": "自動シーム UV: %sをスキップしました。メッシュに面がありません。",
     "Auto Seam UV: grid unwrapped %d object(s), marked 0 seam(s), straightened %d circular strip island(s), skipped shared %d, failed %d.": "自動シーム UV: %d個をグリッド展開、シーム設定0本、円形ストリップアイランド%d個を直線化、共有%d個をスキップ、%d個失敗しました。",
