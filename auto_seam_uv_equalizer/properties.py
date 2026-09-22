@@ -248,7 +248,7 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     ring_spacing: EnumProperty(
         name="Spacing",
         items=(("EVEN", "Even", "Use logical grid indices"),
-               ("EDGE_LENGTH", "Edge Length", "Use individual 3D edge lengths"),
+               ("EDGE_LENGTH", "Edge Length", "Use corresponding 3D edge lengths averaged for each shared row"),
                ("AVERAGE_EDGE_LENGTH", "Average Edge Length", "Average corresponding edge intervals")),
         default="AVERAGE_EDGE_LENGTH",
     )
@@ -448,6 +448,12 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
         name="Check Across Objects",
         description="Detect overlaps between different selected objects as well as within each object",
         default=True,
+    )
+
+    select_exact_uv_stacks: BoolProperty(
+        name="Select Exact Stacks",
+        description="Also select coincident UV stacks as potential problems",
+        default=False,
     )
 
 

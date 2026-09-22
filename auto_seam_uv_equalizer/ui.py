@@ -562,8 +562,10 @@ class AUTOSEAMUV_PT_panel(bpy.types.Panel):
         if settings.show_validation_settings:
             advanced = box.column(align=True)
             advanced.prop(settings, "check_overlap_across_objects", text="Check Across Objects")
+            advanced.prop(settings, "select_exact_uv_stacks", text="Select Exact Stacks")
             advanced.prop(settings, "stretch_warning_threshold", text="Stretch Warning Threshold")
             advanced.prop(settings, "overlap_area_epsilon", text="Zero-Area Tolerance")
+            advanced.prop(settings, "overlap_coord_epsilon", text="Coordinate Tolerance")
             advanced.operator("autoseamuv.clear_uv_overlap_highlight",
                               text="Clear Overlap Selection")
             advanced.label(text="Last Quality Report")

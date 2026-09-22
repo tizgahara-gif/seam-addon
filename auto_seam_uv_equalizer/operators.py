@@ -336,36 +336,31 @@ class AUTOSEAMUV_OT_generate_seams(bpy.types.Operator):
             self.report({"WARNING"}, iface_("Auto Seam UV: no visible mesh objects selected."))
             return {"CANCELLED"}
         active, selected, mode = _snapshot_context(context)
-        changed = processed = 0
-        originals = {obj.data.as_pointer(): (obj.data, [edge.use_seam for edge in obj.data.edges])
-                     for obj in objects}
+        changed = processed = failures = 0
         try:
             _ensure_object_mode()
-            plans = []
             for obj in objects:
-                key = _mesh_datablock_key(obj)
-                result = _CHART_ANALYSIS_CACHE.get(key)
-                if result is None or result.signature != analysis_signature(obj, settings):
-                    result = _analyze_with_temporary_unwrap(obj, settings)
-                    _CHART_ANALYSIS_CACHE[key] = result
-                plans.append((obj, result))
-            # No source seam is touched until every object has analyzed and
-            # validated successfully.
-            for obj, result in plans:
-                changed += apply_chart_seams(obj, result)
-                processed += 1
-        except Exception as exc:
-            for mesh, values in originals.values():
-                for edge, value in zip(mesh.edges, values):
-                    edge.use_seam = value
-                mesh.update()
-            self.report({"ERROR"}, iface_("Generate Seams failed: %s", exc))
-            return {"CANCELLED"}
+                before = snapshot_meshes((obj,))
+                try:
+                    key = _mesh_datablock_key(obj)
+                    result = _CHART_ANALYSIS_CACHE.get(key)
+                    if result is None or result.signature != analysis_signature(obj, settings):
+                        result = _analyze_with_temporary_unwrap(obj, settings)
+                        _CHART_ANALYSIS_CACHE[key] = result
+                    changed += apply_chart_seams(obj, result)
+                    processed += 1
+                except Exception as exc:
+                    failures += 1
+                    try:
+                        restore_meshes(before)
+                    except Exception as rollback_exc:
+                        exc = rollback_error("Generate Seams", exc, rollback_exc)
+                    self.report({"ERROR"}, iface_("Generate Seams failed on %s; restored: %s", obj.name, exc))
         finally:
             _restore_context(context, active, selected, mode)
-        self.report({"INFO"}, iface_("Generated %d seam(s) on %d object(s); skipped shared %d.",
-                                     changed, processed, skipped_shared))
-        return {"FINISHED"}
+        self.report({"INFO"}, iface_("Generated %d seam(s) on %d object(s); skipped shared %d, failed %d.",
+                                     changed, processed, skipped_shared, failures))
+        return {"FINISHED"} if processed else {"CANCELLED"}
 
 
 class AUTOSEAMUV_OT_mark_selected_region_boundary(bpy.types.Operator):
@@ -465,10 +460,14 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
         objects, skipped = _objects_for_processing(self, selected, settings.process_shared_mesh_once)
         active, original_selection, mode = _snapshot_context(context)
         edit_face_indices = _selected_edit_face_indices(active) if mode == "EDIT" else None
-        completed = 0
+        completed = failures = empty = 0
         try:
             _ensure_object_mode()
             for obj in objects:
+                if not obj.data.polygons:
+                    empty += 1
+                    continue
+                before = snapshot_meshes((obj,))
                 try:
                     # Analysis, seam choice, and coordinate generation are pure;
                     # the UV layer is not even created until all validation ends.
@@ -490,11 +489,17 @@ class AUTOSEAMUV_OT_unwrap_ring_strip(bpy.types.Operator):
                     assign_uv_loops(obj.data, layer, coordinates)
                     completed += 1
                     self.report({"INFO"}, iface_("%s: Rings %d, Columns %d, Boundaries %d, Seam %s", obj.name, grid.ring_count, grid.column_count, grid.boundary_count, seam))
-                except (TopologyError, ProtectionError, ValueError) as exc:
+                except Exception as exc:
+                    failures += 1
+                    try:
+                        _ensure_object_mode()
+                        restore_meshes(before)
+                    except Exception as rollback_exc:
+                        exc = rollback_error("Ring / Strip Unwrap", exc, rollback_exc)
                     self.report({"ERROR"}, iface_("%s: Invalid - %s", obj.name, exc))
         finally:
             _restore_context(context, active, original_selection, mode)
-        self.report({"INFO"}, iface_("Ring / Strip: unwrapped %d, skipped shared %d.", completed, skipped))
+        self.report({"INFO"}, iface_("Ring / Strip: unwrapped %d, failed %d, skipped empty %d, skipped shared %d.", completed, failures, empty, skipped))
         return {"FINISHED"} if completed else {"CANCELLED"}
 
 
@@ -1187,12 +1192,14 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
                     failed += 1
                     self.report({"ERROR"}, iface_("Check UV Overlap: failed to inspect %s: %s", obj.name, exc))
 
-            overlap_faces, pair_count = find_overlaps(
+            overlap_result = find_overlaps(
                 triangles, area_epsilon, settings.overlap_coord_epsilon,
                 settings.check_overlap_across_objects,
             )
-
-            _select_overlap_faces(valid_objects, overlap_faces)
+            selected_faces = set(overlap_result.partial_overlaps)
+            if settings.select_exact_uv_stacks:
+                selected_faces.update(overlap_result.exact_stacks)
+            _select_overlap_faces(valid_objects, selected_faces)
             # Selection is deliberately the only visualization: material slots and
             # polygon material indices are never modified by validation.
         finally:
@@ -1200,7 +1207,10 @@ class AUTOSEAMUV_OT_check_uv_overlap(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            iface_("Check UV Overlap: found %d overlapping face(s) in %d pair(s), skipped %d, failed %d.", len(overlap_faces), pair_count, skipped, failed),
+            iface_("Check UV Overlap: selected %d partial-overlap face(s) in %d pair(s); exact stack candidates %d face(s) in %d pair(s); skipped %d, failed %d.",
+                   len(overlap_result.partial_overlaps), overlap_result.partial_pair_count,
+                   len(overlap_result.exact_stacks), overlap_result.exact_pair_count,
+                   skipped, failed),
         )
         return {"FINISHED"} if valid_objects else {"CANCELLED"}
 

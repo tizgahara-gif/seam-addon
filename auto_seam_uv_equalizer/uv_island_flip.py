@@ -12,7 +12,7 @@ from .island_tools import find_uv_face_islands
 class UVFlipIsland:
     """An immutable snapshot of one complete UV island."""
 
-    loop_uvs: tuple[tuple[int, float, float], ...]
+    loop_uvs: tuple[tuple[tuple[int, int], float, float], ...]
 
 
 def collect_selected_uv_islands(obj, bm, uv_layer) -> list[UVFlipIsland]:
@@ -32,28 +32,28 @@ def collect_selected_uv_islands(obj, bm, uv_layer) -> list[UVFlipIsland]:
     for face_indices in find_uv_face_islands(obj):
         if not selected_faces.intersection(face_indices):
             continue
-        loops = sorted((loop for face_index in face_indices
-                        for loop in bm.faces[face_index].loops),
-                       key=lambda loop: loop.index)
+        loops = sorted(((face_index, corner_index, loop)
+                        for face_index in face_indices
+                        for corner_index, loop in enumerate(bm.faces[face_index].loops)),
+                       key=lambda item: (item[0], item[1]))
         islands.append(UVFlipIsland(tuple(
-            (loop.index, float(loop[uv_layer].uv.x),
+            ((face_index, corner_index), float(loop[uv_layer].uv.x),
              float(loop[uv_layer].uv.y))
-            for loop in loops
-        )))
+            for face_index, corner_index, loop in loops)))
     return islands
 
 
-def plan_horizontal_uv_flip(islands: list[UVFlipIsland]) -> dict[int, tuple[float, float]]:
+def plan_horizontal_uv_flip(islands: list[UVFlipIsland]) -> dict[tuple[int, int], tuple[float, float]]:
     """Validate snapshots and plan a per-island bounding-box-center U flip."""
     if not islands:
         raise ValueError("No selected UV islands found.")
 
-    planned_uvs: dict[int, tuple[float, float]] = {}
+    planned_uvs: dict[tuple[int, int], tuple[float, float]] = {}
     for island in islands:
         if not island.loop_uvs:
             raise ValueError("UV island has no loops.")
         if any(not (math.isfinite(u) and math.isfinite(v))
-               for _loop_index, u, v in island.loop_uvs):
+               for _loop_id, u, v in island.loop_uvs):
             raise ValueError("UV island has non-finite coordinates.")
         minimum_u = min(u for _loop_index, u, _v in island.loop_uvs)
         maximum_u = max(u for _loop_index, u, _v in island.loop_uvs)
@@ -67,8 +67,22 @@ def plan_horizontal_uv_flip(islands: list[UVFlipIsland]) -> dict[int, tuple[floa
     return planned_uvs
 
 
-def apply_uv_plan(bm, uv_layer, planned_uvs: dict[int, tuple[float, float]]) -> None:
+def apply_uv_plan(bm, uv_layer, planned_uvs: dict[tuple[int, int], tuple[float, float]]) -> None:
     """Commit a fully validated plan without touching any selection or flags."""
-    bm_loops = {loop.index: loop for face in bm.faces for loop in face.loops}
-    for loop_index, (u, v) in planned_uvs.items():
-        bm_loops[loop_index][uv_layer].uv = (u, v)
+    bm.faces.ensure_lookup_table()
+    for (face_index, corner_index), (u, v) in planned_uvs.items():
+        bm.faces[face_index].loops[corner_index][uv_layer].uv = (u, v)
+
+
+def mesh_loop_indices(mesh, loop_ids):
+    """Resolve stable face/corner IDs to Mesh loop IDs after Edit sync."""
+    result = {}
+    for loop_id in loop_ids:
+        face_index, corner_index = loop_id
+        if face_index < 0 or face_index >= len(mesh.polygons):
+            raise ValueError("UV plan contains an invalid face index.")
+        loops = mesh.polygons[face_index].loop_indices
+        if corner_index < 0 or corner_index >= len(loops):
+            raise ValueError("UV plan contains an invalid corner index.")
+        result[loop_id] = int(loops[corner_index])
+    return result

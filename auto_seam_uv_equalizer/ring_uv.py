@@ -80,7 +80,9 @@ def build_uv_coordinates(mesh, grid, seam_column, layout, spacing, orientation, 
     vertical = [[_length(mesh, rings[r][c], rings[r + 1][c]) for c in range(len(rings[0]))] for r in range(len(rings) - 1)]
     vs = [0.0]
     for values in vertical:
-        step = 1.0 if spacing == "EVEN" else (sum(values) / len(values) if spacing == "AVERAGE_EDGE_LENGTH" or layout == "RECTANGULAR" else sum(values) / len(values))
+        # Rows share one V coordinate, so every length-based mode necessarily
+        # uses the mean of the corresponding longitudinal edges.
+        step = 1.0 if spacing == "EVEN" else sum(values) / len(values)
         vs.append(vs[-1] + step)
     coords = {}
     for r, band in enumerate(grid.bands):
