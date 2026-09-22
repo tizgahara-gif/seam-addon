@@ -225,6 +225,13 @@ def analysis_signature(obj, settings):
 def apply_chart_seams(obj, result) -> int:
     """Validate and atomically commit a previously calculated seam plan."""
     mesh = obj.data
+    # A cached chart result can remain valid when only protection metadata has
+    # changed (for example, Finished group renumbering or Layout Lock).  Always
+    # revalidate the *current* UV islands at the commit boundary so a cache hit
+    # cannot bypass protection consistency checks.  This must precede every
+    # write, including mesh.update().
+    if mesh.uv_layers.active is not None:
+        validate_protection_consistency(obj)
     # The caller validates the full analysis signature before commit.  Keep a
     # topology guard here so this lower-level API is safe in isolation too.
     signature = (len(mesh.vertices), len(mesh.edges), len(mesh.polygons))
