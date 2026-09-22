@@ -28,8 +28,8 @@ class AUTOSEAMUV_PG_settings(bpy.types.PropertyGroup):
     )
     simple_symmetry_direction: EnumProperty(
         name="Source Side",
-        items=(("POSITIVE_TO_NEGATIVE", "Positive to Negative", "Use +X as the source"),
-               ("NEGATIVE_TO_POSITIVE", "Negative to Positive", "Use -X as the source")),
+        items=(("POSITIVE_TO_NEGATIVE", "Positive to Negative", "Use the positive side of the selected axis as the source"),
+               ("NEGATIVE_TO_POSITIVE", "Negative to Positive", "Use the negative side of the selected axis as the source")),
         default="POSITIVE_TO_NEGATIVE",
     )
     simple_symmetry_axis: EnumProperty(

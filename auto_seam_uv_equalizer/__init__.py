@@ -59,9 +59,11 @@ _MIGRATION_MAX_RETRIES = 20
 _MIGRATION_RETRY_INTERVAL = 0.1
 
 
-def _registered_class(name: str):
-    """Return Blender's registered RNA class with *name*, if one exists."""
-    return getattr(bpy.types, name, None)
+def _registered_class(cls: type):
+    """Return the registered class, including orphaned PropertyGroup RNA types."""
+    if issubclass(cls, bpy.types.PropertyGroup):
+        return bpy.types.PropertyGroup.bl_rna_get_subclass_py(cls.__name__, None)
+    return getattr(bpy.types, cls.__name__, None)
 
 
 def _remove_scene_property() -> None:
@@ -153,7 +155,7 @@ def _make_cleanup(
         if translations_are_registered:
             translations.unregister()
         for cls in reversed(classes):
-            if _registered_class(cls.__name__) is cls:
+            if _registered_class(cls) is cls:
                 bpy.utils.unregister_class(cls)
 
     return cleanup
@@ -187,9 +189,14 @@ def register() -> None:
     # Its pointer owns an RNA reference and must disappear before the class.
     _remove_scene_property()
     for cls in reversed(CLASSES):
-        registered = _registered_class(cls.__name__)
+        registered = _registered_class(cls)
         if registered is not None and registered is not cls:
             bpy.utils.unregister_class(registered)
+            remaining = _registered_class(cls)
+            if remaining is not None:
+                raise RuntimeError(
+                    f"stale RNA class {cls.__name__!r} remained registered after cleanup"
+                )
 
     registered_now: list[type] = []
     pointer_created = False
@@ -198,7 +205,7 @@ def register() -> None:
     timer_added = False
     try:
         for cls in CLASSES:
-            if _registered_class(cls.__name__) is cls:
+            if _registered_class(cls) is cls:
                 continue
             bpy.utils.register_class(cls)
             registered_now.append(cls)
@@ -228,7 +235,7 @@ def register() -> None:
         if translations_now:
             translations.unregister()
         for cls in reversed(registered_now):
-            if _registered_class(cls.__name__) is cls:
+            if _registered_class(cls) is cls:
                 bpy.utils.unregister_class(cls)
         _registered_classes = []
         _translations_registered = False
@@ -267,7 +274,7 @@ def unregister() -> None:
             _translations_registered = False
 
     for cls in reversed(CLASSES):
-        if _registered_class(cls.__name__) is cls:
+        if _registered_class(cls) is cls:
             bpy.utils.unregister_class(cls)
     _registered_classes = []
 

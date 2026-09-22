@@ -192,6 +192,24 @@ def _verify_modern_uv_api(sources: dict[str, str]) -> None:
             raise RuntimeError(f"Deprecated UV API pattern {pattern!r}: {hits}")
 
 
+def _verify_translation_keys(module_source: str) -> None:
+    """Reject duplicate literal keys before Python's dict semantics hide them."""
+    filename = "auto_seam_uv_equalizer/translations.py"
+    tree = ast.parse(module_source, filename=filename)
+    dictionary = next(
+        statement.value for statement in tree.body
+        if isinstance(statement, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "_JA_JP"
+                for target in statement.targets)
+    )
+    keys = [key.value for key in dictionary.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise RuntimeError(f"Duplicate translation literal keys: {duplicates}")
+    print("OK: duplicate translation literal keys = 0")
+
+
 def _verify_percentage_facade_routing(sources: dict[str, str]) -> None:
     """Keep percentage properties at the RNA/UI boundary, never in backends."""
     allowed = {
@@ -350,6 +368,9 @@ def verify_package(zip_path: Path) -> None:
             archive, "auto_seam_uv_equalizer/weighted_layout.py"
         )
         _verify_weighted_layout_backend(weighted_source)
+        _verify_translation_keys(_read_zip_text(
+            archive, "auto_seam_uv_equalizer/translations.py"
+        ))
 
         for member_name, tokens in REQUIRED_TOKENS.items():
             text = _read_zip_text(archive, member_name)
